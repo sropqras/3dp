@@ -44,12 +44,12 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
   5. `moonraker.upload`/`start` handle the printer side. `start` refuses unless Klipper is ready and not printing or paused, and it logs audit failures first.
 - **A job with `"plates"`** puts several labels on one bed. Without it, one design is auto-split into pieces, and each piece gets its own bed. `"base_top"` in `colour_changes` resolves to `base_thickness_mm`.
 - **`farm/audit.py`** encodes every lesson learned on any printer as a rule run against the **live** config (`/printer/objects/query?configfile=settings`). Each rule states why it exists. When a new printer problem is found, add a rule here so it's checked farm-wide.
-- **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and the spool inventory lives in `data/inventory.json` (gitignored, seeded from `inventory.example.json`). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
+- **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and the spool inventory lives in `data/inventory.json` (gitignored, seeded from `inventory.example.json`). The 3D viewer is hand-written WebGL2 in the page, with no libraries. It fetches `/api/model/<run>/<file>`, which `farm/model3mf.py` builds from the run's project `.3mf` (bed-space meshes plus the file's own colour changes, layer heights and bed shape). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
 - **`farm/net.py`** holds the stdlib HTTP helpers. Use it rather than adding `requests`.
 
 ## Rules
 
-- **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has opened the run's `.3mf`, confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.
+- **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has looked at the run's `.3mf` (Farm Control's 3D viewer or PrusaSlicer), confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.
 - **EnderV3SE (enders3dp:7128) is fully hands-off:** no jobs, no config edits, no restarts, no macro changes. Watching it and running its read-only audit is all that's allowed until the user hands it over.
 - **The Charles Wright Bold font is a paid licence.** Never commit it, never serve it publicly (not through Farm Control, not in an artifact), and never fetch it automatically. It is copied by hand into `assets/fonts/`.
 - **After any macro change, read the console:** `GET /server/gcode_store` and look for `Unknown command`. Moonraker's `ok` from `/printer/gcode/script` doesn't prove the macro ran. That is how a misnamed macro hid the colour-change prompt on 2026-10-22.
@@ -59,5 +59,6 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - `printers/` backups exclude secrets (`telegram.conf`, `moonraker-obico.cfg`, `octoeverywhere.conf`), and `.gitignore` excludes them too. Keep it that way. Symlinked upstream code (KAMP, fluidd.cfg, timelapse) is recorded in `SYMLINKS.txt`, not copied.
 - enders1plus (3dpnas) has no SSH from here, so deploy to it through Moonraker's file API. `scripts/telegram_pack.sh` only works for instances on enders3dp.
 - Macro names like letter+digits (e.g. `_A1`) get parsed by Klipper as classic G-code commands, and the audit flags them.
+- aali-cli has the apt `prusa-slicer` **2.7.2** at `/usr/bin/prusa-slicer`. It's fine for testing, but production G-code needs 2.9.6 (Flathub).
 - Known PrusaSlicer 2.9.6 CLI quirk: it segfaults on `*_extruder = 0` keys. `slicer.extract_preset` strips them.
 - If Farm Control or any job is deployed to run on aali-cli, record it in `/home/aali/agent_workspace/SERVER.md`.

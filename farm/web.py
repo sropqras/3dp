@@ -5,6 +5,7 @@ the server is the only thing that talks to the printers, so the browser never ne
 
   GET  /api/overview          printers + jobs + batch + inventory in one payload (what the page polls)
   GET  /api/cam/<printer>     webcam snapshot proxied from the printer host
+  GET  /api/model/<run>/<3mf> a run's project .3mf as viewer geometry (farm/model3mf.py)
   POST /api/inventory         replace the spool list (JSON body {"spools": [...]})
 """
 import json
@@ -15,7 +16,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, net, printers, watch
+from . import audit, model3mf, net, printers, watch
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -40,6 +41,19 @@ def cached(key: str, ttl: float, fn):
 
 # ---------------------------------------------------------------- runs (local pipeline history)
 
+def project_files(run_dir: Path) -> list[str]:
+    """The visual-gate .3mf of each sliced bed (project.export_project writes it beside its G-code)."""
+    return [g.with_suffix(".3mf").name for g in sorted(run_dir.glob("*.gcode")) if g.with_suffix(".3mf").is_file()]
+
+
+def model_blob(run_name: str, file: str) -> bytes | None:
+    run_dir = RUNS_DIR / run_name
+    if run_dir.parent != RUNS_DIR or not run_dir.is_dir() or file not in project_files(run_dir):
+        return None
+    path = run_dir / file
+    return cached(f"model:{path}:{path.stat().st_mtime}", 3600, lambda: model3mf.load(path))
+
+
 def load_runs() -> list[dict]:
     runs = []
     for m in sorted(RUNS_DIR.glob("*/manifest.json"), reverse=True):
@@ -58,6 +72,7 @@ def load_runs() -> list[dict]:
             "estimate": val.get("estimated printing time (normal mode)"),
             "grams": float(val.get("filament used [g]", 0) or 0),
             "gcode": str(gcodes[0]) if gcodes else None,
+            "models": project_files(m.parent),
         })
     return runs
 
@@ -87,7 +102,8 @@ def printer_view(p, runs_by_remote: dict) -> dict:
         v["eta_s"] = v["elapsed"] / v["progress"] - v["elapsed"]
     run = runs_by_remote.get(v["file"])
     if run:
-        v["run"] = {"dir": run["dir"], "job": run["job"], "labels": run["labels"], "colours": run["colours"]}
+        v["run"] = {"dir": run["dir"], "job": run["job"], "labels": run["labels"], "colours": run["colours"],
+                    "models": run["models"]}
         if run.get("gcode"):
             marks = cached("marks:" + run["gcode"], 3600, lambda: watch.milestones(Path(run["gcode"])))
             cc = [c / marks["size"] for c in marks["colour_changes"]]
@@ -208,6 +224,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, r.read(), r.headers.get("Content-Type", "image/jpeg"))
             except Exception:
                 return self._send(502, b"")
+        if path.startswith("/api/model/"):
+            parts = [urllib.parse.unquote(x) for x in path[len("/api/model/"):].split("/")]
+            blob = model_blob(*parts) if len(parts) == 2 else None
+            return self._send(200, blob, "application/octet-stream") if blob else self._send(404, b"{}")
         return self._send(404, b"{}")
 
     def do_POST(self):

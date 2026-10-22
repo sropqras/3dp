@@ -23,7 +23,9 @@ header { display: flex; align-items: center; gap: 24px; padding: 18px 28px; flex
 .kpi b { display: block; font-size: 18px; } .kpi small { color: var(--muted); }
 main { padding: 0 28px 40px; display: grid; gap: 22px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); margin: 6px 0 10px; }
-.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); }
+main > *, .grid > *, .body > *, .split > * { min-width: 0; }
+@media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .body { grid-template-columns: 1fr; } }
 .card { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line);
   border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
 .ph { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
@@ -79,6 +81,25 @@ input, select { background: #0b1220; color: var(--text); border: 1px solid var(-
 input[type=number] { width: 78px; } button { background: linear-gradient(90deg, var(--teal), var(--violet)); color: #071018; border: 0; border-radius: 8px; padding: 6px 12px; font-weight: 700; cursor: pointer; }
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
 .stamp { color: var(--dim); font-size: 12px; }
+button.mini { padding: 3px 9px; font-size: 12px; }
+dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
+dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
+.vh { display: flex; align-items: center; gap: 10px; padding: 12px 16px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.vh .name { font-weight: 700; } .vh .x { margin-left: auto; }
+.vbody { display: grid; grid-template-columns: 1fr 260px; } @media (max-width: 800px) { .vbody { grid-template-columns: 1fr; } }
+.vcanvas { position: relative; background: #05070b; }
+.vcanvas canvas { display: block; width: 100%; height: min(62vh, 620px); touch-action: none; cursor: grab; }
+.vcanvas .hint { position: absolute; bottom: 8px; left: 10px; font-size: 11px; color: var(--dim); pointer-events: none; }
+.vcanvas .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+.vside { padding: 14px 16px; display: grid; gap: 12px; align-content: start; border-left: 1px solid var(--line); }
+.vside { min-width: 0; overflow-wrap: anywhere; } .vside .k { color: var(--muted); font-size: 12px; } .vside .v { font-weight: 600; }
+.ok { color: var(--green); } .bad { color: var(--red); }
+.vside .spool .stamp { white-space: nowrap; }
+.vslider { padding: 12px 16px 14px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.vslider .track { position: relative; } .vslider input[type=range] { width: 100%; padding: 0; accent-color: var(--teal); }
+.vslider .tick { position: absolute; top: -6px; width: 3px; height: 8px; border-radius: 2px; transform: translateX(-1px); }
+.vslider .lbl { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--muted); } .vslider .lbl b { color: var(--text); }
 </style>
 </head>
 <body>
@@ -102,6 +123,19 @@ button.ghost { background: transparent; color: var(--muted); border: 1px solid v
     </div>
   </section>
 </main>
+<dialog id="viewer">
+  <div class="vh"><span class="name" id="v-title">Model</span><select id="v-file" onchange="loadModel(viewerRun, this.value)"></select>
+    <span class="stamp" id="v-file-note"></span><button class="ghost x" onclick="$('viewer').close()">Close</button></div>
+  <div class="vbody">
+    <div class="vcanvas"><canvas id="v-canvas"></canvas><div class="msg" id="v-msg">loading…</div>
+      <div class="hint">drag: rotate · wheel / pinch: zoom · right-drag / two fingers: pan · double-click: reset</div></div>
+    <div class="vside" id="v-side"></div>
+  </div>
+  <div class="vslider">
+    <div class="track"><input type="range" id="v-layer" min="0" max="0" value="0" oninput="setLayer(+this.value)"><div id="v-ticks"></div></div>
+    <div class="lbl" id="v-layer-lbl"></div>
+  </div>
+</dialog>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -134,7 +168,7 @@ function printerCard(p) {
   const audit = p.audit_fails == null ? "" : p.audit_fails.length
     ? `<span class="audit bad" title="${esc(p.audit_fails.map((f) => f.rule).join("\n"))}">⚠ ${p.audit_fails.length} baseline gap${p.audit_fails.length > 1 ? "s" : ""}</span>`
     : `<span class="audit">✓ farm baseline</span>`;
-  const run = p.run ? `<div class="job">${esc(p.run.job)}</div><div class="labels">${p.run.labels.map((l) => `<span class="chip">${esc(l)}</span>`).join("")}</div>`
+  const run = p.run ? `<div class="job">${esc(p.run.job)}</div><div class="labels">${p.run.labels.map((l) => `<span class="chip">${esc(l)}</span>`).join("")} ${modelButton(p.run.dir, p.run.models)}</div>`
                     : `<div class="job">${esc(p.file || "idle")}</div>`;
   const next = p.next ? `<div class="row">Next: <b>${esc(p.next.what)}</b> in <b>${hm(p.next.in_s)}</b></div>` : "";
   const active = ["printing", "paused"].includes(p.job);
@@ -170,10 +204,11 @@ function batchCard(b) {
 }
 
 function jobsTable(runs) {
-  return `<tr><th>Job</th><th>Printer</th><th>Plates</th><th>Estimate</th><th>PETG</th><th>Status</th></tr>` +
+  return `<tr><th>Job</th><th>Printer</th><th>Plates</th><th>Estimate</th><th>PETG</th><th>Status</th><th></th></tr>` +
     runs.map((r) => `<tr><td>${esc(r.job)}<div class="stamp">${esc(r.started)}</div></td><td>${esc(r.printer)}</td>
       <td>${r.labels.map((l) => `<span class="chip">${esc(l)}</span>`).join(" ")}</td><td>${esc(r.estimate || "–")}</td>
-      <td>${r.grams ? r.grams.toFixed(0) + " g" : "–"}</td><td><span class="st ${esc(String(r.status).split(":")[0])}">${esc(String(r.status).split(":")[0])}</span></td></tr>`).join("");
+      <td>${r.grams ? r.grams.toFixed(0) + " g" : "–"}</td><td><span class="st ${esc(String(r.status).split(":")[0])}">${esc(String(r.status).split(":")[0])}</span></td>
+      <td>${modelButton(r.dir, r.models)}</td></tr>`).join("");
 }
 
 function renderSpools() {
@@ -225,6 +260,243 @@ async function refresh() {
     render();
   } catch (e) { $("kpis").innerHTML = `<div class="kpi"><b style="color:var(--red)">offline</b><small>farm server</small></div>`; }
 }
+// ---------------------------------------------------------------- 3MF viewer (WebGL2, no libraries)
+// Shows the run's project .3mf: the same file the visual gate opens in PrusaSlicer. Geometry only - colours come
+// from the colour changes stored in the file, the slider cuts the model at each layer top.
+let viewerRun = null, V = null;
+
+function modelButton(dir, models) {
+  return models && models.length ? `<button class="mini ghost" data-run="${esc(dir)}" data-models="${esc(JSON.stringify(models))}"
+    onclick="openModel(this.dataset.run, JSON.parse(this.dataset.models))" title="view the run's .3mf">3D</button>` : "";
+}
+
+function openModel(run, files) {
+  viewerRun = run;
+  $("v-title").textContent = run;
+  $("v-file").innerHTML = files.map((f) => `<option>${esc(f)}</option>`).join("");
+  $("v-file").style.display = files.length > 1 ? "" : "none";
+  $("v-file-note").textContent = files.length > 1 ? `${files.length} beds` : files[0];
+  $("viewer").showModal();
+  loadModel(run, files[0]);
+}
+
+const hexRgb = (h) => { const m = /^#?([0-9a-f]{6})/i.exec(h || ""); const n = m ? parseInt(m[1], 16) : 0x888888; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+
+async function loadModel(run, file) {
+  $("v-msg").style.display = ""; $("v-msg").textContent = "loading…";
+  let buf;
+  try {
+    const r = await fetch(`/api/model/${encodeURIComponent(run)}/${encodeURIComponent(file)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    buf = await r.arrayBuffer();
+  } catch (e) { $("v-msg").textContent = `could not load ${file}: ${e.message}`; return; }
+  const hl = new DataView(buf).getUint32(0, true);
+  const h = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, hl)).trim());
+  const pos = new Float32Array(buf, 4 + hl, h.vertices * 3);
+  const idx = new Uint32Array(buf, 4 + hl + h.vertices * 12, h.triangles * 3);
+  if (!V && !initGL()) return;
+  V.h = h;
+  const gl = V.gl;
+  gl.bindVertexArray(V.meshVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, V.meshPos); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, V.meshIdx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  V.count = idx.length;
+  // bed: outline from bed_shape + 10 mm grid
+  const shape = h.bed_shape.length >= 3 ? h.bed_shape : [[0, 0], [300, 0], [300, 300], [0, 300]];
+  const bx = shape.map((p) => p[0]), by = shape.map((p) => p[1]);
+  V.bed = [Math.min(...bx), Math.min(...by), Math.max(...bx), Math.max(...by)];
+  const grid = [], outline = [];
+  for (let x = Math.ceil(V.bed[0] / 10) * 10; x <= V.bed[2]; x += 10) grid.push(x, V.bed[1], 0, x, V.bed[3], 0);
+  for (let y = Math.ceil(V.bed[1] / 10) * 10; y <= V.bed[3]; y += 10) grid.push(V.bed[0], y, 0, V.bed[2], y, 0);
+  shape.forEach((p, i) => { const q = shape[(i + 1) % shape.length]; outline.push(p[0], p[1], 0, q[0], q[1], 0); });
+  V.gridN = grid.length / 3; V.outlineN = outline.length / 3;
+  gl.bindVertexArray(V.lineVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, V.linePos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(grid.concat(outline)), gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  // colour bands: a change at print_z P means the layer ending at P is the first in the new colour,
+  // so the band boundary is that layer's bottom (P - layer height), i.e. the requested change height
+  const lh = h.layer_height, first = h.first_layer_height;
+  V.changes = h.colour_changes.map((c) => ({ ...c, z: lh ? c.print_z - lh : c.print_z }));
+  V.colours = [h.first_colour, ...V.changes.map((c) => c.colour)];
+  const top = h.bbox ? h.bbox[1][2] : 0;
+  V.layers = [];
+  if (lh && first) for (let z = first; z < top + lh - 1e-6; z = +(z + lh).toFixed(4)) V.layers.push(Math.min(z, +(z).toFixed(3)));
+  const slider = $("v-layer");
+  slider.max = Math.max(0, V.layers.length - 1); slider.value = slider.max; slider.disabled = !V.layers.length;
+  $("v-ticks").innerHTML = V.changes.map((c, i) => {
+    const k = V.layers.findIndex((z) => Math.abs(z - c.print_z) < 1e-3);
+    return k < 0 ? "" : `<span class="tick" style="left:${(k / Math.max(1, V.layers.length - 1)) * 100}%;background:${esc(c.colour)}" title="colour change ${i + 1}"></span>`;
+  }).join("");
+  renderSide(file);
+  resetCamera();
+  setLayer(+slider.value);
+  $("v-msg").style.display = "none";
+}
+
+function renderSide(file) {
+  const h = V.h, b = h.bbox;
+  if (!b) { $("v-side").innerHTML = `<div class="bad">no geometry in ${esc(file)}</div>`; return; }
+  const size = [0, 1, 2].map((i) => (b[1][i] - b[0][i]).toFixed(1)).join(" × ");
+  const onBed = b[0][0] >= V.bed[0] - 0.01 && b[0][1] >= V.bed[1] - 0.01 && b[1][0] <= V.bed[2] + 0.01 && b[1][1] <= V.bed[3] + 0.01 && b[0][2] > -0.01;
+  const bands = V.colours.map((c, i) => `<div class="spool"><span class="sw" style="background:${esc(c)}"></span>
+      ${i === 0 ? "first colour" : `M600 #${i} from z ${V.changes[i - 1].z.toFixed(2)} mm`} <span class="stamp">${esc(c)}</span></div>`).join("");
+  $("v-side").innerHTML = `
+    <div><div class="k">File</div><div class="v">${esc(h.file)}</div></div>
+    <div><div class="k">Objects (${h.objects.length})</div><div class="labels">${h.objects.map((o) => `<span class="chip">${esc(o)}</span>`).join("")}</div></div>
+    <div><div class="k">Size X × Y × Z</div><div class="v">${size} mm</div></div>
+    <div><div class="k">Placement</div><div class="v ${onBed ? "ok" : "bad"}">${onBed ? "✓ inside the bed" : "✗ outside the bed"}</div>
+      <div class="stamp">X ${b[0][0].toFixed(1)}–${b[1][0].toFixed(1)}, Y ${b[0][1].toFixed(1)}–${b[1][1].toFixed(1)}</div></div>
+    <div><div class="k">Colours (${V.changes.length} colour change${V.changes.length === 1 ? "" : "s"})</div><div style="display:grid;gap:6px;margin-top:4px">${bands}</div></div>
+    <div><div class="k">Layers</div><div class="v">${h.layer_height ? `${h.layer_height} mm, first ${h.first_layer_height} mm, ${V.layers.length} layers` : "not in the file"}</div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${V.changes.map((c, i) => `<button class="mini ghost" onclick="jumpTo(${c.print_z})">colour change ${i + 1}</button>`).join("")}
+      <button class="mini ghost" onclick="setLayer(0)">first layer</button><button class="mini ghost" onclick="setLayer(V.layers.length - 1)">top</button></div>
+    <div class="stamp">${h.triangles.toLocaleString()} triangles · model geometry, not toolpaths</div>`;
+}
+
+function jumpTo(printZ) { const k = V.layers.findIndex((z) => Math.abs(z - printZ) < 1e-3); if (k >= 0) setLayer(k); }
+
+function setLayer(k) {
+  if (!V || !V.h) return;
+  $("v-layer").value = k;
+  const n = V.layers.length, z = n ? V.layers[k] : Infinity, last = !n || k >= n - 1;
+  V.clipZ = last ? 1e9 : z + 1e-4;
+  let colour = 0; V.changes.forEach((c, i) => { if (n && z > c.z + 1e-4) colour = i + 1; });
+  const change = V.changes.findIndex((c) => n && Math.abs(c.print_z - z) < 1e-3);
+  $("v-layer-lbl").innerHTML = n ? `Layer <b>${k + 1}</b> / ${n} · z <b>${z.toFixed(2)} mm</b>
+      <span class="spool"><span class="sw" style="background:${esc(V.colours[colour])}"></span>${esc(V.colours[colour])}</span>
+      ${change >= 0 ? `<b style="color:var(--amber)">▸ M600 before this layer: load colour ${change + 2}</b>` : ""}` : "no layer heights in the file";
+  draw();
+}
+
+// ---- minimal GL
+const VS = `#version 300 es
+in vec3 p; uniform mat4 mvp; out vec3 w; void main() { w = p; gl_Position = mvp * vec4(p, 1.0); }`;
+const FS_MESH = `#version 300 es
+precision highp float; in vec3 w; uniform float clipZ; uniform int nc; uniform float cz[8]; uniform vec3 cc[9];
+uniform vec3 eye; out vec4 o;
+void main() {
+  if (w.z > clipZ) discard;
+  // inside seen through the cut = section cap, coloured as the cut layer (not as the face behind it)
+  float z = (!gl_FrontFacing && clipZ < 1e8) ? clipZ - 1e-3 : w.z;
+  vec3 col = cc[0];
+  for (int i = 0; i < 8; i++) { if (i >= nc) break; if (z > cz[i]) col = cc[i + 1]; }
+  if (!gl_FrontFacing) { o = vec4(col * 0.8 + 0.06, 1.0); return; }
+  vec3 n = normalize(cross(dFdx(w), dFdy(w)));
+  float d = 0.6 * abs(dot(n, normalize(eye - w))) + 0.3 * abs(dot(n, normalize(vec3(0.3, -0.5, 0.8))));
+  o = vec4(col * (0.25 + d) + 0.04, 1.0);
+}`;
+const FS_LINE = `#version 300 es
+precision highp float; uniform vec4 col; out vec4 o; void main() { o = col; }`;
+
+function initGL() {
+  const c = $("v-canvas"), gl = c.getContext("webgl2", { antialias: true });
+  if (!gl) { $("v-msg").textContent = "this browser has no WebGL2"; return false; }
+  const prog = (fs) => {
+    const p = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]]) {
+      const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+      gl.attachShader(p, sh);
+    }
+    gl.bindAttribLocation(p, 0, "p"); gl.linkProgram(p); return p;
+  };
+  V = { gl, mesh: prog(FS_MESH), line: prog(FS_LINE), meshVao: gl.createVertexArray(), lineVao: gl.createVertexArray(),
+        meshPos: gl.createBuffer(), meshIdx: gl.createBuffer(), linePos: gl.createBuffer(), clipZ: 1e9, cam: {} };
+  for (const [vao, buf] of [[V.meshVao, V.meshPos], [V.lineVao, V.linePos]]) {
+    gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  }
+  gl.bindVertexArray(null);
+  bindControls(c);
+  new ResizeObserver(draw).observe(c);
+  return true;
+}
+
+function resetCamera() {
+  const b = V.h.bbox || [[V.bed[0], V.bed[1], 0], [V.bed[2], V.bed[3], 0]];
+  const span = Math.max(b[1][0] - b[0][0], b[1][1] - b[0][1], b[1][2] - b[0][2], 40);
+  V.cam = { yaw: -Math.PI / 2, pitch: 0.75, dist: span * 1.9,
+            target: [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2, (b[0][2] + b[1][2]) / 2] };
+}
+
+function camEye() {
+  const { yaw, pitch, dist, target: t } = V.cam;
+  return [t[0] + dist * Math.cos(pitch) * Math.cos(yaw), t[1] + dist * Math.cos(pitch) * Math.sin(yaw), t[2] + dist * Math.sin(pitch)];
+}
+
+function mvp(aspect) {
+  const e = camEye(), t = V.cam.target, sub = (a, b) => a.map((v, i) => v - b[i]);
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => { const l = Math.hypot(...a) || 1; return a.map((v) => v / l); };
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const f = norm(sub(t, e)), s = norm(cross(f, [0, 0, 1])), u = cross(s, f);
+  const view = [s[0], u[0], -f[0], 0, s[1], u[1], -f[1], 0, s[2], u[2], -f[2], 0, -dot(s, e), -dot(u, e), dot(f, e), 1];
+  const near = V.cam.dist * 0.01, far = V.cam.dist * 4 + 2000, fy = 1 / Math.tan(0.35);
+  const proj = [fy / aspect, 0, 0, 0, 0, fy, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0];
+  const m = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let v = 0; for (let k = 0; k < 4; k++) v += proj[k * 4 + r] * view[c * 4 + k]; m[c * 4 + r] = v; }
+  return { m, e };
+}
+
+let drawPending = false;
+function draw() {
+  if (!V || !V.h || drawPending) return;
+  drawPending = true;
+  requestAnimationFrame(() => {
+    drawPending = false;
+    const gl = V.gl, c = gl.canvas, dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = Math.round(c.clientWidth * dpr), hgt = Math.round(c.clientHeight * dpr);
+    if (!w || !hgt) return;
+    if (c.width !== w || c.height !== hgt) { c.width = w; c.height = hgt; }
+    gl.viewport(0, 0, w, hgt); gl.clearColor(0.02, 0.03, 0.05, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    const { m, e } = mvp(w / hgt);
+    gl.useProgram(V.line); gl.uniformMatrix4fv(gl.getUniformLocation(V.line, "mvp"), false, m);
+    gl.bindVertexArray(V.lineVao);
+    gl.uniform4f(gl.getUniformLocation(V.line, "col"), 0.16, 0.21, 0.30, 1); gl.drawArrays(gl.LINES, 0, V.gridN);
+    gl.uniform4f(gl.getUniformLocation(V.line, "col"), 0.35, 0.83, 0.75, 1); gl.drawArrays(gl.LINES, V.gridN, V.outlineN);
+    gl.useProgram(V.mesh);
+    const u = (n) => gl.getUniformLocation(V.mesh, n);
+    gl.uniformMatrix4fv(u("mvp"), false, m); gl.uniform3fv(u("eye"), e); gl.uniform1f(u("clipZ"), V.clipZ);
+    const ch = V.changes.slice(0, 8);
+    gl.uniform1i(u("nc"), ch.length);
+    gl.uniform1fv(u("cz"), new Float32Array(8).map((_, i) => ch[i] ? ch[i].z : 0));
+    gl.uniform3fv(u("cc"), new Float32Array(V.colours.slice(0, 9).flatMap(hexRgb).concat(Array(27).fill(0)).slice(0, 27)));
+    // outside first, then the inside (the section cap) pulled forward so it wins ties with coplanar faces, e.g. a
+    // letter's bottom sitting exactly on the base top
+    gl.bindVertexArray(V.meshVao); gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.BACK); gl.drawElements(gl.TRIANGLES, V.count, gl.UNSIGNED_INT, 0);
+    gl.cullFace(gl.FRONT); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -4);
+    gl.drawElements(gl.TRIANGLES, V.count, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.POLYGON_OFFSET_FILL); gl.disable(gl.CULL_FACE); gl.bindVertexArray(null);
+  });
+}
+
+function bindControls(c) {
+  const pts = new Map(); let last = null;
+  const pan = (dx, dy) => {
+    const { yaw, pitch, dist } = V.cam, k = dist * 0.0016;
+    const right = [-Math.sin(yaw), Math.cos(yaw), 0], up = [-Math.sin(pitch) * Math.cos(yaw), -Math.sin(pitch) * Math.sin(yaw), Math.cos(pitch)];
+    V.cam.target = V.cam.target.map((v, i) => v + (right[i] * dx + up[i] * dy) * k);
+  };
+  const state = () => { const a = [...pts.values()]; return a.length >= 2
+    ? { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2, d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) } : { x: a[0].x, y: a[0].y }; };
+  c.addEventListener("pointerdown", (e) => { c.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY, b: e.button }); last = state(); });
+  c.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.get(e.pointerId).x = e.clientX; pts.get(e.pointerId).y = e.clientY;
+    const now = state(), dx = now.x - last.x, dy = now.y - last.y;
+    if (pts.size >= 2) { pan(-dx, dy); if (last.d && now.d) V.cam.dist *= last.d / now.d; }
+    else if (pts.get(e.pointerId).b === 2 || e.shiftKey) pan(-dx, dy);
+    else { V.cam.yaw -= dx * 0.008; V.cam.pitch = Math.max(-1.5, Math.min(1.5, V.cam.pitch + dy * 0.008)); }
+    last = now; draw();
+  });
+  const up = (e) => { pts.delete(e.pointerId); last = pts.size ? state() : null; };
+  c.addEventListener("pointerup", up); c.addEventListener("pointercancel", up);
+  c.addEventListener("wheel", (e) => { e.preventDefault(); V.cam.dist *= Math.exp(e.deltaY * 0.0012); draw(); }, { passive: false });
+  c.addEventListener("dblclick", () => { resetCamera(); draw(); });
+  c.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
 refresh(); setInterval(refresh, 5000);
 </script>
 </body>

@@ -28,7 +28,7 @@ slicer inputs), `slicer.log`, and the G-code.
 
 ## Visual gates (human)
 
-1. **Open the run's `.3mf` in PrusaSlicer** (Preview tab) and check the model, colours and layer slider; then **before start**: bed clear, first colour loaded, nozzle clean.
+1. **Open the run's `.3mf`**, either with the **3D** button in Farm Control (Jobs table or printer card) or in PrusaSlicer's Preview tab, and check the model, colours, placement and layer slider. Farm Control shows the file's geometry and colour changes, not toolpaths; then **before start**: bed clear, first colour loaded, nozzle clean.
 2. **At the colour change**: Fluidd shows the LOAD / PURGE / RESUME prompt (`M600` on printers with `has_m600_prompt`).
 3. **First layer**: watch the first layer go down; cancel from Fluidd if it isn't sticking.
 
@@ -41,6 +41,8 @@ slicer inputs), `slicer.log`, and the G-code.
 | `FARM_FONTS_DIR` | `assets/fonts/` (gitignored, licensed fonts) | same |
 
 ## Known quirks
+
+- Ubuntu 24.04's apt `prusa-slicer` is **2.7.2**. The presets are tuned on 2.9.6, so slice production jobs with the Flathub build, not the apt one.
 
 - PrusaSlicer 2.9.6 CLI segfaults on `*_extruder = 0` keys (e.g. `bed_temperature_extruder`, `wipe_tower_extruder`); `slicer.extract_preset` strips them.
 - Licensed fonts (Charles Wright) are never committed: put the `.otf` in `assets/fonts/`.
