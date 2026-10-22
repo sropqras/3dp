@@ -42,6 +42,12 @@ Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.loca
 - **Guided colour change** - `M600` parks and shows a Fluidd prompt with UNLOAD / LOAD / PURGE / RESUME buttons. No auto-unload: on printers without a runout sensor an unattended eject lets the filament end tangle on the spool.
 - **CLEAR_PAUSE in START_PRINT** - a stale pause can never make PAUSE answer "Print already paused".
 
+## Staged, not yet on the printer
+
+| Printer | Staged in repo | Apply when |
+|---|---|---|
+| enders1plus | max_velocity 300 -> 200 (KAMP move); Telegram tgalarm/tgnotify on colour change, 30 min, 12 h; then `farm/telegram_pack.conf` via Moonraker file API | after the R50+Q52 print (~02:20 on 2026-10-23); then `python -m farm audit enders1plus` must pass |
+
 ## Change log
 
 | Date | Printer | Change |
