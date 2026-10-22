@@ -85,6 +85,14 @@ Q = ("print_stats=state,filename,print_duration,message&virtual_sdcard=progress,
      "&gcode_move=speed_factor,extrude_factor&display_status=message")
 
 
+def _estimate(p, filename: str) -> float | None:
+    try:
+        meta = net.get_json(f"{p.moonraker}/server/files/metadata?filename={urllib.parse.quote(filename)}", timeout=4)
+        return float(meta["result"].get("estimated_time") or 0) or None
+    except Exception:
+        return None
+
+
 def printer_view(p, runs_by_remote: dict) -> dict:
     v = {"name": p.name, "host": urllib.parse.urlparse(p.moonraker).hostname, "online": False, "readonly": p.readonly,
          "fluidd": p.fluidd, "fluidd_note": p.fluidd_note}
@@ -100,8 +108,15 @@ def printer_view(p, runs_by_remote: dict) -> dict:
              flow=s["gcode_move"]["extrude_factor"],
              nozzle=[s["extruder"]["temperature"], s["extruder"]["target"]],
              bed=[s["heater_bed"]["temperature"], s["heater_bed"]["target"]])
-    if v["job"] in ("printing", "paused") and v["progress"] > 0.01:
-        v["eta_s"] = v["elapsed"] / v["progress"] - v["elapsed"]
+    if v["job"] in ("printing", "paused"):
+        # file progress is bytes, and these plates are badly non-linear (sparse base layers: long time, few bytes),
+        # so time comes from the slicer's estimate like Fluidd does; bytes only when there is no estimate
+        est = cached(f"est:{p.name}:{v['file']}", 3600, lambda: _estimate(p, v["file"]))
+        if est:
+            v["eta_s"] = max(0.0, est - v["elapsed"])
+            v["progress"] = min(0.99, v["elapsed"] / est)
+        elif v["progress"] > 0.01:
+            v["eta_s"] = v["elapsed"] / v["progress"] - v["elapsed"]
     run = runs_by_remote.get(v["file"])
     if run:
         v["run"] = {"dir": run["dir"], "job": run["job"], "labels": run["labels"], "colours": run["colours"],
@@ -111,9 +126,10 @@ def printer_view(p, runs_by_remote: dict) -> dict:
             cc = [c / marks["size"] for c in marks["colour_changes"]]
             if v["paused"] and any(abs(sd["file_position"] - c) < 4096 for c in marks["colour_changes"]):
                 v["alert"] = f"Colour change: load {run['colours'][1] if len(run['colours']) > 1 else 'next colour'}"
-            ahead = [c for c in cc if c > v["progress"]]
-            if ahead and v["job"] == "printing" and v["progress"] > 0.01:
-                v["next"] = {"what": "colour change", "in_s": (ahead[0] - v["progress"]) * v["elapsed"] / v["progress"]}
+            # byte positions against byte progress; no time is given, because the G-code has no M73 remaining-time marks
+            # (preset remaining_times = 0) and a byte-rate guess was off by ~10x on these plates
+            if v["job"] == "printing" and any(c > sd["progress"] for c in cc):
+                v["next"] = {"what": "colour change", "in_s": None}
     elif v["paused"]:
         v["alert"] = "Paused"
     if v["klipper"] != "ready":
