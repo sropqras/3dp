@@ -1,0 +1,63 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this repo is
+
+Two things for a Klipper 3D-print farm:
+
+1. **`farm/`**, a production pipeline and a web control room, run as `python -m farm`. It uses Python 3.10+ and the **standard library only**, so don't add dependencies.
+2. **Config backups and farm docs.** `printers/<Name>/` holds Klipper/Moonraker configs pulled from the printer hosts, `prusa/` holds the PrusaSlicer 2.9.6 profiles, and `FARM.md` has the printer list, feature matrix, staged changes and change log.
+
+Read `HANDOFF.md` for current state, and work from its **"To do (in order)"** list. The next job is deploying the staged enders1plus (S1 Plus) config once its current print finishes. It is described in FARM.md under "Staged, not yet on the printer" and must end with `python -m farm audit enders1plus` passing.
+
+aali-cli is now the only place work continues. The Windows workstation no longer pushes, and must `git pull` before any use. Read `PIPELINE.md` for the stages and the human visual gates.
+
+## Commands
+
+```bash
+python3 -m farm status [printer]              # live printer state via Moonraker
+python3 -m farm audit [printer]               # live Klipper config vs farm baseline rules; exit 1 on any FAIL
+python3 -m farm run jobs/qabrastaan/A01.json  # likhan -> slice -> M600 -> checks; no printer contact
+python3 -m farm run <job.json> --upload       # ...then upload to Moonraker
+python3 -m farm start runs/<stamp>_<job>      # only after the human visual gate
+python3 -m farm watch runs/<stamp>_<job>      # follow until first layer / colour change / finish / error
+python3 -m farm serve --port 8090             # Farm Control web UI (LAN only, no auth)
+scripts/backup-configs.sh [ssh-host]          # pull configs from enders3dp into printers/
+```
+
+There is no test suite, linter or build step. `audit` is the closest thing to a check, and it reads live printers.
+
+Host settings come from env vars in `farm/config.py`. The defaults suit the user's Windows workstation, so on aali-cli set:
+`FARM_PRUSASLICER="flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer"` and `FARM_LIKHAN_URL=http://127.0.0.1:4111`. `FARM_FONTS_DIR` defaults to `assets/fonts/`. Licensed fonts are gitignored and never committed.
+
+## Architecture
+
+- **`farm/printers.py` is the registry** and the single source of truth the code uses. Each printer has a Moonraker URL, usable bed area, max Z, `has_m600_prompt`, PrusaSlicer bundle and preset names, and `readonly`.
+  - Its hardware facts must match `FARM.md`. Don't add a printer without confirmed hardware.
+  - `readonly=True` printers (EnderV3SE, the user's own production printer) are shown and audited but never sent jobs or config changes.
+- **Pipeline (`__main__.cmd_run`).** A job JSON (`jobs/*/`) produces a `Run` (`runlog.py`, `runs/<stamp>_<slug>/` holding `run.log`, `manifest.json`, the STLs, `presets/`, the G-code and `.3mf`). The stages are:
+  1. `likhan.generate` calls the external likhan-maker HTTP service. Bed size is overridden from the registry, not taken from the job.
+  2. `slicer.slice_model` extracts presets from the `prusa/*.ini` bundle, aligns the first-layer height so every colour-change Z lands on a layer top, inserts `M600`, and lays out multi-plate beds as a 3MF.
+  3. `gcode.validate` runs static checks on the output G-code.
+  4. `project.export_project` writes the `.3mf` the human opens for the visual gate.
+  5. `moonraker.upload`/`start` handle the printer side. `start` refuses unless Klipper is ready and not printing or paused, and it logs audit failures first.
+- **A job with `"plates"`** puts several labels on one bed. Without it, one design is auto-split into pieces, and each piece gets its own bed. `"base_top"` in `colour_changes` resolves to `base_thickness_mm`.
+- **`farm/audit.py`** encodes every lesson learned on any printer as a rule run against the **live** config (`/printer/objects/query?configfile=settings`). Each rule states why it exists. When a new printer problem is found, add a rule here so it's checked farm-wide.
+- **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and the spool inventory lives in `data/inventory.json` (gitignored, seeded from `inventory.example.json`). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
+- **`farm/net.py`** holds the stdlib HTTP helpers. Use it rather than adding `requests`.
+
+## Rules
+
+- **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has opened the run's `.3mf`, confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.
+- **EnderV3SE (enders3dp:7128) is fully hands-off:** no jobs, no config edits, no restarts, no macro changes. Watching it and running its read-only audit is all that's allowed until the user hands it over.
+- **The Charles Wright Bold font is a paid licence.** Never commit it, never serve it publicly (not through Farm Control, not in an artifact), and never fetch it automatically. It is copied by hand into `assets/fonts/`.
+- **After any macro change, read the console:** `GET /server/gcode_store` and look for `Unknown command`. Moonraker's `ok` from `/printer/gcode/script` doesn't prove the macro ran. That is how a misnamed macro hid the colour-change prompt on 2026-10-22.
+- **Never restart Klipper or edit configs on a printer that is printing or paused.** Check `farm status` first. Changes waiting for a print to finish go into FARM.md's "Staged, not yet on the printer" table.
+- After any printer config change, `python -m farm audit <printer>` must pass. Record the change in FARM.md's change log and feature matrix.
+- In the feature matrix, `?` means unconfirmed. Configs contain copy-pasted sections, so don't infer hardware from them.
+- `printers/` backups exclude secrets (`telegram.conf`, `moonraker-obico.cfg`, `octoeverywhere.conf`), and `.gitignore` excludes them too. Keep it that way. Symlinked upstream code (KAMP, fluidd.cfg, timelapse) is recorded in `SYMLINKS.txt`, not copied.
+- enders1plus (3dpnas) has no SSH from here, so deploy to it through Moonraker's file API. `scripts/telegram_pack.sh` only works for instances on enders3dp.
+- Macro names like letter+digits (e.g. `_A1`) get parsed by Klipper as classic G-code commands, and the audit flags them.
+- Known PrusaSlicer 2.9.6 CLI quirk: it segfaults on `*_extruder = 0` keys. `slicer.extract_preset` strips them.
+- If Farm Control or any job is deployed to run on aali-cli, record it in `/home/aali/agent_workspace/SERVER.md`.
