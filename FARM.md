@@ -50,6 +50,7 @@ Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.loca
 | 2026-10-22 | Ender3MaxNeo | Paused-safe idle timeout, guided M600 colour change |
 | 2026-10-22 | Ender3MaxNeo | 12 h pause safety cap (_PAUSE_HARD_STOP), RESUME reheats the bed if it was hit |
 | 2026-10-22 | Ender3MaxNeo | M600 no longer auto-unloads; UNLOAD button in the prompt |
+| 2026-10-22 | Ender3MaxNeo | max_velocity 200 / max_accel 3000, recover_velocity 150, KAMP purge flow 12, colour-change prompt fixed (macro naming) + anti-ooze resume; passes farm audit |
 | 2026-10-22 | enders1plus | Sensor insert no longer RESUMEs; guided M600 (no auto-unload, sensor off during swap); paused-safe idle timeout + 12 h cap (was never); CLEAR_PAUSE in START_PRINT; recover_velocity 25 -> 150; anti-ooze resume |
 | 2026-10-22 | farm | Multi-plate beds (one 3MF object per plate), fixed-size plates via likhan |
 | 2026-10-22 | farm | Production pipeline `python -m farm` (likhan -> slice -> M600 -> checks -> Moonraker), see PIPELINE.md |
