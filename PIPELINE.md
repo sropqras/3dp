@@ -7,6 +7,7 @@ python -m farm status                         # printer state
 python -m farm run jobs/qabrastaan/A01.json   # generate + slice + check (no printer contact)
 python -m farm run jobs/qabrastaan/A01.json --upload
 python -m farm start runs/<stamp>_<job>       # only after the visual gate
+python -m farm audit [printer]                # live configs vs farm baseline rules (lessons from every printer)
 python -m farm watch runs/<stamp>_<job>       # follow it: first layer / colour change / finish / error (monitor.log)
 ```
 

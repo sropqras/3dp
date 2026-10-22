@@ -4,6 +4,7 @@
   start <run-dir>             start an uploaded run on its printer (visual gate: bed clear, base colour loaded)
   watch <run-dir>             follow a started run; stops at first layer / colour change / finish / error
   status [printer]            show printer state
+  audit [printer]             check live Klipper configs against the farm baseline (read-only)
 """
 import argparse
 import json
@@ -11,7 +12,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, gcode, likhan, moonraker, printers, project, slicer, watch
+from . import audit, config, gcode, likhan, moonraker, printers, project, slicer, watch
 from .runlog import Run
 
 
@@ -65,6 +66,11 @@ def cmd_start(args):
         sys.exit(f"{len(remotes)} pieces uploaded; start them one at a time from Fluidd")
     printer = printers.get(job["printer"])
     run = Run.resume(run_dir)
+    # farm baseline: log every failing rule so a known lesson is never silently missing on this printer
+    fails = [(r, d) for st, r, d in audit.rules(audit._settings(printer), printer) if st != "PASS"]
+    for rule, detail in fails:
+        run.log(f"audit: FAIL {rule} -- {detail}")
+    run.step("audit", fails=fails)
     moonraker.start(run, printer, remotes[0])
 
 
@@ -76,6 +82,13 @@ def cmd_watch(args):
     run = Run.resume(run_dir)
     result = watch.watch(run, printer, gcodes[0], until=args.until)
     run.log(f"watch: {result}")
+
+
+def cmd_audit(args):
+    names = [args.printer] if args.printer else list(printers.PRINTERS)
+    fails = audit.audit([printers.get(n) for n in names])
+    print(f"\n{fails} failing rule(s)" if fails else "\nall printers meet the farm baseline")
+    sys.exit(1 if fails else 0)
 
 
 def cmd_status(args):
@@ -97,8 +110,10 @@ def main():
     w.add_argument("run_dir")
     w.add_argument("--until", choices=["next", "event"], default="next",
                    help="next: stop at first layer done too; event: only pause/finish/error")
+    a = sub.add_parser("audit")
+    a.add_argument("printer", nargs="?")
     args = ap.parse_args()
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit}[args.cmd](args)
 
 
 if __name__ == "__main__":
