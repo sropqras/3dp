@@ -23,6 +23,7 @@ python3 -m farm run <job.json> --upload       # ...then upload to Moonraker
 python3 -m farm start runs/<stamp>_<job>      # only after the human visual gate
 python3 -m farm watch runs/<stamp>_<job>      # follow until first layer / colour change / finish / error
 python3 -m farm serve --port 10111            # Farm Control web UI (LAN only, no auth)
+python3 -m farm monitor [--state FILE]        # one read-only pass of the serious-error monitor (jobctl farm-monitor runs it)
 scripts/backup-configs.sh [ssh-host]          # pull configs from enders3dp into printers/
 ```
 
@@ -45,6 +46,7 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - **A job with `"plates"`** puts several labels on one bed. Without it, one design is auto-split into pieces, and each piece gets its own bed. `"base_top"` in `colour_changes` resolves to `base_thickness_mm`.
 - **`farm/audit.py`** encodes every lesson learned on any printer as a rule run against the **live** config (`/printer/objects/query?configfile=settings`). Each rule states why it exists. When a new printer problem is found, add a rule here so it's checked farm-wide.
 - **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and the spool inventory lives in `data/inventory.json` (gitignored, seeded from `inventory.example.json`). The 3D viewer is hand-written WebGL2 in the page, with no libraries. It fetches `/api/model/<run>/<file>`, which `farm/model3mf.py` builds from the run's project `.3mf` (bed-space meshes plus the file's own colour changes, layer heights and bed shape). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
+- **`farm/monitor.py`** is the serious-error watch. It alerts on Klipper error/shutdown, a print in the error state, Moonraker down two polls running, and new console `!!`/`Unknown command` lines. It's stateful, so it reports only new problems (loud) and recoveries (silent). On aali-cli the jobctl job `farm-monitor` runs it every 2 min and sends alerts through the ops Telegram bot. Each `Printer` carries its `fluidd` URL. Fluidd can't choose an instance from the URL, so a shared Fluidd gets a `fluidd_note`.
 - **`farm/net.py`** holds the stdlib HTTP helpers. Use it rather than adding `requests`.
 
 ## Rules

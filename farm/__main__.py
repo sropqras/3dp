@@ -5,6 +5,7 @@
   watch <run-dir>             follow a started run; stops at first layer / colour change / finish / error
   status [printer]            show printer state
   audit [printer]             check live Klipper configs against the farm baseline (read-only)
+  monitor [--state FILE]      one pass of the serious-error monitor; prints new alerts as '<loud|silent>\t<text>'
   serve [--port 10111]        farm control room: live printers, cameras, spools, jobs, batch progress
 """
 import argparse
@@ -13,7 +14,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import audit, config, gcode, likhan, moonraker, printers, project, slicer, watch
+from . import audit, config, gcode, likhan, monitor, moonraker, printers, project, slicer, watch
 from .runlog import Run
 
 
@@ -98,6 +99,12 @@ def cmd_audit(args):
     sys.exit(1 if fails else 0)
 
 
+def cmd_monitor(args):
+    for level, text in monitor.run(Path(args.state)):
+        # one alert per line for the shell job: newlines inside an alert travel as \n
+        print(f"{level}\t{text.replace(chr(10), chr(92) + 'n')}")
+
+
 def cmd_status(args):
     for name in [args.printer] if args.printer else printers.PRINTERS:
         print(name, moonraker.status(printers.get(name)))
@@ -119,6 +126,8 @@ def main():
                    help="next: stop at first layer done too; event: only pause/finish/error")
     a = sub.add_parser("audit")
     a.add_argument("printer", nargs="?")
+    m = sub.add_parser("monitor")
+    m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))
     v = sub.add_parser("serve")
     v.add_argument("--host", default="0.0.0.0")
     v.add_argument("--port", type=int, default=10111)
@@ -126,7 +135,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor}[args.cmd](args)
 
 
 if __name__ == "__main__":

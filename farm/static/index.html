@@ -30,6 +30,9 @@ main > *, .grid > *, .body > *, .split > * { min-width: 0; }
   border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
 .ph { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
 .ph .name { font-weight: 700; font-size: 16px; } .ph .host { color: var(--dim); font-size: 12px; }
+a.fluidd { color: var(--blue); font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; }
+a.fluidd:hover { border-color: var(--blue); }
+.ph .chip, a.fluidd { white-space: nowrap; } .ph { flex-wrap: wrap; } .facts .job { overflow-wrap: anywhere; }
 .pill { margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: capitalize; }
 .s-printing { background: rgba(45,212,191,.15); color: var(--teal); }
 .s-paused { background: rgba(251,191,36,.15); color: var(--amber); }
@@ -158,8 +161,12 @@ function tempRow(label, t) {
   return `<div class="temp"><span>${label}</span><div class="bar"><i style="width:${pct}%"></i></div><span><b style="color:var(--text)">${a.toFixed(0)}°</b> / ${tg.toFixed(0)}°</span></div>`;
 }
 
+function fluiddLink(p) {
+  return p.fluidd ? `<a class="fluidd" href="${esc(p.fluidd)}" target="_blank" rel="noopener" title="${esc(p.fluidd_note || "open this printer in Fluidd")}">Fluidd ↗</a>` : "";
+}
+
 function printerCard(p) {
-  if (!p.online) return `<div class="card"><div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>
+  if (!p.online) return `<div class="card"><div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}
     <span class="pill s-offline">offline</span></div><div class="alert">${esc(p.error || "unreachable")}</div></div>`;
   const state = p.klipper !== "ready" ? "error" : (p.paused ? "paused" : p.job);
   const color = state === "paused" ? "var(--amber)" : state === "printing" ? "var(--teal)" : "var(--dim)";
@@ -173,8 +180,9 @@ function printerCard(p) {
   const next = p.next ? `<div class="row">Next: <b>${esc(p.next.what)}</b> in <b>${hm(p.next.in_s)}</b></div>` : "";
   const active = ["printing", "paused"].includes(p.job);
   return `<div class="card">
-    <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span></div>
+    <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span></div>
     ${p.alert ? `<div class="alert">⚑ ${esc(p.alert)}</div>` : ""}
+    ${p.fluidd_note ? `<div class="stamp" style="padding:0 16px 8px">Fluidd: ${esc(p.fluidd_note)}</div>` : ""}
     <div class="body">
       ${p.has_cam ? `<div class="cam ${boost[p.name] !== false ? "boost" : ""}" onclick="toggleBoost('${esc(p.name)}')" title="click: toggle low-light boost">
         <img id="cam-${esc(p.name)}" src="/api/cam/${encodeURIComponent(p.name)}?t=${Date.now()}" alt="${esc(p.name)} camera">

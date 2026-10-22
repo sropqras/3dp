@@ -19,6 +19,8 @@ class Printer:
     print_preset: str
     filament_presets: dict    # material key -> preset name
     readonly: bool = False    # watch-only: shown in Farm Control and audited, never sent jobs
+    fluidd: str = ""          # Fluidd web UI for this printer (IP, not .local: phones on Tailscale can't resolve mDNS)
+    fluidd_note: str = ""     # Fluidd can't pick an instance from the URL; say which one to choose when it's shared
 
     @property
     def bed_center(self):
@@ -29,6 +31,7 @@ PRINTERS = {
     "Ender3MaxNeo": Printer(
         name="Ender3MaxNeo",
         moonraker="http://192.168.1.184:7125",
+        fluidd="http://192.168.1.184/",       # enders3dp's one Fluidd; with no saved choice it opens this instance
         bed_min=(5.0, 5.0),
         bed_max=(295.0, 295.0),
         max_z=300.0,
@@ -43,6 +46,7 @@ PRINTERS = {
     "enders1plus": Printer(
         name="enders1plus",
         moonraker="http://3dpnas.local:7125",
+        fluidd="http://192.168.1.68/",        # 3dpnas
         bed_min=(5.0, 5.0),
         bed_max=(295.0, 295.0),
         max_z=300.0,
@@ -57,6 +61,8 @@ PRINTERS = {
     "EnderV3SE": Printer(
         name="EnderV3SE",
         moonraker="http://192.168.1.184:7128",
+        fluidd="http://192.168.1.184/",
+        fluidd_note="shared Fluidd: choose EnderV3SE (:7128) in its printer menu",
         bed_min=(5.0, 5.0),
         bed_max=(215.0, 215.0),
         max_z=250.0,

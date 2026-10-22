@@ -86,7 +86,8 @@ Q = ("print_stats=state,filename,print_duration,message&virtual_sdcard=progress,
 
 
 def printer_view(p, runs_by_remote: dict) -> dict:
-    v = {"name": p.name, "host": urllib.parse.urlparse(p.moonraker).hostname, "online": False, "readonly": p.readonly}
+    v = {"name": p.name, "host": urllib.parse.urlparse(p.moonraker).hostname, "online": False, "readonly": p.readonly,
+         "fluidd": p.fluidd, "fluidd_note": p.fluidd_note}
     try:
         s = net.get_json(f"{p.moonraker}/printer/objects/query?{Q}", timeout=4)["result"]["status"]
     except Exception as e:
