@@ -1,12 +1,14 @@
 """One folder per run under runs/, with a run.log mirrored to the console and a manifest.json."""
 import json
+import os
 import re
 import time
 from pathlib import Path
 
 from .printers import REPO
 
-RUNS_DIR = REPO / "runs"
+# tests and the golden harness point this elsewhere so they never mix with real runs
+RUNS_DIR = Path(os.environ.get("FARM_RUNS_DIR", REPO / "runs"))
 
 
 class Run:
