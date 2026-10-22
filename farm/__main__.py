@@ -2,6 +2,7 @@
 
   run <job.json> [--upload]   generate (likhan) -> slice -> validate [-> upload]; writes runs/<stamp>_<job>/
   start <run-dir>             start an uploaded run on its printer (visual gate: bed clear, base colour loaded)
+  watch <run-dir>             follow a started run; stops at first layer / colour change / finish / error
   status [printer]            show printer state
 """
 import argparse
@@ -10,7 +11,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, gcode, likhan, moonraker, printers, project, slicer
+from . import config, gcode, likhan, moonraker, printers, project, slicer, watch
 from .runlog import Run
 
 
@@ -59,6 +60,16 @@ def cmd_start(args):
     moonraker.start(run, printer, remotes[0])
 
 
+def cmd_watch(args):
+    run_dir = Path(args.run_dir)
+    job = json.loads((run_dir / "job.json").read_text(encoding="utf-8"))
+    printer = printers.get(job["printer"])
+    gcodes = sorted(run_dir.glob("*.gcode"))
+    run = Run.resume(run_dir)
+    result = watch.watch(run, printer, gcodes[0], until=args.until)
+    run.log(f"watch: {result}")
+
+
 def cmd_status(args):
     for name in [args.printer] if args.printer else printers.PRINTERS:
         print(name, moonraker.status(printers.get(name)))
@@ -74,8 +85,12 @@ def main():
     s.add_argument("run_dir")
     t = sub.add_parser("status")
     t.add_argument("printer", nargs="?")
+    w = sub.add_parser("watch")
+    w.add_argument("run_dir")
+    w.add_argument("--until", choices=["next", "event"], default="next",
+                   help="next: stop at first layer done too; event: only pause/finish/error")
     args = ap.parse_args()
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch}[args.cmd](args)
 
 
 if __name__ == "__main__":
