@@ -9,3 +9,8 @@ printer-2*.cfg
 *.bak-*
 *.zip
 *.gcode
+
+# Pipeline runs (local working output) and licensed fonts
+runs/
+assets/fonts/
+__pycache__/

@@ -47,4 +47,5 @@ Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.loca
 |---|---|---|
 | 2026-10-22 | Ender3MaxNeo | Removed phantom filament sensors (btt_sfs include), CLEAR_PAUSE in START_PRINT, fixed FC_RESUME, removed duplicate screws_tilt_adjust |
 | 2026-10-22 | Ender3MaxNeo | Paused-safe idle timeout, guided M600 colour change |
+| 2026-10-22 | farm | Production pipeline `python -m farm` (likhan -> slice -> M600 -> checks -> Moonraker), see PIPELINE.md |
 | 2026-10-22 | Ender3MaxNeo | PrusaSlicer PETG 0.6 presets with 13 mm³/s cap (`prusa/MaxNeo_PETG_0.6_profiles.ini`) |

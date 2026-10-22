@@ -1,0 +1,25 @@
+{
+  "name": "Qabrastaan A01",
+  "printer": "Ender3MaxNeo",
+  "material": "petg",
+  "layer_height": 0.4,
+  "colour_changes": ["base_top"],
+  "colours": ["plate colour", "letter colour"],
+  "upload_folder": "farm/qabrastaan",
+  "font": "CharlesWright-Bold.otf",
+  "likhan": {
+    "mode": "text",
+    "text": "A01",
+    "font_size_mm": 90,
+    "letter_height_mm": 6,
+    "base": true,
+    "base_corner_style": "round",
+    "base_corner_radius_mm": 4,
+    "base_thickness_mm": 4,
+    "base_margin_mm": 15,
+    "text_embed_mm": 0,
+    "bed_margin_mm": 5,
+    "auto_split": true,
+    "min_piece_mm": 15
+  }
+}
