@@ -5,6 +5,7 @@
   "layer_height": 0.4,
   "colour_changes": ["base_top"],
   "colours": ["plate colour", "letter colour"],
+  "colour_hex": ["#2B2B2B", "#F2F2F2"],
   "upload_folder": "farm/qabrastaan",
   "font": "CharlesWright-Bold.otf",
   "likhan": {

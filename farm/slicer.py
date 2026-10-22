@@ -74,7 +74,7 @@ def slice_model(run, printer, stl: Path, material: str, layer_h: float, change_z
         run.log(f"slice: M600 inserted after layer top z={z} (before layer z={at})")
     run.step("slice", cmd=cmd, first_layer=first, layer_height=layer_h, gcode=str(out),
              colour_changes=[{"after_z": z, "before_layer_z": at} for z, at in inserted])
-    return out
+    return out, cmd, [at for _z, at in inserted]
 
 
 def insert_colour_changes(gcode: Path, change_zs: list[float]) -> list[tuple]:

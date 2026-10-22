@@ -10,7 +10,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, gcode, likhan, moonraker, printers, slicer
+from . import config, gcode, likhan, moonraker, printers, project, slicer
 from .runlog import Run
 
 
@@ -32,8 +32,9 @@ def cmd_run(args):
     change_zs = [params["base_thickness_mm"] if z == "base_top" else float(z) for z in job.get("colour_changes", [])]
     outputs = []
     for stl in stls:
-        out = slicer.slice_model(run, printer, stl, job["material"], job["layer_height"], change_zs)
+        out, cmd, colour_layers = slicer.slice_model(run, printer, stl, job["material"], job["layer_height"], change_zs)
         gcode.validate(run, out, printer, change_zs, max_flow=job.get("max_volumetric_speed", 13))
+        project.export_project(run, cmd, out, colour_layers, job.get("colour_hex", []))
         outputs.append(out)
 
     if args.upload:

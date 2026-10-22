@@ -19,12 +19,13 @@ slicer inputs), `slicer.log`, and the G-code.
 |---|---|---|
 | Generate | `farm/likhan.py` | Model sized for the target printer's bed (job bed settings are overridden from `farm/printers.py`) |
 | Slice | `farm/slicer.py` | Presets extracted from `prusa/*.ini`; first layer adjusted so every colour change lands exactly on a layer top; `M600` inserted before the first layer above it |
+| Project | `farm/project.py` | `<job>.3mf` for the visual gate: same geometry and resolved config as the G-code, colour changes on the layer slider |
 | Check | `farm/gcode.py` | One `START_PRINT` with no slicer temps before it, `PRINT_END` present, M600 count matches the job, volumetric cap set and ≤ job max, extrusion inside the bed, height ≤ printer max |
 | Upload / start | `farm/moonraker.py` | Upload to `gcodes/<upload_folder>/`; start refuses unless Klipper is ready, not printing, not paused |
 
 ## Visual gates (human)
 
-1. **Before start**: bed clear, first colour loaded, nozzle clean.
+1. **Open the run's `.3mf` in PrusaSlicer** (Preview tab) and check the model, colours and layer slider; then **before start**: bed clear, first colour loaded, nozzle clean.
 2. **At the colour change**: Fluidd shows the LOAD / PURGE / RESUME prompt (`M600` on printers with `has_m600_prompt`).
 3. **First layer**: watch the first layer go down; cancel from Fluidd if it isn't sticking.
 
