@@ -61,6 +61,10 @@ def main(mode: str) -> int:
             ref.write_text(json.dumps({"slicer": version, "gcode": got}, indent=2) + "\n")
             print(f"recorded {job.name}: {got}")
             continue
+        if not ref.exists():
+            print(f"MISSING {job.name}: no golden recorded yet (python3 tests/golden.py record)")
+            bad += 1
+            continue
         want = json.loads(ref.read_text())
         if want["slicer"] != version:
             print(f"SKIP {job.name}: golden recorded with PrusaSlicer {want['slicer']}, this is {version} (re-record)")

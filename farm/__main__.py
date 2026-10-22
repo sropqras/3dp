@@ -6,6 +6,7 @@
   status [printer]            show printer state
   audit [printer]             check live Klipper configs against the farm baseline (read-only)
   db init | import-runs       create/migrate data/farm.db; backfill runs/ made before it existed
+  presets check               static check of every print profile's PrusaSlicer presets (farm/profiles.py)
   doctor                      is this host ready to produce: slicer version, maker apps, fonts (read-only)
   monitor [--state FILE]      one pass of the serious-error monitor; prints new alerts as '<loud|silent>\t<text>'
   serve [--port 10111]        farm control room: live printers, cameras, spools, jobs, batch progress
@@ -16,7 +17,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import audit, config, gcode, likhan, monitor, moonraker, pipeline, printers, project, slicer, watch
+from . import audit, config, gcode, likhan, monitor, moonraker, pipeline, printers, profiles, project, slicer, watch
 from .runlog import Run
 
 
@@ -38,7 +39,10 @@ def cmd_run(args):
 
 def _run_stages(args, job, job_path, printer, run, rec):
     shutil.copy(job_path, run.path("job.json"))
-    run.log(f"run: {job['name']} on {printer.name} -> {run.dir}")
+    profile = profiles.get(job["profile"]) if job.get("profile") else profiles.legacy(printer, job["material"])
+    run.log(f"run: {job['name']} on {printer.name} with profile {profile.id} -> {run.dir}")
+    if not profile.confirmed:
+        run.log(f"run: profile {profile.id} is UNCONFIRMED ({profile.note}): review only, not for production")
 
     params = dict(job["likhan"])
     # size pieces for the printer it will actually print on, not the form default
@@ -61,13 +65,17 @@ def _run_stages(args, job, job_path, printer, run, rec):
 
     outputs = []
     for bed in beds:
-        out, cmd, colour_layers = slicer.slice_model(run, printer, bed, job["material"], job["layer_height"], change_zs)
-        facts = gcode.validate(run, out, printer, change_zs, max_flow=job.get("max_volumetric_speed", 13))
+        out, cmd, colour_layers = slicer.slice_model(run, printer, bed, profile.material, job["layer_height"],
+                                                     change_zs, profile=profile)
+        facts = gcode.validate(run, out, printer, change_zs,
+                               max_flow=job.get("max_volumetric_speed", profile.max_volumetric))
         proj = project.export_project(run, cmd, out, colour_layers, job.get("colour_hex", []))
         rec.build_sliced(out, facts, proj)
         outputs.append(out)
 
     if args.upload:
+        if not profile.confirmed:
+            run.fail(f"profile {profile.id} is unconfirmed ({profile.note}); not uploading")
         remotes = [moonraker.upload(run, printer, out, job.get("upload_folder", "farm")) for out in outputs]
         run.manifest["uploaded"] = remotes
         rec.uploaded(remotes)
@@ -130,6 +138,18 @@ def cmd_db(args):
         print(f"imported {len(done)} run(s)" + (": " + ", ".join(done) if done else ""))
 
 
+def cmd_presets(args):
+    bad = 0
+    for p in profiles.PROFILES.values():
+        problems = profiles.check(p)
+        bad += bool(problems)
+        flag = "" if p.confirmed else f"  [UNCONFIRMED: {p.note}]"
+        print(f"{'OK  ' if not problems else 'FAIL'} {p.id}: {p.name} on {', '.join(p.printers)}{flag}")
+        for pr in problems:
+            print(f"     - {pr}")
+    sys.exit(1 if bad else 0)
+
+
 def cmd_doctor(args):
     from . import doctor
     n = doctor.report()
@@ -159,6 +179,8 @@ def main():
     a = sub.add_parser("audit")
     a.add_argument("printer", nargs="?")
     sub.add_parser("doctor")
+    pc = sub.add_parser("presets")
+    pc.add_argument("action", choices=["check"])
     d = sub.add_parser("db")
     d.add_argument("action", choices=["init", "import-runs"])
     m = sub.add_parser("monitor")
@@ -170,7 +192,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets}[args.cmd](args)
 
 
 if __name__ == "__main__":

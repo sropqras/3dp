@@ -35,6 +35,11 @@ class Validate(unittest.TestCase):
     def test_start_print_missing_or_twice(self):
         self.assertRefused(helpers.gcode(start=None), "expected one START_PRINT")
 
+    def test_start_print_needs_numeric_temperatures(self):
+        self.assertRefused(helpers.gcode(start="START_PRINT EXTRUDER_TEMP={first_layer_temperature[0]} BED_TEMP=80"),
+                           "no numeric EXTRUDER_TEMP")
+        self.assertRefused(helpers.gcode(start="START_PRINT"), "no numeric BED_TEMP")
+
     def test_print_end_missing(self):
         self.assertRefused(helpers.gcode(end=False), "PRINT_END missing")
 

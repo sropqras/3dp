@@ -10,7 +10,7 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-from . import config
+from . import config, profiles
 
 EPS = 1e-4
 
@@ -50,19 +50,25 @@ def align_first_layer(layer_h: float, change_zs: list[float], lo: float = 0.25, 
 
 
 def slice_model(run, printer, stls: list[Path], material: str, layer_h: float, change_zs: list[float],
-                spacing_mm: float = 10.0) -> Path:
-    """Slice one or more STLs onto one bed (PrusaSlicer arranges several, spacing_mm apart)."""
+                spacing_mm: float = 10.0, profile=None) -> Path:
+    """Slice one or more STLs onto one bed (PrusaSlicer arranges several, spacing_mm apart) with the job's
+    profile; jobs without one get the printer's own presets (profiles.legacy), exactly as before profiles."""
+    profile = profile or profiles.legacy(printer, material)
+    if not profile.allows(printer.name):
+        run.fail(f"profile {profile.id} is not for {printer.name} (only {', '.join(profile.printers)})")
+    if layer_h not in profile.layer_heights:
+        run.log(f"slice: note: layer {layer_h} mm is not one of {profile.id}'s choices {profile.layer_heights}")
     stls = [stls] if isinstance(stls, Path) else list(stls)
     presets = run.path("presets")
     presets.mkdir(exist_ok=True)
-    p_ini = extract_preset(printer.bundle, "printer", printer.printer_preset, presets / "printer.ini")
-    f_ini = extract_preset(printer.bundle, "filament", printer.filament_presets[material], presets / "filament.ini")
-    s_ini = extract_preset(printer.bundle, "print", printer.print_preset, presets / "print.ini")
+    p_ini = extract_preset(profile.bundle, "printer", profile.printer_preset, presets / "printer.ini")
+    f_ini = extract_preset(profile.bundle, "filament", profile.filament_preset, presets / "filament.ini")
+    s_ini = extract_preset(profile.bundle, "print", profile.print_preset, presets / "print.ini")
 
-    first = align_first_layer(layer_h, change_zs)
+    first = align_first_layer(layer_h, change_zs, *profile.first_layer)
     cx, cy = printer.bed_center
     stem = "+".join(s.stem for s in stls)  # computed before layout_bed swaps the STLs for bed.3mf
-    out = run.path(f"{stem}_{layer_h}mm_{material}_{printer.name}.gcode")
+    out = run.path(f"{stem}_{layer_h}mm_{profile.material}_{printer.name}.gcode")
     if len(stls) == 1:
         placement = ["--center", f"{cx},{cy}"]
     else:
@@ -84,7 +90,7 @@ def slice_model(run, printer, stls: list[Path], material: str, layer_h: float, c
     inserted = insert_colour_changes(out, change_zs)
     for z, at in inserted:
         run.log(f"slice: M600 inserted after layer top z={z} (before layer z={at})")
-    run.step("slice", cmd=cmd, first_layer=first, layer_height=layer_h, gcode=str(out),
+    run.step("slice", cmd=cmd, profile=profile.id, first_layer=first, layer_height=layer_h, gcode=str(out),
              colour_changes=[{"after_z": z, "before_layer_z": at} for z, at in inserted])
     return out, cmd, [at for _z, at in inserted]
 

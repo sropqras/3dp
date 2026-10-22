@@ -16,6 +16,11 @@ def validate(run, gcode: Path, printer, change_zs: list[float], max_flow: float)
         problems.append(f"expected one START_PRINT, found {len(start)}")
     else:
         facts["start_print"] = lines[start[0]]
+        # START_PRINT is what heats the printer: both temperatures must arrive as numbers, not as an unexpanded
+        # {placeholder} (that the preset uses placeholders rather than literals is `farm presets check`'s job)
+        for param in ("EXTRUDER_TEMP", "BED_TEMP"):
+            if not re.search(rf"\b{param}=\d+(\.\d+)?\b", lines[start[0]]):
+                problems.append(f"START_PRINT has no numeric {param}: {lines[start[0]]}")
         early = [l for l in lines[:start[0]] if re.match(r"^M(104|109|140|190) ", l)]
         if early:
             problems.append(f"temperature commands before START_PRINT: {early}")

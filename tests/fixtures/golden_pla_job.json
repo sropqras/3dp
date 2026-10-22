@@ -1,0 +1,14 @@
+{
+  "name": "GOLDEN hyper PLA plate",
+  "printer": "enders1plus",
+  "profile": "neo-hyperpla-028-litho",
+  "layer_height": 0.28,
+  "colour_changes": [],
+  "colours": ["white"],
+  "colour_hex": ["#F2F2F2"],
+  "likhan": {
+    "mode": "text", "text": "P1", "font_size_mm": 60, "letter_height_mm": 3, "base": true,
+    "base_corner_style": "round", "base_corner_radius_mm": 4, "base_thickness_mm": 2, "base_margin_mm": 8,
+    "text_embed_mm": 0, "bed_margin_mm": 5, "auto_split": true, "min_piece_mm": 15
+  }
+}

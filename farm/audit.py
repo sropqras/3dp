@@ -44,6 +44,10 @@ def rules(s: dict, printer) -> list[tuple]:
 
     start = _code_lines(_gcode(s, "START_PRINT"))
     check(bool(start), "START_PRINT macro exists", "pipeline G-code calls START_PRINT EXTRUDER_TEMP= BED_TEMP=")
+    raw_start = _gcode(s, "START_PRINT")
+    check("params.EXTRUDER_TEMP" in raw_start and "params.BED_TEMP" in raw_start,
+          "START_PRINT reads EXTRUDER_TEMP and BED_TEMP",
+          "farm profiles pass the filament's temperatures as START_PRINT parameters")
     check("CLEAR_PAUSE" in start, "START_PRINT runs CLEAR_PAUSE",
           "stale pause made PAUSE answer 'already paused' and the print snapped back (MaxNeo)")
 

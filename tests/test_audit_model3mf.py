@@ -14,7 +14,9 @@ NEO = printers.PRINTERS["Ender3MaxNeo"]
 GOOD = {
     "printer": {"max_velocity": 200, "max_accel": 3000},
     "pause_resume": {"recover_velocity": 150.0},
-    "gcode_macro start_print": {"gcode": "CLEAR_PAUSE\nBED_MESH_CALIBRATE\nLINE_PURGE"},
+    "gcode_macro start_print": {"gcode": "{% set BED_TEMP = params.BED_TEMP|default(70)|float %}\n"
+                                         "{% set EXTRUDER_TEMP = params.EXTRUDER_TEMP|default(220)|float %}\n"
+                                         "CLEAR_PAUSE\nBED_MESH_CALIBRATE\nLINE_PURGE"},
     "gcode_macro m600": {"gcode": "PAUSE\n_COLOUR_CHANGE_PROMPT"},
     "gcode_macro _colour_change_prompt": {"gcode": "RESPOND TYPE=command MSG=action:prompt_begin\n"
                                                     "TELEGRAM PREFIX=tgalarm_photo"},
@@ -42,7 +44,9 @@ class AuditRules(unittest.TestCase):
             "max_velocity": lambda s: s["printer"].update(max_velocity=300),
             "max_accel": lambda s: s["printer"].update(max_accel=5000),
             "recover_velocity": lambda s: s["pause_resume"].update(recover_velocity=25),
-            "CLEAR_PAUSE": lambda s: s["gcode_macro start_print"].update(gcode="BED_MESH_CALIBRATE"),
+            "CLEAR_PAUSE": lambda s: s["gcode_macro start_print"].update(
+                gcode="params.BED_TEMP params.EXTRUDER_TEMP BED_MESH_CALIBRATE"),
+            "reads EXTRUDER_TEMP": lambda s: s["gcode_macro start_print"].update(gcode="CLEAR_PAUSE\nM190 S70"),
             "auto-unload": lambda s: s["gcode_macro m600"].update(gcode="PAUSE\nUNLOAD_FILAMENT\n_COLOUR_CHANGE_PROMPT"),
             "tgalarm": lambda s: s["gcode_macro _colour_change_prompt"].update(gcode="RESPOND MSG=x"),
             "letter+digits": lambda s: s.update({"gcode_macro _m600_prompt": {"gcode": ""}}),
