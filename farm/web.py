@@ -49,7 +49,7 @@ def load_runs() -> list[dict]:
         except (OSError, ValueError):
             continue
         val = man.get("steps", {}).get("validate", {})
-        labels = job.get("plates") or ([job["likhan"]["text"]] if job.get("likhan", {}).get("text") else [])
+        labels = [pl["text"] if isinstance(pl, dict) else pl for pl in job.get("plates", [])] or ([job["likhan"]["text"]] if job.get("likhan", {}).get("text") else [])
         gcodes = sorted(m.parent.glob("*.gcode"))
         runs.append({
             "dir": m.parent.name, "job": man.get("job"), "printer": job.get("printer"),

@@ -37,8 +37,10 @@ def cmd_run(args):
     # "plates": several labels on ONE bed (one STL each, arranged together); else one design, one or more
     # auto-split pieces, each its own bed
     if job.get("plates"):
-        stls = [s for text in job["plates"]
-                for s in likhan.generate(run, config.LIKHAN_URL, {**params, "text": text}, str(font) if font else None)]
+        # a plate is a label, or {"text": ..., <likhan overrides>} e.g. a smaller font_size_mm for the CH row
+        plates = [pl if isinstance(pl, dict) else {"text": pl} for pl in job["plates"]]
+        stls = [s for pl in plates
+                for s in likhan.generate(run, config.LIKHAN_URL, {**params, **pl}, str(font) if font else None)]
         beds = [stls]
     else:
         beds = [[s] for s in likhan.generate(run, config.LIKHAN_URL, params, str(font) if font else None)]

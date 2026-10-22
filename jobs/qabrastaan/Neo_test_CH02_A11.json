@@ -1,0 +1,18 @@
+{
+  "name": "Qabrastaan CH02+A11 extremes test",
+  "printer": "Ender3MaxNeo",
+  "material": "petg",
+  "layer_height": 0.4,
+  "colour_changes": ["base_top"],
+  "colours": ["plate colour (black PETG)", "letter colour"],
+  "colour_hex": ["#1c1c1c", "#F2F2F2"],
+  "upload_folder": "farm/qabrastaan",
+  "font": "CharlesWright-Bold.otf",
+  "plates": [{"text": "CH02", "font_size_mm": 66}, "A11"],
+  "likhan": {
+    "mode": "text", "font_size_mm": 90, "letter_height_mm": 6,
+    "base": true, "base_corner_style": "round", "base_corner_radius_mm": 4, "base_thickness_mm": 4,
+    "base_margin_mm": 15, "base_width_mm": 185, "base_depth_mm": 103, "text_embed_mm": 0,
+    "bed_margin_mm": 5, "auto_split": true, "min_piece_mm": 15
+  }
+}

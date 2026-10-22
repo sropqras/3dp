@@ -1,6 +1,6 @@
 {
   "name": "Qabrastaan grave plates",
-  "note": "185 x 103 mm, Charles Wright Bold 90 mm, black plate + letter colour. Count and children's labels still to confirm (635 listed vs 580 expected).",
+  "note": "185 x 103 mm, Charles Wright Bold 90 mm, black plate + letter colour. Children's row CH01-CH17 at 66 mm font (52.6 mm letters) to fit the same plate. Count still to confirm (635 listed vs 580 expected).",
   "plates_per_bed": 2,
   "hours_per_bed": 3.93,
   "rows": [
@@ -8,7 +8,7 @@
     {"prefix": "D", "count": 26}, {"prefix": "E", "count": 31}, {"prefix": "F", "count": 29},
     {"prefix": "G", "count": 33}, {"prefix": "H", "count": 37}, {"prefix": "J", "count": 41},
     {"prefix": "K", "count": 42}, {"prefix": "L", "count": 28},
-    {"prefix": "CH", "count": 17, "name": "Children"},
+    {"prefix": "CH", "count": 17, "name": "Children", "font_size_mm": 66},
     {"prefix": "M", "count": 52}, {"prefix": "N", "count": 49}, {"prefix": "P", "count": 51},
     {"prefix": "Q", "count": 52}, {"prefix": "R", "count": 50}
   ]
