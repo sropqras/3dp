@@ -44,7 +44,7 @@ After=network-online.target
 WorkingDirectory=%h/3dp
 Environment=FARM_PRUSASLICER=flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer
 Environment=FARM_LIKHAN_URL=http://127.0.0.1:4111
-ExecStart=/usr/bin/python3 -m farm serve --host 0.0.0.0 --port 8090
+ExecStart=/usr/bin/python3 -m farm serve --host 0.0.0.0 --port 10111
 Restart=on-failure
 
 [Install]
@@ -54,10 +54,10 @@ WantedBy=default.target
 ```bash
 systemctl --user daemon-reload && systemctl --user enable --now farm-control
 loginctl enable-linger "$USER"     # keep it running without a login session
-# open http://192.168.1.107:8090
+# open http://192.168.1.107:10111
 ```
 
-LAN only, no authentication: don't expose port 8090 outside the network. The spool inventory is stored in
+LAN only, no authentication: don't expose port 10111 outside the network. The spool inventory is stored in
 `data/inventory.json` (gitignored; seeded from `data/inventory.example.json` on first start).
 
 ## Printers it talks to

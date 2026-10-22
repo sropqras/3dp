@@ -8,7 +8,7 @@ python -m farm run jobs/qabrastaan/A01.json   # generate + slice + check (no pri
 python -m farm run jobs/qabrastaan/A01.json --upload
 python -m farm start runs/<stamp>_<job>       # only after the visual gate
 python -m farm audit [printer]                # live configs vs farm baseline rules (lessons from every printer)
-python -m farm serve --port 8090              # Farm Control web UI (printers, cameras, spools, jobs, batch grid)
+python -m farm serve --port 10111             # Farm Control web UI (printers, cameras, spools, jobs, batch grid)
 python -m farm watch runs/<stamp>_<job>       # follow it: first layer / colour change / finish / error (monitor.log)
 ```
 

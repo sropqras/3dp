@@ -22,7 +22,7 @@ python3 -m farm run jobs/qabrastaan/A01.json  # likhan -> slice -> M600 -> check
 python3 -m farm run <job.json> --upload       # ...then upload to Moonraker
 python3 -m farm start runs/<stamp>_<job>      # only after the human visual gate
 python3 -m farm watch runs/<stamp>_<job>      # follow until first layer / colour change / finish / error
-python3 -m farm serve --port 8090             # Farm Control web UI (LAN only, no auth)
+python3 -m farm serve --port 10111            # Farm Control web UI (LAN only, no auth)
 scripts/backup-configs.sh [ssh-host]          # pull configs from enders3dp into printers/
 ```
 
