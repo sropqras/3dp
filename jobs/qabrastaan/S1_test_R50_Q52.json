@@ -3,12 +3,23 @@
   "printer": "enders1plus",
   "material": "petg",
   "layer_height": 0.4,
-  "colour_changes": ["base_top"],
-  "colours": ["plate colour (black PETG)", "letter colour"],
-  "colour_hex": ["#2B2B2B", "#F2F2F2"],
+  "colour_changes": [
+    "base_top"
+  ],
+  "colours": [
+    "plate colour (black PETG)",
+    "letter colour"
+  ],
+  "colour_hex": [
+    "#2B2B2B",
+    "#F2F2F2"
+  ],
   "upload_folder": "farm/qabrastaan",
   "font": "CharlesWright-Bold.otf",
-  "plates": ["R50", "Q52"],
+  "plates": [
+    "R50",
+    "Q52"
+  ],
   "likhan": {
     "mode": "text",
     "font_size_mm": 90,
@@ -23,6 +34,7 @@
     "text_embed_mm": 0,
     "bed_margin_mm": 5,
     "auto_split": true,
-    "min_piece_mm": 15
+    "min_piece_mm": 15,
+    "monospace": true
   }
 }
