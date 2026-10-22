@@ -36,6 +36,8 @@ Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.loca
 | Paused-safe idle timeout | ✅ | ❌ | ❌ | ❌ |
 | Telegram bot | ✅ | ❌ token rejected | ❌ token rejected | ❌ token rejected |
 
+enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22).
+
 ## Farm-wide features (rolled out per printer, tracked above)
 
 - **Paused-safe idle timeout** - while paused, the nozzle cools after 30 min; bed and motors stay on so the print can resume (overnight is fine). 12 h safety cap turns the bed off too; RESUME reheats nozzle and bed.
