@@ -37,7 +37,7 @@ Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.loca
 
 ## Farm-wide features (rolled out per printer, tracked above)
 
-- **Paused-safe idle timeout** - while paused only the nozzle cools; bed and motors stay on so the print can resume. RESUME reheats.
+- **Paused-safe idle timeout** - while paused, the nozzle cools after 30 min; bed and motors stay on so the print can resume (overnight is fine). 12 h safety cap turns the bed off too; RESUME reheats nozzle and bed.
 - **Guided colour change** - `M600` parks and shows a Fluidd prompt with UNLOAD / LOAD / PURGE / RESUME buttons. No auto-unload: on printers without a runout sensor an unattended eject lets the filament end tangle on the spool.
 - **CLEAR_PAUSE in START_PRINT** - a stale pause can never make PAUSE answer "Print already paused".
 
@@ -47,6 +47,7 @@ Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.loca
 |---|---|---|
 | 2026-10-22 | Ender3MaxNeo | Removed phantom filament sensors (btt_sfs include), CLEAR_PAUSE in START_PRINT, fixed FC_RESUME, removed duplicate screws_tilt_adjust |
 | 2026-10-22 | Ender3MaxNeo | Paused-safe idle timeout, guided M600 colour change |
+| 2026-10-22 | Ender3MaxNeo | 12 h pause safety cap (_PAUSE_HARD_STOP), RESUME reheats the bed if it was hit |
 | 2026-10-22 | Ender3MaxNeo | M600 no longer auto-unloads; UNLOAD button in the prompt |
 | 2026-10-22 | farm | Production pipeline `python -m farm` (likhan -> slice -> M600 -> checks -> Moonraker), see PIPELINE.md |
 | 2026-10-22 | Ender3MaxNeo | PrusaSlicer PETG 0.6 presets with 13 mm³/s cap (`prusa/MaxNeo_PETG_0.6_profiles.ini`) |
