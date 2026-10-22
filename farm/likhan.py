@@ -1,44 +1,21 @@
-"""Stage 1: ask the likhan-maker server for the model (single STL, or a zip of bed-sized pieces)."""
-import re
-import zipfile
+"""Stage 1 (legacy entry point): ask the likhan-maker server for the model. The request logic now lives in the
+maker adapter (farm/makers/likhan.py); this keeps the old call shape for scripts that use it."""
 from pathlib import Path
 
-from . import net
-
-
-def _safe_stem(text: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("_") or "model"
+from .makers import GenContext, MakerError, get
 
 
 def generate(run, server: str, params: dict, font_file: str | None) -> list[Path]:
-    fields = {k: ("1" if v is True else "0" if v is False else v) for k, v in params.items()}
-    files = {}
-    if font_file:
-        font = Path(font_file)
-        if not font.is_file():
-            run.fail(f"font file not found: {font}")
-        files["font"] = font
-        fields["font_name"] = "custom"
-
-    run.log(f"likhan: POST {server}/generate text={params.get('text')!r} font={Path(font_file).name if font_file else params.get('font_name')}")
-    status, headers, body = net.post_multipart(f"{server}/generate", fields, files)
-    info = {k: headers.get(k) for k in ("X-Likhan-Pieces", "X-Likhan-Width", "X-Likhan-Height", "X-Likhan-Triangles")}
-    run.log(f"likhan: {status} pieces={info['X-Likhan-Pieces']} size={info['X-Likhan-Width']}x{info['X-Likhan-Height']} mm "
-            f"triangles={info['X-Likhan-Triangles']}")
-
-    ctype = headers.get("Content-Type", "")
-    if "zip" in ctype:
-        zpath = run.path(f"{_safe_stem(params.get('text') or 'model')}_pieces.zip")
-        zpath.write_bytes(body)
-        out = run.path("pieces")
-        with zipfile.ZipFile(zpath) as z:
-            z.extractall(out)
-        stls = sorted(out.glob("*.stl"))
-    else:
-        # the STL name becomes the EXCLUDE_OBJECT label and the G-code file name
-        stl = run.path(f"{_safe_stem(params.get('text') or 'model')}.stl")
-        stl.write_bytes(body)
-        stls = [stl]
-
-    run.step("likhan", server=server, params=params, font_file=font_file, response=info, stls=[str(s) for s in stls])
-    return stls
+    if font_file and not Path(font_file).is_file():
+        run.fail(f"font file not found: {font_file}")
+    maker = get("likhan")
+    ctx = GenContext(params=params, files={"font": font_file} if font_file else {},
+                     bed_mm=(params.get("bed_width_mm", 220), params.get("bed_depth_mm", 220), 1e9),
+                     nozzle=0, layer_height=0, out_dir=run.dir, log=run.log)
+    try:
+        res = maker.generate(ctx)
+    except MakerError as e:
+        run.fail(str(e))
+    run.step("likhan", server=server, params=params, font_file=font_file, response=res.stats,
+             stls=[str(m.path) for m in res.models])
+    return [m.path for m in res.models]
