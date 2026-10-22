@@ -83,7 +83,7 @@ Printing when the workstation session closed (printers run independently; nothin
 | Printer | Job | Next event |
 |---|---|---|
 | Ender3MaxNeo | CH02+A11 (black SP-003), started 23:06, ~3 h 40 m | colour change ~01:00: Fluidd prompt + Telegram tgalarm_photo |
-| enders1plus | R50+Q52 (black SP-001), started 22:25, ~3 h 56 m | colour change ~00:30: Fluidd prompt only (its Telegram alerts are staged, not live) |
+| enders1plus | R50+Q52 (black SP-001), started 22:25, ~3 h 56 m | first layer done 23:15; colour change ~00:45: Fluidd prompt only (its Telegram alerts are staged, not live) |
 | EnderV3SE | user's own job | watch-only, never touched |
 
 Letter-colour spool SP-002 is on the shelf, shared by both colour changes. A pause is safe overnight on both printers:
