@@ -1,8 +1,47 @@
 {
   "spools": [
-    {"id": "SP-001", "material": "PETG", "brand": "Creality", "colour": "Black", "hex": "#1c1c1c",
-     "weight_g": 1000, "remaining_g": 1000, "location": "enders1plus", "role": "plate"},
-    {"id": "SP-002", "material": "PETG", "brand": "Creality", "colour": "Letter colour", "hex": "#e8e8e8",
-     "weight_g": 1000, "remaining_g": 1000, "location": "Ender3MaxNeo", "role": "letters"}
+    {
+      "id": "SP-001",
+      "material": "PETG",
+      "brand": "Creality",
+      "colour": "Black",
+      "hex": "#1c1c1c",
+      "weight_g": 1000,
+      "remaining_g": 900,
+      "location": "enders1plus",
+      "role": "plate"
+    },
+    {
+      "id": "SP-002",
+      "material": "PETG",
+      "brand": "Creality",
+      "colour": "Letter colour",
+      "hex": "#e8e8e8",
+      "weight_g": 1000,
+      "remaining_g": 900,
+      "location": "shelf",
+      "role": "letters"
+    },
+    {
+      "id": "SP-003",
+      "material": "PETG",
+      "brand": "Creality",
+      "colour": "Black",
+      "hex": "#1c1c1c",
+      "weight_g": 1000,
+      "remaining_g": 1000,
+      "location": "Ender3MaxNeo",
+      "role": "plate"
+    },
+    {
+      "id": "SP-004",
+      "material": "PETG",
+      "brand": "Creality",
+      "colour": "Sealed - set colour",
+      "hex": "#6b7280",
+      "weight_g": 1000,
+      "remaining_g": 1000,
+      "location": "shelf"
+    }
   ]
 }
