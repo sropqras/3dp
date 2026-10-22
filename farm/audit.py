@@ -54,6 +54,10 @@ def rules(s: dict, printer) -> list[tuple]:
     prompt = [l for l in m600 if "PROMPT" in l]
     check(bool(prompt), "M600 shows the colour-change prompt", ", ".join(prompt) or "no prompt macro called")
 
+    prompt_code = " ".join(_gcode(s, l.split()[0]) for l in prompt)
+    check("PREFIX=tgalarm" in prompt_code, "colour change alerts Telegram (tgalarm)",
+          "a waiting colour change must reach a phone, not just the console")
+
     bad_names = [k[len("gcode_macro "):] for k in s if k.startswith("gcode_macro ")
                  and re.match(r"^_?[a-z]\d", k[len("gcode_macro "):])
                  and not re.match(r"^[gm]\d+(\.\d+)?$", k[len("gcode_macro "):])]

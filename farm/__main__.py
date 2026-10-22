@@ -21,6 +21,8 @@ def cmd_run(args):
     job_path = Path(args.job)
     job = json.loads(job_path.read_text(encoding="utf-8"))
     printer = printers.get(job["printer"])
+    if printer.readonly:
+        sys.exit(f"{printer.name} is watch-only (readonly in farm/printers.py); no jobs are sent to it")
     run = Run(job["name"])
     shutil.copy(job_path, run.path("job.json"))
     run.log(f"run: {job['name']} on {printer.name} -> {run.dir}")
@@ -66,6 +68,8 @@ def cmd_start(args):
     if len(remotes) != 1:
         sys.exit(f"{len(remotes)} pieces uploaded; start them one at a time from Fluidd")
     printer = printers.get(job["printer"])
+    if printer.readonly:
+        sys.exit(f"{printer.name} is watch-only; not starting")
     run = Run.resume(run_dir)
     # farm baseline: log every failing rule so a known lesson is never silently missing on this printer
     fails = [(r, d) for st, r, d in audit.rules(audit._settings(printer), printer) if st != "PASS"]

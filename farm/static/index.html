@@ -139,7 +139,7 @@ function printerCard(p) {
   const next = p.next ? `<div class="row">Next: <b>${esc(p.next.what)}</b> in <b>${hm(p.next.in_s)}</b></div>` : "";
   const active = ["printing", "paused"].includes(p.job);
   return `<div class="card">
-    <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span><span class="pill s-${state}">${esc(state)}</span></div>
+    <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span></div>
     ${p.alert ? `<div class="alert">⚑ ${esc(p.alert)}</div>` : ""}
     <div class="body">
       ${p.has_cam ? `<div class="cam ${boost[p.name] !== false ? "boost" : ""}" onclick="toggleBoost('${esc(p.name)}')" title="click: toggle low-light boost">

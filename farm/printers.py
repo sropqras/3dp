@@ -18,6 +18,7 @@ class Printer:
     printer_preset: str
     print_preset: str
     filament_presets: dict    # material key -> preset name
+    readonly: bool = False    # watch-only: shown in Farm Control and audited, never sent jobs
 
     @property
     def bed_center(self):
@@ -50,6 +51,21 @@ PRINTERS = {
         printer_preset="Ender3MaxNeo (S1Plus HW, Sprite Pro 0.6) - PETG",
         print_preset="0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
         filament_presets={"petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"},
+    ),
+    # Ender 3 V3 SE on enders3dp: the user's own production printer - WATCH ONLY (no jobs, no config changes)
+    # until they hand it over. Hardware mostly unconfirmed (FARM.md); filament sensor + Meross plug confirmed.
+    "EnderV3SE": Printer(
+        name="EnderV3SE",
+        moonraker="http://192.168.1.184:7128",
+        bed_min=(5.0, 5.0),
+        bed_max=(215.0, 215.0),
+        max_z=250.0,
+        has_m600_prompt=False,
+        bundle=PRUSA_DIR / "PrusaSlicer_config_bundle.ini",
+        printer_preset="Ender 3 V3 SE (Klipper)",
+        print_preset="",
+        filament_presets={},
+        readonly=True,
     ),
 }
 
