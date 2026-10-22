@@ -28,7 +28,7 @@ def generate(run, server: str, params: dict, font_file: str | None) -> list[Path
 
     ctype = headers.get("Content-Type", "")
     if "zip" in ctype:
-        zpath = run.path("likhan_pieces.zip")
+        zpath = run.path(f"{_safe_stem(params.get('text') or 'model')}_pieces.zip")
         zpath.write_bytes(body)
         out = run.path("pieces")
         with zipfile.ZipFile(zpath) as z:

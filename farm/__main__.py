@@ -28,12 +28,20 @@ def cmd_run(args):
     params["bed_width_mm"] = printer.bed_max[0] - printer.bed_min[0]
     params["bed_depth_mm"] = printer.bed_max[1] - printer.bed_min[1]
     font = config.FONTS_DIR / job["font"] if job.get("font") else None
-    stls = likhan.generate(run, config.LIKHAN_URL, params, str(font) if font else None)
-
     change_zs = [params["base_thickness_mm"] if z == "base_top" else float(z) for z in job.get("colour_changes", [])]
+
+    # "plates": several labels on ONE bed (one STL each, arranged together); else one design, one or more
+    # auto-split pieces, each its own bed
+    if job.get("plates"):
+        stls = [s for text in job["plates"]
+                for s in likhan.generate(run, config.LIKHAN_URL, {**params, "text": text}, str(font) if font else None)]
+        beds = [stls]
+    else:
+        beds = [[s] for s in likhan.generate(run, config.LIKHAN_URL, params, str(font) if font else None)]
+
     outputs = []
-    for stl in stls:
-        out, cmd, colour_layers = slicer.slice_model(run, printer, stl, job["material"], job["layer_height"], change_zs)
+    for bed in beds:
+        out, cmd, colour_layers = slicer.slice_model(run, printer, bed, job["material"], job["layer_height"], change_zs)
         gcode.validate(run, out, printer, change_zs, max_flow=job.get("max_volumetric_speed", 13))
         project.export_project(run, cmd, out, colour_layers, job.get("colour_hex", []))
         outputs.append(out)

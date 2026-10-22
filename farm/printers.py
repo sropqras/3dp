@@ -37,6 +37,20 @@ PRINTERS = {
         print_preset="0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
         filament_presets={"petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"},
     ),
+    # Ender 3 S1 Plus on 3dpnas: same bed and Sprite Pro 0.6 hotend as the MaxNeo (user: G-code is shared
+    # between them), so it uses the MaxNeo presets. Has a filament sensor; Klipper v0.13.
+    "enders1plus": Printer(
+        name="enders1plus",
+        moonraker="http://3dpnas.local:7125",
+        bed_min=(5.0, 5.0),
+        bed_max=(295.0, 295.0),
+        max_z=300.0,
+        has_m600_prompt=False,   # True once its guided M600 is deployed (FARM.md)
+        bundle=PRUSA_DIR / "MaxNeo_PETG_0.6_profiles.ini",
+        printer_preset="Ender3MaxNeo (S1Plus HW, Sprite Pro 0.6) - PETG",
+        print_preset="0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
+        filament_presets={"petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"},
+    ),
 }
 
 
