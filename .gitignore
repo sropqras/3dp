@@ -1,0 +1,11 @@
+# Printer secrets - never commit (excluded by scripts/backup-configs.sh too)
+telegram.conf
+moonraker-obico.cfg
+octoeverywhere.conf
+.moonraker.conf.bkp
+
+# Klipper auto-backups and local scratch
+printer-2*.cfg
+*.bak-*
+*.zip
+*.gcode

@@ -1,0 +1,1 @@
+timelapse.cfg -> /home/aali/moonraker-timelapse/klipper_macro/timelapse.cfg

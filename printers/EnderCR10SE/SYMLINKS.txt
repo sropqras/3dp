@@ -1,0 +1,4 @@
+timelapse.cfg -> /home/aali/moonraker-timelapse/klipper_macro/timelapse.cfg
+moonraker_obico_macros.cfg -> /home/aali/moonraker-obico/scripts/../include_cfgs/moonraker_obico_macros.cfg
+KAMP -> /home/aali/Klipper-Adaptive-Meshing-Purging/Configuration
+fluidd.cfg -> /home/aali/fluidd-config/client.cfg
