@@ -7,6 +7,7 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /api/overview          printers + jobs + batch + inventory in one payload (what the page polls)
   GET  /api/cam/<printer>     webcam snapshot proxied from the printer host
   GET  /api/model/<run>/<3mf> a run's project .3mf as viewer geometry (farm/model3mf.py)
+  GET  /api/builds[?state=]   builds from the farm DB (read-only; shadow mode until the queue lands)
   POST /api/inventory         replace the spool list (JSON body {"spools": [...]})
 """
 import json
@@ -17,7 +18,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, model3mf, net, printers, watch
+from . import audit, db, jobs, model3mf, net, printers, watch
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -231,6 +232,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
         if path == "/health":
             return self._send(200, b'{"ok":true}')
+        if path == "/api/builds":
+            state = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("state", [None])[0]
+            con = db.connect()
+            try:
+                return self._send(200, json.dumps(jobs.builds(con, state), default=str).encode())
+            finally:
+                con.close()
         if path == "/api/overview":
             return self._send(200, json.dumps(overview()).encode())
         if path.startswith("/api/cam/"):

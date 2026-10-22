@@ -15,3 +15,6 @@ runs/
 assets/fonts/
 __pycache__/
 data/inventory.json
+data/farm.db
+data/farm.db-*
+data/uploads/

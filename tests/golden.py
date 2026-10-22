@@ -40,7 +40,7 @@ def normalised_hash(gcode: Path) -> str:
 
 def run_job(job: Path) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
-        env = dict(os.environ, FARM_RUNS_DIR=tmp)
+        env = dict(os.environ, FARM_RUNS_DIR=tmp, FARM_DB=str(Path(tmp) / "farm.db"))
         proc = subprocess.run([sys.executable, "-m", "farm", "run", str(job)], cwd=REPO, env=env,
                               capture_output=True, text=True)
         if proc.returncode != 0:

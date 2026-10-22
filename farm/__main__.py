@@ -5,6 +5,7 @@
   watch <run-dir>             follow a started run; stops at first layer / colour change / finish / error
   status [printer]            show printer state
   audit [printer]             check live Klipper configs against the farm baseline (read-only)
+  db init | import-runs       create/migrate data/farm.db; backfill runs/ made before it existed
   doctor                      is this host ready to produce: slicer version, maker apps, fonts (read-only)
   monitor [--state FILE]      one pass of the serious-error monitor; prints new alerts as '<loud|silent>\t<text>'
   serve [--port 10111]        farm control room: live printers, cameras, spools, jobs, batch progress
@@ -15,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import audit, config, gcode, likhan, monitor, moonraker, printers, project, slicer, watch
+from . import audit, config, gcode, likhan, monitor, moonraker, pipeline, printers, project, slicer, watch
 from .runlog import Run
 
 
@@ -27,42 +28,54 @@ def cmd_run(args):
         sys.exit(f"{printer.name} is watch-only (readonly in farm/printers.py); no jobs are sent to it")
     run = Run(job["name"])
     with run.guard():
-        shutil.copy(job_path, run.path("job.json"))
-        run.log(f"run: {job['name']} on {printer.name} -> {run.dir}")
+        rec = pipeline.Recorder(run, job, printer)   # shadow: mirror the run into the farm DB
+        try:
+            _run_stages(args, job, job_path, printer, run, rec)
+        except BaseException as e:
+            rec.failed(str(e) or type(e).__name__)
+            raise
 
-        params = dict(job["likhan"])
-        # size pieces for the printer it will actually print on, not the form default
-        params["bed_width_mm"] = printer.bed_max[0] - printer.bed_min[0]
-        params["bed_depth_mm"] = printer.bed_max[1] - printer.bed_min[1]
-        font = config.FONTS_DIR / job["font"] if job.get("font") else None
-        change_zs = [params["base_thickness_mm"] if z == "base_top" else float(z) for z in job.get("colour_changes", [])]
 
-        # "plates": several labels on ONE bed (one STL each, arranged together); else one design, one or more
-        # auto-split pieces, each its own bed
-        if job.get("plates"):
-            # a plate is a label, or {"text": ..., <likhan overrides>} e.g. a smaller font_size_mm for the CH row
-            plates = [pl if isinstance(pl, dict) else {"text": pl} for pl in job["plates"]]
-            stls = [s for pl in plates
-                    for s in likhan.generate(run, config.LIKHAN_URL, {**params, **pl}, str(font) if font else None)]
-            beds = [stls]
-        else:
-            beds = [[s] for s in likhan.generate(run, config.LIKHAN_URL, params, str(font) if font else None)]
+def _run_stages(args, job, job_path, printer, run, rec):
+    shutil.copy(job_path, run.path("job.json"))
+    run.log(f"run: {job['name']} on {printer.name} -> {run.dir}")
 
-        outputs = []
-        for bed in beds:
-            out, cmd, colour_layers = slicer.slice_model(run, printer, bed, job["material"], job["layer_height"], change_zs)
-            gcode.validate(run, out, printer, change_zs, max_flow=job.get("max_volumetric_speed", 13))
-            project.export_project(run, cmd, out, colour_layers, job.get("colour_hex", []))
-            outputs.append(out)
+    params = dict(job["likhan"])
+    # size pieces for the printer it will actually print on, not the form default
+    params["bed_width_mm"] = printer.bed_max[0] - printer.bed_min[0]
+    params["bed_depth_mm"] = printer.bed_max[1] - printer.bed_min[1]
+    font = config.FONTS_DIR / job["font"] if job.get("font") else None
+    change_zs = [params["base_thickness_mm"] if z == "base_top" else float(z) for z in job.get("colour_changes", [])]
 
-        if args.upload:
-            remotes = [moonraker.upload(run, printer, out, job.get("upload_folder", "farm")) for out in outputs]
-            run.manifest["uploaded"] = remotes
-        run.manifest["result"] = "ok"
-        run.manifest["colours"] = job.get("colours", [])
-        run.save()
-        run.log(f"run: done. Next gate: load '{(job.get('colours') or ['?'])[0]}', clear the bed, then "
-                f"python -m farm start {run.dir}")
+    # "plates": several labels on ONE bed (one STL each, arranged together); else one design, one or more
+    # auto-split pieces, each its own bed
+    if job.get("plates"):
+        # a plate is a label, or {"text": ..., <likhan overrides>} e.g. a smaller font_size_mm for the CH row
+        plates = [pl if isinstance(pl, dict) else {"text": pl} for pl in job["plates"]]
+        stls = [s for pl in plates
+                for s in likhan.generate(run, config.LIKHAN_URL, {**params, **pl}, str(font) if font else None)]
+        beds = [stls]
+    else:
+        beds = [[s] for s in likhan.generate(run, config.LIKHAN_URL, params, str(font) if font else None)]
+    rec.generated()
+
+    outputs = []
+    for bed in beds:
+        out, cmd, colour_layers = slicer.slice_model(run, printer, bed, job["material"], job["layer_height"], change_zs)
+        facts = gcode.validate(run, out, printer, change_zs, max_flow=job.get("max_volumetric_speed", 13))
+        proj = project.export_project(run, cmd, out, colour_layers, job.get("colour_hex", []))
+        rec.build_sliced(out, facts, proj)
+        outputs.append(out)
+
+    if args.upload:
+        remotes = [moonraker.upload(run, printer, out, job.get("upload_folder", "farm")) for out in outputs]
+        run.manifest["uploaded"] = remotes
+        rec.uploaded(remotes)
+    run.manifest["result"] = "ok"
+    run.manifest["colours"] = job.get("colours", [])
+    run.save()
+    run.log(f"run: done. Next gate: load '{(job.get('colours') or ['?'])[0]}', clear the bed, then "
+            f"python -m farm start {run.dir}")
 
 
 def cmd_start(args):
@@ -107,6 +120,16 @@ def cmd_monitor(args):
         print(f"{level}\t{text.replace(chr(10), chr(92) + 'n')}")
 
 
+def cmd_db(args):
+    from . import db
+    from .runlog import RUNS_DIR
+    con = db.connect()
+    print(f"{db.DB_PATH}: schema v{con.execute('PRAGMA user_version').fetchone()[0]}")
+    if args.action == "import-runs":
+        done = pipeline.import_runs(con, RUNS_DIR)
+        print(f"imported {len(done)} run(s)" + (": " + ", ".join(done) if done else ""))
+
+
 def cmd_doctor(args):
     from . import doctor
     n = doctor.report()
@@ -136,6 +159,8 @@ def main():
     a = sub.add_parser("audit")
     a.add_argument("printer", nargs="?")
     sub.add_parser("doctor")
+    d = sub.add_parser("db")
+    d.add_argument("action", choices=["init", "import-runs"])
     m = sub.add_parser("monitor")
     m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))
     v = sub.add_parser("serve")
@@ -145,7 +170,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db}[args.cmd](args)
 
 
 if __name__ == "__main__":
