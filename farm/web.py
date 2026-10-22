@@ -3,6 +3,7 @@
 Stdlib only (runs as-is on aali-cli). The page is static (farm/static/index.html) and polls the JSON API below;
 the server is the only thing that talks to the printers, so the browser never needs CORS or printer access.
 
+  GET  /health                liveness for the aali-cli watchdog (never touches a printer)
   GET  /api/overview          printers + jobs + batch + inventory in one payload (what the page polls)
   GET  /api/cam/<printer>     webcam snapshot proxied from the printer host
   GET  /api/model/<run>/<3mf> a run's project .3mf as viewer geometry (farm/model3mf.py)
@@ -211,6 +212,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html"):
             return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/health":
+            return self._send(200, b'{"ok":true}')
         if path == "/api/overview":
             return self._send(200, json.dumps(overview()).encode())
         if path.startswith("/api/cam/"):

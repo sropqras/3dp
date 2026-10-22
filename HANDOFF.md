@@ -34,28 +34,10 @@ Until then, jobs with `base_width_mm` fail at likhan with a 400.
 
 ## Control room as a service
 
-```ini
-# ~/.config/systemd/user/farm-control.service
-[Unit]
-Description=Farm Control (python -m farm serve)
-After=network-online.target
-
-[Service]
-WorkingDirectory=%h/3dp
-Environment=FARM_PRUSASLICER=flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer
-Environment=FARM_LIKHAN_URL=http://127.0.0.1:4111
-ExecStart=/usr/bin/python3 -m farm serve --host 0.0.0.0 --port 10111
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
-```bash
-systemctl --user daemon-reload && systemctl --user enable --now farm-control
-loginctl enable-linger "$USER"     # keep it running without a login session
-# open http://192.168.1.107:10111
-```
+**DEPLOYED 2026-10-22** the aali-cli way (not systemd): `~/agent_workspace/infrastructure/farm_control/start.sh`
+(idempotent, `GET /health`) kept alive by the jobctl job `farm-web` every 5 min. Open http://192.168.1.107:10111
+(Tailscale http://100.75.3.107:10111). After a `git pull` here: `farm_control/stop.sh && farm_control/start.sh`.
+Port 10111 = next in aali-cli's x111 series (SERVER.md).
 
 LAN only, no authentication: don't expose port 10111 outside the network. The spool inventory is stored in
 `data/inventory.json` (gitignored; seeded from `data/inventory.example.json` on first start).
