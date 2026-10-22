@@ -5,6 +5,7 @@
   watch <run-dir>             follow a started run; stops at first layer / colour change / finish / error
   status [printer]            show printer state
   audit [printer]             check live Klipper configs against the farm baseline (read-only)
+  serve [--port 8090]         farm control room: live printers, cameras, spools, jobs, batch progress
 """
 import argparse
 import json
@@ -112,7 +113,13 @@ def main():
                    help="next: stop at first layer done too; event: only pause/finish/error")
     a = sub.add_parser("audit")
     a.add_argument("printer", nargs="?")
+    v = sub.add_parser("serve")
+    v.add_argument("--host", default="0.0.0.0")
+    v.add_argument("--port", type=int, default=8090)
     args = ap.parse_args()
+    if args.cmd == "serve":
+        from . import web
+        return web.serve(args.host, args.port)
     {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit}[args.cmd](args)
 
 

@@ -14,3 +14,4 @@ printer-2*.cfg
 runs/
 assets/fonts/
 __pycache__/
+data/inventory.json
