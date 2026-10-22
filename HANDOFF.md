@@ -1,7 +1,7 @@
 # Handoff: run the farm pipeline + control room on aali-cli (192.168.1.107)
 
 Written 2026-10-22 by the Claude session that built it on the user's Windows workstation. For the Claude/operator on
-aali-cli. Branch: `farm-config-backup` of `sropqras/3dp`.
+aali-cli. Branch: `main` of `sropqras/3dp` (same as `farm-config-backup`).
 
 ## What's here
 
@@ -19,7 +19,7 @@ Python 3.10+, standard library only.
 ## Setup on aali-cli
 
 ```bash
-git clone https://github.com/sropqras/3dp.git && cd 3dp && git checkout farm-config-backup
+git clone https://github.com/sropqras/3dp.git && cd 3dp
 # PrusaSlicer 2.9.6 CLI (Linux = Flathub)
 flatpak install -y flathub com.prusa3d.PrusaSlicer
 export FARM_PRUSASLICER="flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer"
@@ -29,7 +29,7 @@ mkdir -p assets/fonts && cp /path/to/CharlesWright-Bold.otf assets/fonts/
 python3 -m farm status && python3 -m farm audit           # both printers reachable, see baseline gaps
 ```
 
-likhan-maker must run branch `add-charles-wright-font` (fixed plate size + font option) - see that repo's HANDOFF.md.
+likhan-maker must run `main` (merged from `add-charles-wright-font`) (fixed plate size + font option) - see that repo's HANDOFF.md.
 Until then, jobs with `base_width_mm` fail at likhan with a 400.
 
 ## Control room as a service
@@ -98,7 +98,7 @@ on aali-cli link normally. `data/inventory.example.json` holds the real spool st
 1. **enders1plus after its print**: deploy the staged config (FARM.md "Staged, not yet on the printer") via Moonraker's
    file API (no SSH to 3dpnas), FIRMWARE_RESTART, check the console shows the prompt, then `python -m farm audit enders1plus`
    must pass. Then apply `farm/telegram_pack.conf` to its bot (telegram.conf via the file API, keep [bot]).
-2. **likhan-maker on aali-cli**: deploy branch `add-charles-wright-font` + the licensed font (its HANDOFF.md). Until then
+2. **likhan-maker on aali-cli**: deploy likhan-maker `main` + the licensed font (its HANDOFF.md). Until then
    jobs with fixed plates / monospace fail at likhan.
 3. **Confirm with the user**: plate count (635 listed vs 580 expected), letter colour, colours of sealed spool SP-004.
 4. **Telegram tokens** for EnderV3SE / Ender3Pro / EnderCR10SE bots on enders3dp (rejected by Telegram; crash-looping).
