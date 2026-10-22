@@ -27,7 +27,9 @@ python3 -m farm monitor [--state FILE]        # one read-only pass of the seriou
 scripts/backup-configs.sh [ssh-host]          # pull configs from enders3dp into printers/
 ```
 
-There is no test suite, linter or build step. `audit` is the closest thing to a check, and it reads live printers.
+Tests: `python3 -m unittest discover -s tests -t .` (stdlib, offline; one module: `python3 -m unittest tests.test_gcode`).
+Golden G-code: `python3 tests/golden.py check`. It needs likhan and the slicer but no printer, and proves a refactor didn't change what reaches a printer. Re-record with `record` only after an intended change, such as a new slicer version or preset. `python3 -m farm doctor` checks this host is ready to produce.
+The plan being implemented, phase by phase, is in `docs/ARCHITECTURE.md`.
 
 Host settings come from env vars in `farm/config.py`. The defaults suit the user's Windows workstation, so on aali-cli set:
 `FARM_PRUSASLICER="flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer"` and `FARM_LIKHAN_URL=http://127.0.0.1:4111`. `FARM_FONTS_DIR` defaults to `assets/fonts/`. Licensed fonts are gitignored and never committed.
