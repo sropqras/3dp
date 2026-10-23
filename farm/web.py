@@ -629,6 +629,10 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
         if path in ("/printers", "/printers.html"):
             return self._send(200, (STATIC / "printers.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/static/operator.js":
+            from . import config
+            js = (STATIC / "operator.js").read_text(encoding="utf-8").replace("__DEFAULT__", json.dumps(config.OPERATOR))
+            return self._send(200, js.encode(), "text/javascript; charset=utf-8")
         if path == "/static/printers.js":
             return self._send(200, (STATIC / "printers.js").read_bytes(), "text/javascript; charset=utf-8")
         if path == "/api/fleet":

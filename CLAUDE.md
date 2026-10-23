@@ -123,6 +123,9 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - **Health alerts are debounced** (`monitor.settle`): a problem is told once it has lasted (2 passes loud, ~25 min
   silent) and "recovered" once it has stayed gone as long, so a crash-looping Telegram bot is one message, not one per
   pass.
+- **Who did it:** every page action carries an `operator`, recorded as `ui:<name>`. The name is the header's
+  "You: <name> ✎" link (`static/operator.js`, served with `config.OPERATOR` = env `FARM_OPERATOR`, default
+  "Ironman"). Clicking it changes the name for that browser only. It's attribution, not authentication.
 - **The web API refuses cross-site POSTs**: every POST needs the `X-Farm: 1` header the pages send (and a same-host
   Origin), and only the page's own viewer counts as "viewed" for the gate. Scripts that POST must send it too.
 - **`farm/net.py`** holds the stdlib HTTP helpers. Use it rather than adding `requests`.

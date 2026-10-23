@@ -13,8 +13,7 @@ const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k)
 const ago = (t) => { if (!t) return "never"; const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
 let data = null, fd = { key: null, files: [], path: null, mode: "diff" };
 
-function setOperator(v) { ls("operator", v.trim()); }
-function operator() { return ls("operator") || ""; }
+const operator = () => farmOperator();     // static/operator.js: the "You" link in the header
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operator: operator(), ...(body || {}) }) });
@@ -455,5 +454,4 @@ async function showFile(i) {
     : esc(t);
 }
 
-$("operator").value = operator();
 refresh(); setInterval(refresh, 20000);

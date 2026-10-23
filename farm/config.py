@@ -19,6 +19,9 @@ def slicer_cmd() -> list[str]:
 
 LIKHAN_URL = os.environ.get("FARM_LIKHAN_URL", "http://192.168.1.107:4111" if os.name == "nt" else "http://127.0.0.1:4111")
 FONTS_DIR = Path(os.environ.get("FARM_FONTS_DIR", REPO / "assets" / "fonts"))
+# who Farm Control records with an action when the page hasn't been told otherwise (the "You" link changes it per
+# browser). A name the farm uses, never a personal detail.
+OPERATOR = os.environ.get("FARM_OPERATOR", "Ironman").strip() or "Ironman"
 
 # The maker apps on aali-cli (x111 ports, SERVER.md). One env var each, so another host can point elsewhere.
 MAKER_URLS = {

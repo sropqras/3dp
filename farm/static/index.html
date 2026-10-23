@@ -195,6 +195,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
   <nav class="tabs"><a href="#dashboard" data-tab="dashboard">Dashboard</a><a href="#projects" data-tab="projects">Projects</a>
     <a href="#inventory" data-tab="inventory">Inventory</a><a href="#spools" data-tab="spools">Spools</a><a href="/printers">Printers →</a></nav>
   <button onclick="openNewJob()">+ New job</button>
+  <span class="dim" data-you></span>
   <div class="kpis" id="kpis"></div>
 </header>
 <main>
@@ -329,6 +330,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     <div class="lbl" id="v-layer-lbl"></div>
   </div>
 </dialog>
+<script src="/static/operator.js"></script>
 <script>
 // every request carries X-Farm: a page on another site can't add a custom header without a CORS preflight, which
 // Farm Control never answers - so it can't drive the API (approve, apply, ...) from someone's browser
@@ -361,7 +363,7 @@ function fluiddLink(p) {
 
 async function reconnect(name) {
   if (!confirm(`Reconnect ${name}? Switch it on first. (Klipper restarts to find the board.)`)) return;
-  let who = ""; try { who = localStorage.getItem("operator") || ""; } catch (e) {}
+  const who = farmOperator();
   const r = await fetch(`/api/fleet/${encodeURIComponent(name)}/reconnect`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ operator: who || "dashboard" }) });
   const out = await r.json().catch(() => ({}));
@@ -639,7 +641,7 @@ async function openStart(id) {
   $("sd-title").textContent = `Start build ${id} on ${b ? b.printer : "?"}`;
   ["sd-viewed", "sd-bed", "sd-colour"].forEach((k) => ($(k).checked = false));
   $("sd-colour-lbl").textContent = `First colour is loaded${b && b.colours && b.colours[0] ? ": " + b.colours[0] : ""}`;
-  $("sd-operator").value = localStorageSafe("operator") || "";
+  $("sd-operator").value = farmOperator();
   $("sd-msg").textContent = "checking…"; $("sd-reasons").innerHTML = ""; $("sd-spool").innerHTML = "";
   $("startdlg").showModal();
   const r = await fetch(`/api/builds/${id}/start-dialog`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -657,7 +659,7 @@ async function openStart(id) {
 async function doStart() {
   const checklist = { viewed_3d: $("sd-viewed").checked, bed_clear: $("sd-bed").checked, colour_loaded: $("sd-colour").checked };
   const operator = $("sd-operator").value.trim();
-  localStorageSafe("operator", operator);
+  farmOperatorSet(operator);
   $("sd-msg").textContent = "starting…";
   const r = await fetch(`/api/builds/${startFor}/start`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nonce: startNonce, checklist, operator, spool_id: $("sd-spool").value,
@@ -680,7 +682,7 @@ function showTab(name) {
 // ---------------------------------------------------------------- Inventory: designs, prints, the NAS catalogue
 let IV = null, ivMode = "designs", NAS = null, REF = [];
 const ref = (v) => REF.push(v) - 1;     // handlers take an index: names with quotes can't break the markup
-const opName = () => { try { return localStorage.getItem("operator") || ""; } catch (e) { return ""; } };
+const opName = () => farmOperator();     // static/operator.js
 function ivView(m) {
   ivMode = m;
   $("iv-v-designs").classList.toggle("ghost", m !== "designs"); $("iv-v-nas").classList.toggle("ghost", m !== "nas");
@@ -750,7 +752,7 @@ async function openPrints(i) {
 async function markPrint(id, quality) {
   const who = opName() || prompt("Your name (recorded with the mark):", "");
   if (!who) return;
-  try { localStorage.setItem("operator", who); } catch (e) {}
+  farmOperatorSet(who);
   const note = quality === "bad" ? prompt("What was wrong? (optional)", "") : "";
   if (note === null) return;
   const r = await fetch(`/api/prints/${id}/mark`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality, note, operator: who }) });
@@ -782,7 +784,7 @@ async function saveProduct(del) {
   const d = PD, prod = d.products[0];
   const who = opName() || prompt("Your name (recorded):", "");
   if (!who) return;
-  try { localStorage.setItem("operator", who); } catch (e) {}
+  farmOperatorSet(who);
   if (del) {
     if (!confirm(`Take "${prod.name}" out of the portfolio?`)) return;
     const r = await fetch(`/api/products/${prod.id}/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operator: who }) });
@@ -989,7 +991,7 @@ function nasBulk() {
 }
 function nasWho() {
   let n = opName();
-  if (!n) { n = (prompt("Your name (recorded with catalogue edits):", "") || "").trim(); try { if (n) localStorage.setItem("operator", n); } catch (e) {} }
+  if (!n) { n = (prompt("Your name (recorded with catalogue edits):", "") || "").trim(); if (n) farmOperatorSet(n); }
   return n;
 }
 async function nasPost(url, body) {
@@ -1181,7 +1183,7 @@ function pjSelect(what, gid) {
 }
 async function pjAct(action, ask) {
   if (ask && !confirm(ask)) return;
-  if (!opName()) { const who = prompt("Your name (recorded):", ""); if (!who) return; try { localStorage.setItem("operator", who); } catch (e) {} }
+  if (!opName()) { const who = prompt("Your name (recorded):", ""); if (!who) return; farmOperatorSet(who); }
   const r = await pjPost(`/api/projects/${PJ.id}/${action}`, { parts: [...pjSel] });
   if (r) { if (action === "remove") pjSel = new Set(); openProject(PJ.id, true); }
 }

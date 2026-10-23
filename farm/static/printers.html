@@ -55,7 +55,7 @@ select { background: #0b1220; color: var(--text); border: 1px solid var(--line);
 <header>
   <div class="brand">sropqras <span>Farm Control</span></div>
   <nav><a href="/">Dashboard</a> <a href="/printers" class="on">Printers</a></nav>
-  <label class="dim">You <input id="operator" placeholder="name" style="width:110px" onchange="setOperator(this.value)"></label>
+  <span class="dim" data-you></span>
   <div class="kpis" id="kpis"></div>
 </header>
 <main>
@@ -80,6 +80,7 @@ select { background: #0b1220; color: var(--text); border: 1px solid var(--line);
     <pre id="cd-preview" style="max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></pre>
   </div>
 </dialog>
+<script src="/static/operator.js"></script>
 <script src="/static/printers.js"></script>
 </body>
 </html>
