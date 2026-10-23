@@ -158,6 +158,21 @@ class Pipeline(unittest.TestCase):
         self.assertEqual(len(lib[0]["builds"]), 2)
         self.assertTrue(all(m["exists"] for j in lib[0]["jobs"] for m in j["models"]))
 
+    def test_orders_that_cannot_slice_or_have_the_wrong_file_are_refused_up_front(self):
+        """The 2026-10-23 'A01' orders: 0.28 mm on the S1 Pro with a 2 mm base, and the font uploaded as the image."""
+        item = {"label": "A01", "params": {"text": "A01"}}
+        with self.assertRaises(pipeline.StepFailed) as e:
+            pipeline.submit_order(self.con, source="ui", title="A01", maker="likhan", items=[item], profile="s1pro-petg-020",
+                                  layer_height=0.28, printer="s1pro", colour_changes=["base_top"])
+        self.assertIn("use 0.16, 0.2", str(e.exception))
+        font = self.tmp / "CharlesWright-Bold.otf"
+        font.write_bytes(b"x")
+        with self.assertRaises(pipeline.StepFailed) as e:
+            pipeline.submit_order(self.con, source="ui", title="A01", maker="likhan", items=[{**item, "inputs": {"image": str(font)}}],
+                                  profile="s1pro-petg-020", layer_height=0.2, printer="s1pro", colour_changes=["base_top"])
+        self.assertIn("isn't a file for 'image'", str(e.exception))
+        self.assertEqual(self.con.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 0)    # nothing created
+
     def test_expired_lease_is_reclaimed(self):
         self.submit(dict(JOB, plates=["T11"]))
         t = worker.claim(self.con)

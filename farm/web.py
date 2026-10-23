@@ -359,7 +359,9 @@ def jobs_in_progress() -> list[dict]:
     """Jobs not yet on a bed (being generated, or failed) - the Review table shows builds, this shows the rest."""
     con = db.connect()
     try:
-        rows = con.execute("SELECT j.id, j.label, j.maker, j.state, j.error, j.printer, o.title FROM jobs j "
+        rows = con.execute("SELECT j.id, j.label, j.maker, j.state, j.error, j.printer, o.title, "
+                           "EXISTS(SELECT 1 FROM tasks t WHERE t.kind='plan' AND t.ref_id=j.order_id AND "
+                           "t.state IN ('pending','running')) AS planning FROM jobs j "
                            "JOIN orders o ON o.id = j.order_id WHERE j.state IN ('received','generating','generated',"
                            "'failed') ORDER BY j.id DESC LIMIT 40").fetchall()
     finally:

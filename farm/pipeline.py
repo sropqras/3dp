@@ -109,6 +109,30 @@ def submit_order(con, *, source: str, title: str, maker: str, items: list[dict],
     for z in colour_changes:
         if isinstance(z, str) and not _is_number(z) and z not in m.spec.colour_heights:
             problems.append(f"colour change {z!r}: {maker} only knows {list(m.spec.colour_heights) or 'heights in mm'}")
+    # a layer height that can't put every colour change on a layer top fails at slicing: say so now, with the
+    # heights that would work
+    for it in items:
+        zs = []
+        for z in colour_changes:
+            zs.append(float(z) if _is_number(z) else m.colour_z(str(z), it.get("params") or {}))
+        if colour_changes and None not in zs:
+            def fits(lh):
+                try:
+                    slicer.align_first_layer(lh, zs, *prof.first_layer)
+                    return True
+                except SystemExit:
+                    return False
+            if not fits(layer_height):
+                ok = [lh for lh in prof.layer_heights if fits(lh)]
+                problems.append(f"{it.get('label', '?')}: {layer_height} mm layers can't put the colour change at "
+                                f"{', '.join(f'{z:g}' for z in zs)} mm on a layer top on {prof.name}; "
+                                f"use {', '.join(map(str, ok)) or 'another base thickness'}")
+                break
+    for it in items:
+        for k, v in (it.get("inputs") or {}).items():
+            if v and not m.accepts(k, Path(v).name):
+                problems.append(f"{it.get('label', '?')}: {Path(v).name} isn't a file for '{k}' "
+                                f"({', '.join(next(f.accept for f in m.spec.inputs if f.name == k))})")
     ctx = makers.GenContext(params={}, files={}, nozzle=prof.nozzle, layer_height=layer_height, out_dir=Path("."),
                             bed_mm=(pr.bed_max[0] - pr.bed_min[0], pr.bed_max[1] - pr.bed_min[1], pr.max_z))
     for it in items:

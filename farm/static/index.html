@@ -300,7 +300,11 @@ function buildActions(b) {
     return view + approve + `<button class="mini ghost" onclick="act(${b.id},'reject',{note: prompt('Why reject?') || ''})">Reject</button>` + cancel;
   }
   if (b.state === "queued") return view + `<button class="mini" onclick="openStart(${b.id})">Start…</button>` + cancel;
-  if (b.state === "failed") return `<span class="err" title="${esc(b.error)}">${esc((b.error || "").slice(0, 80))}</span><button class="mini ghost" onclick="act(${b.id},'retry',{})">Retry</button>` + cancel;
+  if (b.state === "failed") {
+    const layer = /layer boundaries|layer top/.test(b.error || "");
+    return `<span class="err" title="${esc(b.error)}">${esc(layer ? "this layer height can't place the colour change - pick another height (left)" : (b.error || "").slice(0, 80))}</span>` +
+      (layer ? "" : `<button class="mini ghost" onclick="act(${b.id},'retry',{})">Retry</button>`) + cancel;
+  }
   if (b.state === "approved") return view + `<span class="stamp">uploading soon</span>` + cancel;
   return view + `<span class="stamp">${esc(b.state)}…</span>`;
 }
@@ -480,7 +484,7 @@ function jobsInProgress(js) {
   if (!js || !js.length) return "";
   return js.map((j) => `<tr><td></td><td>${esc(j.title)}<div class="labels"><span class="chip">${esc(j.label)}</span></div></td><td>${esc(j.printer)}</td>
     <td>${esc(j.maker)}</td><td>–</td><td><span class="chip s-${j.state === "failed" ? "failed" : "slicing"}">${esc(j.state)}</span></td>
-    <td>${j.error ? `<span class="err" title="${esc(j.error)}">${esc(j.error.slice(0, 90))}</span>` : `<span class="stamp">${j.state === "generated" ? "planning…" : "making the model…"}</span>`}</td></tr>`).join("");
+    <td>${j.error ? `<span class="err" title="${esc(j.error)}">${esc(j.error.slice(0, 90))}</span>` : j.state === "generated" && !j.planning ? `<span class="stamp">generated, not on a bed (its build was rejected) - <a href="#projects" style="color:var(--blue)">Projects → Send to printer</a></span>` : `<span class="stamp">${j.state === "generated" ? "planning…" : "making the model…"}</span>`}</td></tr>`).join("");
 }
 
 async function act(id, action, body, confirmText) {
@@ -669,8 +673,10 @@ function modelButton(dir, models) {
 
 let viewerBuild = null;
 function layerPicker(b, where) {
-  if (!b || !["review", "approved", "queued", "failed"].includes(b.state) || (b.layer_heights || []).length < 2) return b && b.layer_height ? `${b.layer_height} mm` : "";
-  return `<select title="layer height: choosing another re-slices the same models (review again)" onchange="reslice(${b.id}, +this.value, '${where}')">
+  if (!b || !["review", "approved", "queued", "failed"].includes(b.state) || !(b.layer_heights || []).length) return b && b.layer_height ? `${b.layer_height} mm` : "";
+  const cur = (b.layer_heights || []).includes(b.layer_height) ? "" : `<option value="" selected disabled>${b.layer_height} mm (won't work)</option>`;
+  if (!cur && b.layer_heights.length < 2) return `${b.layer_height} mm`;
+  return `<select title="layer height: choosing another re-slices the same models (review again)" onchange="reslice(${b.id}, +this.value, '${where}')">${cur}
     ${b.layer_heights.map((l) => `<option value="${l}" ${l === b.layer_height ? "selected" : ""}>${l} mm</option>`).join("")}</select>`;
 }
 async function reslice(id, layer, where) {

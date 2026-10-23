@@ -128,6 +128,25 @@ class Maker:
                 problems.append(f"missing file: {fi.name}")
         return problems
 
+    def colour_z(self, name: str, params: dict) -> float | None:
+        """The height (mm) of a named colour change for these params, known BEFORE generating (so an order whose
+        layer height can't put it on a layer top is refused up front). None: only the generated model knows."""
+        if name == "base_top" and "base_thickness_mm" in self.spec.params:
+            return float(params.get("base_thickness_mm", self.spec.params["base_thickness_mm"].get("default", 2.0)))
+        return None
+
+    def accepts(self, input_name: str, filename: str) -> bool:
+        """Does this file suit that input (an image input takes images, a font input takes .ttf/.otf, ...)."""
+        fi = next((f for f in self.spec.inputs if f.name == input_name), None)
+        if fi is None:
+            return False
+        ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        images = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+        for a in fi.accept:
+            if a == "image/*" and ext in images or a.lower() == ext:
+                return True
+        return False
+
     def generate(self, ctx: GenContext) -> GenResult:
         raise NotImplementedError
 
