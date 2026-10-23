@@ -1,9 +1,10 @@
 import copy
+import dataclasses
 import tempfile
 import unittest
 from pathlib import Path
 
-from farm import configs, db, ops
+from farm import configs, db, ops, printers
 from tests.fakes import FakeMoonraker
 from tests.test_audit_model3mf import GOOD
 
@@ -67,6 +68,11 @@ class Services(unittest.TestCase):
                            "moonraker-telegram-bot-EnderV3SE": "activating/auto-restart"}
         self.idle = [{"registry": "Ender3MaxNeo", "job": "standby"}]
         self.printing = [{"registry": "Ender3MaxNeo", "job": "printing"}]
+        # a watch-only printer for the gates (the real registry has none since EnderV3SE was handed over)
+        ro = dataclasses.replace(printers.PRINTERS["Ender3MaxNeo"], name="EnderV3SE", readonly=True)
+        saved = printers.PRINTERS.get("EnderV3SE")
+        printers.PRINTERS["EnderV3SE"] = ro
+        self.addCleanup(lambda: printers.PRINTERS.__setitem__("EnderV3SE", saved) if saved else printers.PRINTERS.pop("EnderV3SE"))
 
     def tearDown(self):
         self.m.close()

@@ -30,6 +30,9 @@ class Library(unittest.TestCase):
         self.assertIn("variable_nozzle_temp: 205", out["macros.cfg"])
         self.assertIn("variable_sensor: ''", out["macros.cfg"])    # commented out on purpose: stays off
         self.assertEqual(standard.check({}), (False, standard.check({})[1]))
+        v = standard.printer_values({"m.cfg": "[gcode_macro PID_BED]\ngcode:\n  {% set target = params.TARGET | default(60) | float %}\n"
+                                               "  PID_CALIBRATE HEATER=heater_bed TARGET={target}\n"}, None)
+        self.assertEqual(v["pid_bed"], 60)                                      # V3SE writes it as a default
 
 
 class FluiddLayout(unittest.TestCase):

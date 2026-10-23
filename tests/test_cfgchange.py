@@ -61,9 +61,14 @@ class Changes(unittest.TestCase):
             self.stage(reason="  ")
         with self.assertRaises(cfgchange.Refused):
             self.stage(value="200")                                   # already live
-        with self.assertRaises(cfgchange.Refused):
-            cfgchange.stage(self.con, "EnderV3SE", self.m.url, "printer.cfg", section="printer", option="max_velocity",
-                            value="1", reason="r", author="ui:a")      # watch-only
+        printers.PRINTERS["WatchOnly"] = dataclasses.replace(printers.PRINTERS["Ender3MaxNeo"], name="WatchOnly",
+                                                             moonraker="http://192.0.2.1:7125", readonly=True)
+        try:
+            with self.assertRaises(cfgchange.Refused):
+                cfgchange.stage(self.con, "WatchOnly", self.m.url, "printer.cfg", section="printer",
+                                option="max_velocity", value="1", reason="r", author="ui:a")      # watch-only
+        finally:
+            printers.PRINTERS.pop("WatchOnly")
 
     def test_happy_apply_records_everything(self):
         c = self.stage()

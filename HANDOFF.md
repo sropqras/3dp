@@ -43,7 +43,7 @@ After a `git pull`: `~/agent_workspace/infrastructure/farm_control/stop.sh && wo
 | Ender3MaxNeo | 192.168.1.184:7125 (enders3dp) | 0.6 Sprite, PETG plates |
 | s1pro | 192.168.1.184:7129 (enders3dp) | own Klipper v0.13 instance, 0.4 nozzle (moved off its SBC 2026-10-23) |
 | enders1plus | 192.168.1.68:7125 (3dpnas) | 0.6 Sprite, shares G-code with the MaxNeo |
-| EnderV3SE | 192.168.1.184:7128 (enders3dp) | Amir's own production printer: **watch-only, hands-off** |
+| EnderV3SE | 192.168.1.184:7128 (enders3dp) | Amir's own production printer, **handed over to the farm 2026-10-23** (changes only while idle; no print profile yet) |
 
 The registry is `printers/registry.json`, edited from the Printers tab only.
 
@@ -56,14 +56,20 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
      (actor `cli:Amir`). Both verified: no audit FAIL, console clean.
    - 9-12 (the macro library on MaxNeo and s1pro) were applied 2026-10-23 on Amir's instruction: `FARM_INFO`
      answers on both and both audits pass.
-   - **enders1plus**: no need to switch it on. The gate now applies with the board off: Klipper on 3dpnas loads the
+   - **enders1plus 18 → 19 → 20** (library, max_velocity, macros incl. tgalarm/reheat/BEEP; 1 and 3 were folded
+     in and cancelled), then the **Telegram pack**.
+   - **EnderV3SE 24 → 25 → 26** (handed over 2026-10-23): library; printer.cfg recover_velocity 150 + paused-safe
+     idle that keeps its own `DELAYED_PRINTER_OFF` (which calls `POWER_OFF_PRINTER`, an Unknown command today);
+     macros: CLEAR_PAUSE, guided M600 prompt with tgalarm, reheat, 12 h cap, `_FARM_PRINTER` 220/70, PID 220/60,
+     FilamentSensor. Review the diffs - it is your production printer.
+   - (older note) **enders1plus**: no need to switch it on. The gate now applies with the board off: Klipper on 3dpnas loads the
      config, the audit runs, and a config error still rolls back. Apply **1** and **3**, then **Stage all fixes**
      (cold-nozzle reheat, BEEP, macro library) and apply those, then the **Telegram pack**.
    - **Ender3Pro 8**: comments out the missing `moonraker_obico_macros.cfg` include, so Klipper can start. Then the
      onboarding checklist.
    - **EnderCR10SE 13 → 14** once it is switched on. Then onboarding.
 2. **Fluidd layout**: pushed 2026-10-23 to MaxNeo, s1pro, enders1plus and EnderCR10SE (Undo on each card).
-   Not pushed: EnderV3SE (watch-only) and Ender3Pro (Klipper not running; a push now refuses when it can't read
+   EnderV3SE: push it after its staged changes are on. Not pushed: Ender3Pro (Klipper not running; a push now refuses when it can't read
    any macros).
    - **Power plugs**: Meross research and design in `docs/POWER.md`. It needs your plug models, IPs and the
      account key first.
@@ -86,6 +92,6 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 `CLAUDE.md` is the authority. In short:
 - agents never approve or start prints;
 - printer configs change only through the Printers tab's gated Apply (agents may stage);
-- EnderV3SE is hands-off;
+- EnderV3SE: changes only while it is idle (Amir's production printer);
 - the Charles Wright font is never committed or served;
 - read `gcode_store` after any macro change.

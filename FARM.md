@@ -9,7 +9,7 @@ Slicer profiles (PrusaSlicer 2.9.6) live in `prusa/`.
 | Printer | Moonraker | USB | Status |
 |---|---|---|---|
 | Ender3MaxNeo | :7125 | connected | ready |
-| EnderV3SE | :7128 | connected | in production - read-only until scheduled |
+| EnderV3SE | :7128 | connected | in production; handed over to the farm 2026-10-23 (changes only while idle) |
 | Ender3Pro | :7126 | not connected | idle instance |
 | EnderCR10SE | :7127 | not connected | idle instance |
 | **s1pro** (Ender 3 S1 Pro) | :7129 | connected (USB 3.3) | ready; moved off its SBC 2026-10-23, own Klipper v0.13.0-770, 0.4 nozzle, RunoutSensor, profile `s1pro-petg-020` |
@@ -48,7 +48,8 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Printer | Staged in repo | Apply when |
 |---|---|---|
-| enders1plus | Farm Control changes **1** (max_velocity 300 -> 200, KAMP move) and **3** (tgalarm on colour change, one line); then **Telegram pack**, then **Stage all fixes** (cold-nozzle reheat, BEEP, farm macro library) | now, even switched off: the gate applies with the board off (Klipper loads the config, the audit runs) since 2026-10-23; read its console after the next Reconnect |
+| enders1plus | changes **18** (farm_macros.cfg) → **19** (printer.cfg max_velocity 200) → **20** (macros.cfg: library include + values, tgalarm, cold-nozzle reheat, BEEP commented); 1 and 3 folded in | when idle (on or off); then the Telegram pack |
+| EnderV3SE | changes **24** → **25** (printer.cfg: recover_velocity 150, paused-safe idle keeping DELAYED_PRINTER_OFF) → **26** (macros.cfg: CLEAR_PAUSE in START_PRINT, guided M600, reheat, 12 h cap, library) | only while idle; Amir reviews first (production printer) |
 | EnderCR10SE (not onboarded) | changes **13** then **14** (the same; values 200/60, RunoutSensor; its macros.cfg is CRLF) | when it is switched on and idle |
 | Ender3Pro (not onboarded) | change **8**: printer.cfg comments out `[include moonraker_obico_macros.cfg]` (the file isn't on the host, so Klipper won't start) | any time; Klipper should then reach the board |
 
@@ -56,6 +57,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-23 | EnderV3SE | Farm settings: no longer watch-only; note (Farm Control, Amir) |
 | 2026-10-23 | s1pro | macros.cfg: edited (macros.cfg): farm baseline: farm macro library is current - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 12; audit pass, console clean |
 | 2026-10-23 | s1pro | farm_macros.cfg: new file (farm_macros.cfg): farm baseline: farm macro library is current - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 11; audit pass, console clean |
 | 2026-10-23 | Ender3MaxNeo | macros.cfg: edited (macros.cfg): farm baseline: farm macro library is current - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 10; audit pass, console clean |

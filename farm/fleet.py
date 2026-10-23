@@ -23,8 +23,14 @@ def _cached(key, ttl, fn):
     return value
 
 
+def _board_off(v: dict) -> bool:
+    return cfgchange._board_off({"klippy": v.get("klippy_state"), "message": v.get("state_message"), "job": v.get("job")})
+
+
 def _audit(v: dict) -> list[dict] | None:
-    if v.get("klippy_state") != "ready":
+    # switched off at the wall: Klipper has loaded the config, only the board is missing - its settings are there,
+    # so the audit (and Stage fix) works; the gate applies with the board off too
+    if v.get("klippy_state") != "ready" and not _board_off(v):
         return None
     p = printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(has_m600_prompt=None)
     settings = audit.net.get_json(f"{v['url']}/printer/objects/query?configfile=settings", timeout=8)

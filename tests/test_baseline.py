@@ -151,6 +151,29 @@ gcode:
         self.assertIn("params.TEMP|default", s["gcode_macro heat"]["gcode"])
         self.assertEqual(standard.install({p: t.decode() for p, t in self.m.config.items()}, "RunoutSensor"), {})   # idempotent
 
+    def test_crlf_files_and_unloaded_leftovers(self):
+        self.m.config["macros.cfg"] = BAD_MACROS.replace(b"\n", b"\r\n")          # edited on Windows
+        self.m.config["old_macro_file.cfg"] = b"[gcode_macro START_PRINT]\ngcode:\n    G28\n"   # not included
+        staged = baseline.stage_fix(self.con, "Ender3MaxNeo", self.m.url, "START_PRINT runs CLEAR_PAUSE",
+                                    parse_klipper(self.m.config), "agent")
+        self.assertEqual([c["path"] for c in staged], ["macros.cfg"])          # never the leftover file
+        new = cfgchange.get(self.con, staged[0]["id"])["new_content"]
+        self.assertIn("CLEAR_PAUSE\r\n", new)                                 # written back as CRLF
+        self.assertNotIn("\r\r", new)
+        self.assertEqual(new.count("\n"), new.count("\r\n"))
+
+    def test_printer_idle_extras_kept_and_one_alarm_line(self):
+        t = ("[idle_timeout]\ngcode:\n  M84\n  TURN_OFF_HEATERS\n  UPDATE_DELAYED_GCODE ID=DELAYED_PRINTER_OFF DURATION=60\n"
+             "\n#[include moonraker_obico_macros.cfg]\n\n[printer]\nkinematics: cartesian\n")
+        self.assertEqual(baseline.idle_extras(t), ["UPDATE_DELAYED_GCODE ID=DELAYED_PRINTER_OFF DURATION=60"])
+        new = baseline.replace_section(t, "idle_timeout", baseline.idle_block("p", baseline.idle_extras(t)))
+        self.assertIn("M84\n    UPDATE_DELAYED_GCODE ID=DELAYED_PRINTER_OFF DURATION=60\n  {% endif %}", new)
+        self.assertIn("#[include moonraker_obico_macros.cfg]", new)            # the comment survives
+        rules = ["M600 shows the colour-change prompt", "colour change alerts Telegram (tgalarm)"]
+        staged = baseline.stage_fixes(self.con, "Ender3MaxNeo", self.m.url, rules, parse_klipper(self.m.config), "agent")
+        macros = next(cfgchange.get(self.con, c["id"])["new_content"] for c in staged if c["path"] == "macros.cfg")
+        self.assertEqual(macros.count("PREFIX=tgalarm MSG"), 1)
+
     def test_rules_needing_judgement_have_no_generated_fix(self):
         s = parse_klipper(self.m.config)
         for rule in ("START_PRINT macro exists", "START_PRINT reads EXTRUDER_TEMP and BED_TEMP",

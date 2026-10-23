@@ -93,14 +93,15 @@ function hostTools(h) {
 
 function auditBlock(v) {
   if (v.audit_error) return `<div class="warn">audit: ${esc(v.audit_error)}</div>`;
-  if (!v.audit) return `<div class="dim">audit needs Klipper ready (now ${esc(v.klippy_state)})</div>`;
+  if (!v.audit) return `<div class="dim">audit needs Klipper to load its config (now ${esc(v.klippy_state)}: ${esc((v.state_message || "").slice(0, 120))})</div>`;
+  const offNote = v.off ? `<div class="dim">printer switched off: changes still apply - Klipper loading the new config is the check; read the console after Reconnect</div>` : "";
   const fails = v.audit.filter((a) => a.status === "FAIL"), warns = v.audit.filter((a) => a.status === "WARN");
   const head = fails.length ? `<span class="bad">✗ ${fails.length} baseline gap${fails.length > 1 ? "s" : ""}</span>` : `<span class="ok">✓ farm baseline</span>`;
-  const nfix = v.readonly ? 0 : fails.filter((a) => a.fixable).length;
-  return `<details><summary>${head}${warns.length ? ` <span class="warn">· ${warns.length} warning</span>` : ""} — ${v.audit.length} rules</summary>
+  const nfix = v.readonly ? 0 : v.audit.filter((a) => a.status !== "PASS" && a.fixable).length;   // WARN too: the macro library
+  return `<details><summary>${head}${warns.length ? ` <span class="warn">· ${warns.length} warning</span>` : ""} — ${v.audit.length} rules</summary>${offNote}
     ${nfix > 1 ? `<div class="row" style="margin:6px 0"><button class="ghost" onclick='stageAllFixes(${js(v.key)}, ${nfix})'>Stage all ${nfix} fixes (one change per file)</button></div>` : ""}
     <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td>
-      <td>${a.status === "FAIL" && !v.readonly && !a.fixable ? `<span class="dim" title="needs judgement: use + Stage change">edit manually</span>` : ""}${a.status === "FAIL" && !v.readonly && a.fixable ? `<button class="ghost" onclick='stageFix(${js(v.key)}, ${js(a.rule)})'>Stage fix</button>` : ""}</td></tr>`).join("")}</table></details>`;
+      <td>${a.status === "FAIL" && !v.readonly && !a.fixable ? `<span class="dim" title="needs judgement: use + Stage change">edit manually</span>` : ""}${a.status !== "PASS" && !v.readonly && a.fixable ? `<button class="ghost" onclick='stageFix(${js(v.key)}, ${js(a.rule)})'>Stage fix</button>` : ""}</td></tr>`).join("")}</table></details>`;
 }
 
 function configBlock(v) {

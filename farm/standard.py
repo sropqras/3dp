@@ -50,7 +50,8 @@ def reached(files: dict, main: str = "printer.cfg") -> list[str]:
 
 
 def _num(text: str, pattern: str, default: float) -> float:
-    m = re.search(pattern, text)
+    """The first number the pattern finds; a TARGET=<n> pattern also accepts params.TARGET|default(<n>)."""
+    m = re.search(pattern, text) or (re.search(r"TARGET\s*\|\s*default\((\d+)\)", text) if "TARGET" in pattern else None)
     return float(m.group(1)) if m else default
 
 

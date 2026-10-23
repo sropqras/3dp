@@ -49,8 +49,9 @@ def replace_section(text: str, name: str, block: str) -> str:
     """Replace [name] (header to the next section) with block, or add block before SAVE_CONFIG / at the end."""
     block = block.rstrip("\n") + "\n\n"
     span = section_span(text, name)
-    if span:
-        return text[:span[0]] + block + text[span[1]:]
+    if span:   # keep the comment lines at the old section's end (they belong to what follows)
+        rest = remove_section(text, name)
+        return rest[:span[0]] + block + rest[span[0]:]
     head, sep, tail = text.partition(SAVE_MARK)
     return head.rstrip("\n") + "\n\n" + block + (sep + tail if sep else "")
 
@@ -91,7 +92,31 @@ def macro_body(text: str, name: str) -> str:
 
 # ---------------------------------------------------------------- the reference blocks
 
-def idle_block(printer: str) -> str:
+IDLE_OWN = re.compile(r"^(TURN_OFF_HEATERS|M84|M18|M104|M140|M106|M107)\b|^\{%|^RESPOND|^UPDATE_DELAYED_GCODE ID=_PAUSE_HARD_STOP")
+
+
+def idle_extras(text: str) -> list[str]:
+    """The printer's own idle actions worth keeping (e.g. V3SE's UPDATE_DELAYED_GCODE ID=DELAYED_PRINTER_OFF that
+    powers it off): what its idle gcode does besides heaters/motors off and our own pause logic."""
+    span = section_span(text, "idle_timeout")
+    if not span:
+        return []
+    body, out, inside = text[span[0]:span[1]].split("\n"), [], False
+    for line in body[1:]:
+        if re.match(r"gcode\s*[:=]", line):
+            inside = True
+            continue
+        if inside and line[:1] in (" ", "\t") and line.strip() and not line.strip().startswith("#"):
+            code = line.strip()
+            if not IDLE_OWN.match(code):
+                out.append(code)
+        elif inside and line.strip() and line[:1] not in (" ", "\t", "#"):
+            inside = False
+    return out
+
+
+def idle_block(printer: str, extras: list[str] = ()) -> str:
+    keep = "".join(f"\n    {x}" for x in extras)
     return f"""[idle_timeout]
 # Farm baseline: while paused only the nozzle cools; bed and motors hold the print. RESUME reheats.
 # A 12 h cap (_PAUSE_HARD_STOP) then turns the bed off too. The pause itself sets 30 min (PAUSE_MACRO).
@@ -103,7 +128,7 @@ gcode:
     RESPOND PREFIX=tgnotify MSG="{printer}: still paused after 30 min - nozzle off, bed holding the print"
   {{% else %}}
     TURN_OFF_HEATERS
-    M84
+    M84{keep}
   {{% endif %}}
 timeout: 3600
 """
@@ -294,6 +319,8 @@ def fixes_for(rule: str, settings: dict, files: dict, printer: str) -> list[dict
                 if span is None:
                     return add_missing(t)
                 body = t[span[0]:span[1]].rstrip("\n")
+                if "PREFIX=tgalarm" in body:     # the guided prompt staged with it already carries the alert
+                    return t
                 line = f'    RESPOND PREFIX=tgalarm MSG="{printer}: colour change - load the next colour, then RESUME"'
                 return t[:span[0]] + body + "\n" + line + "\n\n" + t[span[1]:]
             edit(pp, add_alarm, f"colour change alerts Telegram (tgalarm line in {target})")
@@ -348,18 +375,41 @@ gcode:
              f"[{sec}] insert_gcode no longer resumes")
     elif rule in ("idle_timeout is finite (<= 4 h)", "idle timeout is pause-aware"):
         p = _file_with(files, "idle_timeout", "printer.cfg")
-        edit(p, lambda t: replace_section(t, "idle_timeout", idle_block(printer)), "paused-safe idle_timeout (30 min / 60 min)")
+        edit(p, lambda t: replace_section(t, "idle_timeout", idle_block(printer, idle_extras(t))),
+             "paused-safe idle_timeout (30 min / 60 min)")
     elif rule == "12 h pause safety cap exists":
         edit(macros, lambda t: replace_section(t, "delayed_gcode _PAUSE_HARD_STOP", hard_stop_block(printer)),
              "12 h pause safety cap (_PAUSE_HARD_STOP)")
     return [v for v in out.values() if v["content"] != files.get(v["path"])]
 
 
+def _live(url: str) -> tuple[dict, set]:
+    """The config files Klipper loads (printer.cfg and its includes - not a leftover old_macro_file.cfg that would
+    otherwise be "fixed" instead), with CRLF files (edited on Windows) normalised to LF for the fixes; the second
+    value names those, so their fix goes back with CRLF."""
+    from . import standard
+    raw = {f["path"]: configs.read_file(url, f["path"]).decode("utf-8", "replace") for f in configs.list_files(url)}
+    loaded = standard.reached(raw)
+    files = {p: t for p, t in raw.items() if p in loaded} if loaded else raw
+    crlf = {p for p, t in files.items() if "\r\n" in t}
+    return {p: t.replace("\r\n", "\n") for p, t in files.items()}, crlf
+
+
+def _out(path: str, content: str, crlf: set) -> str:
+    return content.replace("\n", "\r\n") if path in crlf else content
+
+
+def _new_files_first(paths, live: dict) -> list:
+    """A file another change includes must exist first (the gate refuses the include before it)."""
+    return sorted(paths, key=lambda p: p in live)
+
+
 def stage_fix(con, printer: str, url: str, rule: str, settings: dict, author: str) -> list[dict]:
-    live = {f["path"]: configs.read_file(url, f["path"]).decode("utf-8", "replace") for f in configs.list_files(url)}
+    live, crlf = _live(url)
     staged = []
-    for f in fixes_for(rule, settings, live, printer):
-        staged.append(cfgchange.stage(con, printer, url, f["path"], new_content=f["content"],
+    fixes = {f["path"]: f for f in fixes_for(rule, settings, live, printer)}
+    for path in _new_files_first(fixes, live):
+        staged.append(cfgchange.stage(con, printer, url, path, new_content=_out(path, fixes[path]["content"], crlf),
                                       reason=f"farm baseline: {rule}", author=author))
     if not staged:
         raise cfgchange.Refused(f"no generated fix for '{rule}' - open the editor (Stage change) for this one")
@@ -369,15 +419,15 @@ def stage_fix(con, printer: str, url: str, rule: str, settings: dict, author: st
 def stage_fixes(con, printer: str, url: str, rules: list[str], settings: dict, author: str) -> list[dict]:
     """Several rules' fixes as ONE change per file (staged separately they would share a base and the second
     would be refused as stale once the first is applied)."""
-    live = {f["path"]: configs.read_file(url, f["path"]).decode("utf-8", "replace") for f in configs.list_files(url)}
+    live, crlf = _live(url)
     files, why = dict(live), {}
     for rule in rules:
         for f in fixes_for(rule, settings, files, printer):
             files[f["path"]] = f["content"]
             why.setdefault(f["path"], []).append(rule)
-    staged = [cfgchange.stage(con, printer, url, path, new_content=files[path],
-                              reason="farm baseline: " + "; ".join(rs), author=author)
-              for path, rs in why.items() if files[path] != live.get(path)]
+    staged = [cfgchange.stage(con, printer, url, path, new_content=_out(path, files[path], crlf),
+                              reason="farm baseline: " + "; ".join(why[path]), author=author)
+              for path in _new_files_first(why, live) if files[path] != live.get(path)]
     if not staged:
         raise cfgchange.Refused("none of these rules has a generated fix - open the editor (Stage change)")
     return staged

@@ -92,7 +92,7 @@
     },
     {
       "name": "EnderV3SE",
-      "note": "The user's own production printer: WATCH ONLY (no jobs, no config changes) until handed over. Hardware mostly unconfirmed; filament sensor + Meross plug confirmed.",
+      "note": "Amir's own production printer, handed over to the farm 2026-10-23 (no longer watch-only): config changes through the gate, only while idle. No print profile yet. Hardware mostly unconfirmed; filament sensor + Meross plug confirmed.",
       "moonraker": "http://192.168.1.184:7128",
       "fluidd": "http://192.168.1.184/",
       "fluidd_note": "shared Fluidd: choose EnderV3SE (:7128) in its printer menu",
@@ -106,7 +106,7 @@
       ],
       "max_z": 250.0,
       "has_m600_prompt": false,
-      "readonly": true,
+      "readonly": false,
       "profiles": [],
       "legacy_presets": {
         "bundle": "PrusaSlicer_config_bundle.ini",
