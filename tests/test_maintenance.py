@@ -56,3 +56,32 @@ class HealthAlerts(unittest.TestCase):
         rec = monitor.diff_problems(now, later)
         self.assertEqual([lv for lv, _ in rec], ["silent"])
         self.assertIn("recovered", rec[0][1])
+
+
+class Debounce(unittest.TestCase):
+    def test_a_crash_looping_service_is_told_once_and_recovers_once(self):
+        from farm import monitor
+        seen, prev, told = {}, {}, []
+        bot = {"host:h": {"svc:moonraker-telegram-bot-X": ("silent", "h: service bot is activating/auto-restart")}}
+        disk = {"host:h": {"disk": ("loud", "h: disk 95% full")}}
+        t = 0
+        for i in range(40):                        # 80 min: the bot is down on every other 2-min pass
+            now = monitor.settle(seen, bot if i % 2 == 0 else {}, t)
+            told += monitor.diff_problems(prev, now)
+            prev, t = now, t + 120
+        self.assertEqual(len(told), 1)             # one alert, after it had lasted ~25 min; no recoveries
+        self.assertIn("auto-restart", told[0][1])
+        for i in range(15):                        # running steadily for 30 min -> recovered, once
+            now = monitor.settle(seen, {}, t)
+            told += monitor.diff_problems(prev, now)
+            prev, t = now, t + 120
+        self.assertEqual([("recovered" in m) for _, m in told], [False, True])
+        told.clear()                               # a loud problem is told on its second pass
+        for i in range(3):
+            now = monitor.settle(seen, disk, t)
+            told += monitor.diff_problems(prev, now)
+            prev, t = now, t + 120
+        self.assertEqual(len(told), 1)
+        self.assertEqual(told[0][0], "loud")
+        now = monitor.settle(seen, {}, t)          # one blip of a short problem is never told at all
+        self.assertEqual(monitor.settle(seen, {"host:h": {"cpu_temp": ("loud", "hot")}}, t + 120).get("host:h", {}).get("cpu_temp"), None)

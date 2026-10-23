@@ -8,6 +8,7 @@ unreachable on two passes running, or a new console error line: Klipper's "!!" e
 """
 import re
 import json
+import time
 from pathlib import Path
 
 from . import net, printers
@@ -147,11 +148,47 @@ def health_pass(state: dict) -> list[tuple[str, str]]:
     except Exception:
         pass
     retired = {h["name"] for h in hosts.load_hosts() if h.get("retired")}
-    now = health_problems([v for v in fl if v["host"] not in retired], due)
+    if "_seen" not in state:   # first pass with debouncing: what was already told stays told (no burst of "recovered")
+        state["_seen"] = {sc: {k: {"level": lv, "text": tx, "since": 0, "gone": None, "told": True} for k, (lv, tx) in pr.items()}
+                          for sc, pr in state.get("_health", {}).items()}
+    now = settle(state["_seen"], health_problems([v for v in fl if v["host"] not in retired], due), time.time())
     prev = {k: {kk: tuple(vv) for kk, vv in v.items()} for k, v in state.get("_health", {}).items()}
     alerts = diff_problems(prev, now)
     state["_health"] = now
     return alerts
+
+
+# A problem is told only once it has lasted, and "recovered" only once it has stayed gone: a crash-looping service
+# (a Telegram bot whose token Telegram rejects, a bot for a printer switched off at the wall) flips between
+# auto-restart and running every few seconds, and without this every 2-min pass was an alert or a recovery.
+CONFIRM_S = {"loud": 100, "silent": 1500}    # loud: 2 passes running; silent: about 25 min
+CLEAR_S = {"loud": 100, "silent": 1500}
+
+
+def settle(seen: dict, now: dict, t: float) -> dict:
+    """Debounce one health read. `seen` (kept in the state file) is {scope: {key: {level, text, since, gone, told}}};
+    returns the problems that are confirmed, in health_problems' shape, for diff_problems."""
+    for scope, probs in now.items():
+        mine = seen.setdefault(scope, {})
+        for key, (level, text) in probs.items():
+            e = mine.setdefault(key, {"since": t, "gone": None, "told": False})
+            e.update(level=level, text=text, gone=None)
+    out = {}
+    for scope in list(seen):
+        for key in list(seen[scope]):
+            e = seen[scope][key]
+            if key not in now.get(scope, {}) and e["gone"] is None:
+                e["gone"] = t
+            if e["gone"] is not None and t - e["gone"] >= CLEAR_S.get(e["level"], 0):
+                del seen[scope][key]
+                continue
+            if not e["told"] and e["gone"] is None and t - e["since"] >= CONFIRM_S.get(e["level"], 0):
+                e["told"] = True
+            if e["told"]:
+                out.setdefault(scope, {})[key] = (e["level"], e["text"])
+        if not seen[scope]:
+            del seen[scope]
+    return out
 
 
 def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:
