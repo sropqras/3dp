@@ -5,7 +5,7 @@ const [base, shots] = process.argv.slice(2);
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1400, height: 1000 } });
   const errs = []; p.on("pageerror", (e) => errs.push(String(e))); p.on("dialog", (d) => d.accept());
   await p.goto(base + "/printers"); await p.waitForSelector(".card", { timeout: 30000 });
-  await p.fill("#operator", "UI check"); await p.dispatchEvent("#operator", "change");
+  await p.evaluate(() => farmOperatorSet("UI check"));     // the header's "You" link (static/operator.js)
   await p.click("text=Snapshot now"); await p.waitForTimeout(800);
   await p.evaluate(() => refresh()); await p.waitForTimeout(800);
   await p.click("text=+ Stage change"); await p.waitForTimeout(800);
@@ -41,7 +41,7 @@ const [base, shots] = process.argv.slice(2);
   console.log("camera:", alertText);
   await p.evaluate(() => refresh()); await p.waitForTimeout(1500);
   const form = p.locator(".card:has(details.onboard) details.onboard form");
-  await p.locator(".card:has(details.onboard) details.onboard summary").click();
+  await p.$eval(".card:has(details.onboard) details.onboard", (d) => { d.open = true; });   // a refresh keeps it open now
   await form.locator("input[name=x1]").fill("300"); await form.locator("input[name=y1]").fill("300"); await form.locator("input[name=z]").fill("300");
   await form.locator("input[value='neo-petg-036']").check();
   await p.screenshot({ path: shots + "/onboard.png", fullPage: true });

@@ -26,7 +26,7 @@ con = db.connect(tmp / "farm.db")
 maker_srv, moon = FakeMaker(tmp), FakeMoonraker(copy.deepcopy(GOOD))
 m = makers.get("likhan")
 m.spec = dataclasses.replace(type(m).spec, url=maker_srv.url)
-override = {n: moon.url for n in ("Ender3MaxNeo", "enders1plus", "EnderV3SE")}
+override = {n: moon.url for n in printers.PRINTERS}     # every registry printer is the fake: nothing real is contacted
 for n, u in override.items():
     printers.PRINTERS[n] = dataclasses.replace(printers.PRINTERS[n], moonraker=u)
 for name in ("Review me", "Start me"):

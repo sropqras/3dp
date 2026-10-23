@@ -1,219 +1,189 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-page="dash">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Farm Control</title>
+<script src="/static/ui.js"></script>
+<link rel="stylesheet" href="/static/farm.css">
 <style>
-:root {
-  --bg: #0a0e16; --panel: #111827; --panel2: #161f31; --line: #233047;
-  --text: #e6ecf5; --muted: #8b98ae; --dim: #5d6a80;
-  --teal: #2dd4bf; --violet: #a78bfa; --amber: #fbbf24; --red: #f87171; --green: #34d399; --blue: #60a5fa;
-  --radius: 16px;
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: radial-gradient(1200px 600px at 10% -10%, #1b2440 0%, transparent 60%),
-       radial-gradient(900px 500px at 110% 0%, #2a1b40 0%, transparent 55%), var(--bg);
-  color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; min-height: 100vh; }
-header { display: flex; align-items: center; gap: 24px; padding: 18px 28px; flex-wrap: wrap; }
-.brand { font-weight: 800; font-size: 20px; letter-spacing: .3px; }
-.brand span { background: linear-gradient(90deg, var(--teal), var(--violet)); -webkit-background-clip: text; color: transparent; }
-.kpis { display: flex; gap: 12px; flex-wrap: wrap; margin-left: auto; }
-.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; min-width: 120px; }
-.kpi b { display: block; font-size: 18px; } .kpi small { color: var(--muted); }
-main { padding: 0 28px 40px; display: grid; gap: 22px; }
-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); margin: 6px 0 10px; }
-.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); }
-main > *, .grid > *, .body > *, .split > * { min-width: 0; }
-@media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .body { grid-template-columns: 1fr; } }
-.card { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line);
-  border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
-.ph { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
-.ph .name { font-weight: 700; font-size: 16px; } .ph .host { color: var(--dim); font-size: 12px; }
-a.fluidd { color: var(--blue); font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; }
-a.fluidd:hover { border-color: var(--blue); }
-a.pg { font-size: 12px; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; color: var(--dim); white-space: nowrap; }
-a.pg.watch { color: var(--teal); } a.pg.bad { color: var(--red); border-color: var(--red); font-weight: 600; } a.pg:hover { border-color: var(--blue); }
-.ph .chip, a.fluidd { white-space: nowrap; } .ph { flex-wrap: wrap; } .facts .job { overflow-wrap: anywhere; }
-.pill { margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: capitalize; }
-.s-printing { background: rgba(45,212,191,.15); color: var(--teal); }
-.s-paused { background: rgba(251,191,36,.15); color: var(--amber); }
-.s-standby, .s-complete, .s-cancelled { background: rgba(139,152,174,.15); color: var(--muted); }
-.s-error, .s-offline { background: rgba(248,113,113,.15); color: var(--red); }
-.s-off { background: rgba(139,152,174,.15); color: var(--muted); }
-.alert { margin: 0 16px 10px; padding: 10px 12px; border-radius: 10px; background: rgba(251,191,36,.12);
-  border: 1px solid rgba(251,191,36,.45); color: var(--amber); font-weight: 600; animation: pulse 1.6s ease-in-out infinite; }
-@keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(251,191,36,.08); } }
-.body { display: grid; grid-template-columns: 1fr 150px; gap: 14px; padding: 0 16px 16px; }
-.cam { position: relative; border-radius: 12px; overflow: hidden; background: #05070b; aspect-ratio: 16/9; grid-column: 1 / -1; cursor: pointer; }
+/* the dashboard's own parts; shared look, themes and tokens are in farm.css (colours only via tokens) */
+[hidden] { display: none !important; }
+
+/* printer cards */
+.ccard { display: grid; align-content: start; }
+.ph { display: flex; align-items: flex-start; gap: 8px; padding: 12px var(--pad) 8px; }
+.phl { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+.ph .name { font-weight: 700; font-size: 1.14rem; } .ph .host { color: var(--dim); font-size: .86rem; }
+.ph .end { flex: none; display: flex; align-items: center; gap: 2px; margin-top: -3px; }
+a.fluidd, a.pg { font-size: .86rem; font-weight: 600; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 1px 8px; white-space: nowrap; }
+a.fluidd { color: var(--blue); } a.fluidd:hover, a.pg:hover { border-color: var(--blue); }
+a.pg { color: var(--dim); font-weight: 500; } a.pg.watch { color: var(--teal); } a.pg.bad { color: var(--red); border-color: var(--red); font-weight: 600; }
+.alert { margin: 0 var(--pad) 10px; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); border: 1px solid var(--amber-edge);
+  color: var(--amber); font-weight: 600; animation: pulse 1.6s ease-in-out infinite; }
+.alert.red { background: var(--red-soft); border-color: var(--red-edge); color: var(--red); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px var(--amber-soft); } }
+.cnote { padding: 0 var(--pad) 8px; }
+.body { display: grid; grid-template-columns: 1fr 140px; gap: 12px 14px; padding: 0 var(--pad) var(--pad); }
+.body > * { min-width: 0; }
+.cam { position: relative; border-radius: 12px; overflow: hidden; background: var(--media); aspect-ratio: 16/9; grid-column: 1 / -1; cursor: pointer; }
 .cam img { width: 100%; height: 100%; object-fit: cover; display: block; transition: filter .3s; }
 .cam.boost img { filter: brightness(1.7) contrast(1.15) saturate(1.1); }
-.cam .tag { position: absolute; top: 8px; left: 8px; font-size: 11px; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 6px; color: var(--muted); }
+.cam .tag { position: absolute; top: 8px; left: 8px; font-size: .79rem; background: var(--overlay); padding: 2px 8px; border-radius: 6px; color: var(--overlay-ink); }
 .ring { position: relative; display: grid; place-items: center; align-self: start; }
-.ring .pct { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; font-weight: 800; }
+.ring svg { width: 100%; max-width: 130px; height: auto; }
+.ring .pct { position: absolute; inset: 0; display: grid; place-items: center; font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .facts { display: grid; gap: 8px; align-content: start; }
-.job { font-weight: 600; } .labels { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; font-size: 12px; }
-.row { display: flex; gap: 14px; color: var(--muted); font-size: 13px; flex-wrap: wrap; } .row b { color: var(--text); font-weight: 600; }
-.temp { display: grid; grid-template-columns: 54px 1fr 92px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-.bar { height: 6px; background: #0b1220; border-radius: 99px; overflow: hidden; }
+.job { font-weight: 600; overflow-wrap: anywhere; } .labels { display: flex; gap: 6px; flex-wrap: wrap; }
+.temp { display: grid; grid-template-columns: 54px 1fr 92px; align-items: center; gap: 8px; font-size: .86rem; color: var(--muted); }
+.temp b { color: var(--text); }
+.bar { height: 6px; background: var(--track); border-radius: 99px; overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--blue), var(--red)); }
 .spool { display: inline-flex; align-items: center; gap: 6px; } .sw { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); }
-.audit { font-size: 12px; color: var(--green); } .audit.bad { color: var(--amber); cursor: help; }
-.split { display: grid; gap: 18px; grid-template-columns: 2fr 1fr; } @media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
-.pad { padding: 16px; }
-.bh { display: flex; align-items: baseline; gap: 12px; } .bh .big { font-size: 24px; font-weight: 800; }
-.prog { height: 10px; background: #0b1220; border-radius: 99px; overflow: hidden; margin: 10px 0 14px; }
+.audit { font-size: .86rem; color: var(--green); } .audit.bad { color: var(--amber); cursor: help; }
+.summary { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 0 var(--pad) 12px; font-size: .93rem; color: var(--muted); }
+.summary b { color: var(--text); font-weight: 600; } .summary .job { flex: 1 1 160px; color: var(--text); }
+.mprog { flex: 1 1 90px; height: 6px; background: var(--track); border-radius: 99px; overflow: hidden; min-width: 70px; }
+.mprog i { display: block; height: 100%; background: linear-gradient(90deg, var(--teal), var(--violet)); }
+@media (max-width: 600px) { .body { grid-template-columns: 1fr 96px; } .ring .pct { font-size: 1.15rem; } .temp { grid-template-columns: 46px 1fr 80px; } }
+
+/* projects */
+.split { display: grid; gap: 18px; grid-template-columns: 2fr 1fr; } .split > * { min-width: 0; } @media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
+.bh { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; } .bh .big { font-size: 1.7rem; font-weight: 800; }
+.prog { height: 10px; background: var(--track); border-radius: 99px; overflow: hidden; margin: 10px 0 14px; }
 .prog i { display: block; height: 100%; background: linear-gradient(90deg, var(--green), var(--teal)); }
 .brow { display: grid; grid-template-columns: 70px 1fr 54px; align-items: center; gap: 10px; margin: 3px 0; }
-.brow .rn { color: var(--muted); font-weight: 700; font-size: 12px; } .brow .rc { color: var(--dim); font-size: 12px; text-align: right; }
+.brow .rn { color: var(--muted); font-weight: 700; font-size: .86rem; } .brow .rc { color: var(--dim); font-size: .86rem; text-align: right; }
 .cells { display: flex; flex-wrap: wrap; gap: 3px; }
-.cell { width: 11px; height: 11px; border-radius: 3px; background: #1e293b; }
+.cell { width: 11px; height: 11px; border-radius: 3px; background: var(--cell); }
 .c-sliced { background: var(--blue); } .c-queued { background: var(--violet); } .c-printing { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .c-done { background: var(--green); } .c-failed { background: var(--red); }
-.c-generating { background: #334155; box-shadow: inset 0 0 0 1px var(--teal); } .c-generated { background: var(--teal); opacity: .55; }
+.c-generating { background: var(--cell-mid); box-shadow: inset 0 0 0 1px var(--teal); } .c-generated { background: var(--teal); opacity: .55; }
 .c-item-todo { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); } .c-item-done { background: var(--muted); }
 .prog.multi { display: flex; } .prog.multi i { border-radius: 0; } .pj { cursor: pointer; } .pj:hover { border-color: var(--teal); }
 .pgrid { display: flex; flex-wrap: wrap; gap: 4px; } .grp { margin-bottom: 14px; }
-.grp h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
-.part { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; color: var(--muted); cursor: pointer; user-select: none; }
-.part.sel { border-color: var(--teal); background: rgba(45,212,191,.12); color: var(--text); } .part .cell { width: 9px; height: 9px; }
-.pbar { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
-.legend { display: flex; gap: 14px; color: var(--muted); font-size: 12px; margin-top: 10px; flex-wrap: wrap; } .legend .cell { display: inline-block; vertical-align: -1px; margin-right: 4px; }
-.note { color: var(--dim); font-size: 12px; margin-top: 8px; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-td { padding: 8px 10px; border-bottom: 1px solid rgba(35,48,71,.5); }
-.st { font-size: 12px; font-weight: 700; } .st.completed { color: var(--green); } .st.cancelled, .st.error, .st.FAILED { color: var(--red); }
+.grp h3 { font-size: .86rem; color: var(--muted); margin: 0 0 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+.part { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 6px; font-size: .79rem; color: var(--muted); cursor: pointer; user-select: none; }
+.part.sel { border-color: var(--teal); background: var(--teal-soft); color: var(--text); } .part .cell { width: 9px; height: 9px; }
+.pbar { position: sticky; top: calc(var(--head) + 8px); z-index: 2; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.legend { display: flex; gap: 14px; color: var(--muted); font-size: .86rem; margin-top: 10px; flex-wrap: wrap; } .legend .cell { display: inline-block; vertical-align: -1px; margin-right: 4px; }
+.nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .93rem; color: var(--muted); } .nextq b { color: var(--text); }
+
+/* tables of builds and jobs */
+.st { font-size: .86rem; font-weight: 700; } .st.completed { color: var(--green); } .st.cancelled, .st.error, .st.FAILED { color: var(--red); }
 .st.uploaded, .st.ok { color: var(--violet); } .st.in_progress { color: var(--teal); }
-.spools { display: grid; gap: 10px; }
+.chip.s-review { color: var(--amber); border-color: var(--amber-edge); background: var(--panel2); } .chip.s-queued, .chip.s-approved, .chip.s-uploading { color: var(--violet); background: var(--panel2); }
+.chip.s-printing, .chip.s-starting { color: var(--teal); background: var(--panel2); } .chip.s-failed { color: var(--red); background: var(--panel2); } .chip.s-slicing { color: var(--blue); background: var(--panel2); }
+
+/* spools */
+.spools { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); }
 .sp { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
-.sp .disc { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); box-shadow: inset 0 0 0 6px rgba(0,0,0,.35); }
-.sp .t { font-weight: 600; } .sp .m { color: var(--muted); font-size: 12px; }
+.sp .disc { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line); box-shadow: inset 0 0 0 6px var(--overlay); }
+.sp .t { font-weight: 600; } .sp .m { color: var(--muted); font-size: .86rem; }
 .sp .ctl { display: flex; gap: 8px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
-input, select { background: #0b1220; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font: inherit; font-size: 12px; }
-input[type=number] { width: 78px; } button { background: linear-gradient(90deg, var(--teal), var(--violet)); color: #071018; border: 0; border-radius: 8px; padding: 6px 12px; font-weight: 700; cursor: pointer; }
-button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
-.stamp { color: var(--dim); font-size: 12px; }
-button.mini { padding: 3px 9px; font-size: 12px; } button:disabled { opacity: .35; cursor: default; }
-.chip.s-review { color: var(--amber); border-color: rgba(251,191,36,.5); } .chip.s-queued, .chip.s-approved, .chip.s-uploading { color: var(--violet); }
-.chip.s-printing, .chip.s-starting { color: var(--teal); } .chip.s-failed { color: var(--red); } .chip.s-slicing { color: var(--blue); }
-.acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .warn { color: var(--amber); font-size: 12px; } .err { color: var(--red); font-size: 12px; }
-dialog#startdlg { width: min(520px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); }
-dialog#startdlg::backdrop { background: rgba(3,6,12,.72); }
+
+/* dialogs' contents */
 #startdlg .pad { display: grid; gap: 10px; } #startdlg label { display: flex; gap: 8px; align-items: center; }
-#startdlg ul { margin: 0; padding-left: 18px; color: var(--red); font-size: 13px; }
-dialog#newjob { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
-dialog#newjob::backdrop { background: rgba(3,6,12,.72); }
+#startdlg ul { margin: 0; padding-left: 18px; color: var(--red); font-size: .93rem; }
 .nj { display: grid; gap: 12px; } .nj .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-.nj label.f { display: grid; gap: 3px; font-size: 12px; color: var(--muted); } .nj label.f input, .nj label.f select, .nj textarea { width: 100%; } .nj label.f input[type=checkbox] { width: auto; margin: 0 6px 0 0; }
-.nj label.f > span:not(.stamp) { display: flex; align-items: center; color: var(--text); font-size: 13px; }
-.nj textarea { background: #0b1220; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 12px; min-height: 64px; }
-.nj details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; } .nj summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-nav.tabs { display: flex; gap: 4px; } nav.tabs a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 10px; border: 1px solid transparent; }
-nav.tabs a.on { color: var(--text); border-color: var(--line); background: var(--panel); }
-.tab { display: grid; gap: 22px; } .tab > * { min-width: 0; } .tab[hidden] { display: none; }
+.nj label.f { display: grid; gap: 3px; font-size: .86rem; color: var(--muted); } .nj label.f input, .nj label.f select, .nj textarea { width: 100%; } .nj label.f input[type=checkbox] { width: auto; margin: 0 6px 0 0; }
+.nj label.f > span:not(.stamp) { display: flex; align-items: center; color: var(--text); font-size: .93rem; }
+.nj details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+
+/* inventory */
 .lib { display: grid; gap: 12px; } .lib table td { vertical-align: top; }
-.invbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; } .seg { display: inline-flex; gap: 4px; }
+.invbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .igrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); margin-bottom: 18px; }
 .art { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 6px; align-content: start; }
-.art .th { height: 120px; border-radius: 8px; background: #0b1220; display: grid; place-items: center; overflow: hidden; color: var(--dim); font-size: 12px; }
+.art .th { height: 120px; border-radius: 8px; background: var(--input); display: grid; place-items: center; overflow: hidden; color: var(--dim); font-size: .86rem; }
 .art .th img { max-width: 100%; max-height: 120px; }
-.art .t { font-weight: 700; overflow-wrap: anywhere; } .art.prod { border-color: rgba(251,191,36,.45); } .star { color: var(--amber); }
+.art .t { font-weight: 700; overflow-wrap: anywhere; } .art.prod { border-color: var(--amber-edge); } .star { color: var(--amber); }
 .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; max-height: 40vh; overflow: auto; }
-.photos label { position: relative; display: block; border: 2px solid transparent; border-radius: 8px; overflow: hidden; cursor: pointer; background: #0b1220; height: 96px; }
+.photos label { position: relative; display: block; border: 2px solid transparent; border-radius: 8px; overflow: hidden; cursor: pointer; background: var(--input); height: 96px; }
 .photos label:has(input:checked) { border-color: var(--teal); } .photos input { position: absolute; top: 4px; left: 4px; }
-.photos img { width: 100%; height: 100%; object-fit: cover; } .pc { font-size: 11px; } .pc b { color: var(--green); } .pc i { color: var(--red); font-style: normal; } .pc u { color: var(--amber); text-decoration: none; }
+.photos img { width: 100%; height: 100%; object-fit: cover; } .pc { font-size: .79rem; } .pc b { color: var(--green); } .pc i { color: var(--red); font-style: normal; } .pc u { color: var(--amber); text-decoration: none; }
 .nas td, .nas th { white-space: nowrap; } .nas td.p { overflow-wrap: anywhere; white-space: normal; min-width: 260px; }
 /* NAS catalogue 2.0: folder/category sidebar + facets + grid/table */
-.nasx { display: grid; grid-template-columns: 270px 1fr; gap: 14px; align-items: start; }
-.nas-side { padding: 10px; position: sticky; top: 8px; max-height: calc(100vh - 24px); overflow: auto; }
+.nasx { display: grid; grid-template-columns: 270px 1fr; gap: 14px; align-items: start; } .nasx > * { min-width: 0; }
+.nas-side { padding: 10px; position: sticky; top: calc(var(--head) + 8px); max-height: calc(100vh - var(--head) - 24px); overflow: auto; }
 .nas-side .row { display: flex; gap: 6px; align-items: center; }
 .nt { list-style: none; margin: 0; padding-left: 12px; } .nt.root { padding-left: 0; }
 .nt summary, .nt .leaf { cursor: pointer; padding: 2px 4px; border-radius: 6px; display: flex; gap: 6px; align-items: baseline; }
-.nt summary:hover, .nt .leaf:hover, .ncat:hover { background: rgba(255,255,255,.05); }
-.nt .on, .ncat.on { background: rgba(45,212,191,.15); color: var(--teal); }
-.nt .cnt, .ncat .cnt { margin-left: auto; color: var(--dim); font-size: 12px; }
+.nt summary:hover, .nt .leaf:hover, .ncat:hover { background: var(--hover); }
+.nt .on, .ncat.on { background: var(--teal-soft); color: var(--teal); }
+.nt .cnt, .ncat .cnt { margin-left: auto; color: var(--dim); font-size: .86rem; }
 .nt .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); display: inline-block; }
 .ncat { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
 .ncat i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .ncat.drop, .nt .drop { outline: 2px dashed var(--teal); }
 .nas-views { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.nas-views .vt { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: 12px; background: var(--panel); }
+.nas-views .vt { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: .86rem; background: var(--panel); }
 .nas-views .vt.on { border-color: var(--teal); color: var(--teal); }
 .nas-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-.crumb a { color: var(--blue); cursor: pointer; } .crumb { font-size: 13px; }
-.pill { border-radius: 999px; padding: 2px 10px; font-size: 12px; border: 1px solid var(--line); }
-.pill.ok { color: var(--green); } .pill.off { color: var(--amber); border-color: var(--amber); }
+.crumb a { color: var(--blue); cursor: pointer; } .crumb { font-size: .93rem; }
+.pill.ok { color: var(--green); border-color: var(--green-edge); font-weight: 500; text-transform: none; } .pill.off { color: var(--amber); border-color: var(--amber); font-weight: 500; text-transform: none; }
 .facets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.chip.f { cursor: pointer; user-select: none; } .chip.f.on { background: rgba(45,212,191,.18); color: var(--teal); border-color: var(--teal); }
+.chip.f { cursor: pointer; user-select: none; } .chip.f.on { background: var(--teal-soft); color: var(--teal); border-color: var(--teal); }
 .chip.f small { color: var(--dim); margin-left: 4px; }
 .ngrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 .ncard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; cursor: pointer; }
 .ncard:hover { border-color: var(--teal); }
-.ncard .th { aspect-ratio: 1; background: #eeeeec; display: grid; place-items: center; }
+.ncard .th { aspect-ratio: 1; background: var(--preview); display: grid; place-items: center; }
 .ncard .th img { width: 100%; height: 100%; object-fit: contain; }
-.ncard .th .ty { color: #667; font: 700 22px system-ui; }
-.ncard .meta { padding: 8px 10px; font-size: 12px; } .ncard .nm { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.ncard .th .ty { color: var(--preview-ink); font: 700 22px system-ui; }
+.ncard .meta { padding: 8px 10px; font-size: .86rem; } .ncard .nm { font-size: .93rem; font-weight: 600; overflow-wrap: anywhere; }
 .ncard .tick { position: absolute; top: 8px; left: 8px; width: 18px; height: 18px; }
 .ncard .badges { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; }
-.ncard .badges span { background: rgba(10,14,22,.8); color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 11px; }
+.ncard .badges span { background: var(--overlay); color: var(--overlay-ink); border-radius: 6px; padding: 1px 6px; font-size: .79rem; }
 .ntable { width: 100%; border-collapse: collapse; } .ntable th { position: sticky; top: 0; background: var(--panel2); cursor: pointer; text-align: left; }
-.ntable td, .ntable th { padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
-.ntable tr:hover td { background: rgba(255,255,255,.03); }
+.ntable td, .ntable th { padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: .93rem; }
 .nbulk { position: sticky; bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin-top: 10px; }
 #nas-pack .gal { display: flex; gap: 8px; flex-wrap: wrap; } #nas-pack .gal img { height: 110px; border-radius: 8px; }
 #nas-pack ul { margin: 4px 0; padding-left: 18px; }
-.nbulk[hidden] { display: none; }
-dialog#nas-pack { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
-dialog#nas-pack::backdrop { background: rgba(3,6,12,.72); }
-dialog#nas-pack .vh { padding: 12px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
-dialog#nas-pack h3 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+#nas-pack h3 { font-size: .93rem; color: var(--muted); margin: 14px 0 6px; }
 @media (max-width: 860px) { .nasx { grid-template-columns: 1fr; } .nas-side { position: static; max-height: 40vh; } }
-.nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
-dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
-  border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
-dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
-.vh { display: flex; align-items: center; gap: 10px; padding: 12px 16px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
-.vh .name { font-weight: 700; } .vh .x { margin-left: auto; }
+
+/* 3D viewer */
 .vbody { display: grid; grid-template-columns: 1fr 260px; } @media (max-width: 800px) { .vbody { grid-template-columns: 1fr; } }
-.vcanvas { position: relative; background: #05070b; }
+.vcanvas { position: relative; background: var(--media); }
 .vcanvas canvas { display: block; width: 100%; height: min(62vh, 620px); touch-action: none; cursor: grab; }
-.vcanvas .hint { position: absolute; bottom: 8px; left: 10px; font-size: 11px; color: var(--dim); pointer-events: none; }
-.vcanvas .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
-.vside { padding: 14px 16px; display: grid; gap: 12px; align-content: start; border-left: 1px solid var(--line); }
-.vside { min-width: 0; overflow-wrap: anywhere; } .vside .k { color: var(--muted); font-size: 12px; } .vside .v { font-weight: 600; }
-.ok { color: var(--green); } .bad { color: var(--red); }
+.vcanvas .hint { position: absolute; bottom: 8px; left: 10px; font-size: .79rem; color: var(--overlay-ink); opacity: .6; pointer-events: none; }
+.vcanvas .msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--overlay-ink); opacity: .75; }
+.vside { padding: 14px 16px; display: grid; gap: 12px; align-content: start; border-left: 1px solid var(--line); min-width: 0; overflow-wrap: anywhere; }
+.vside .k { color: var(--muted); font-size: .86rem; } .vside .v { font-weight: 600; }
 .vside .spool .stamp { white-space: nowrap; }
 .vslider { padding: 12px 16px 14px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
 .vslider .track { position: relative; } .vslider input[type=range] { width: 100%; padding: 0; accent-color: var(--teal); }
 .vslider .tick { position: absolute; top: -6px; width: 3px; height: 8px; border-radius: 2px; transform: translateX(-1px); }
-.vslider .lbl { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--muted); } .vslider .lbl b { color: var(--text); }
+.vslider .lbl { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: .93rem; color: var(--muted); } .vslider .lbl b { color: var(--text); }
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">sropqras <span>Farm Control</span></div>
-  <nav class="tabs"><a href="#dashboard" data-tab="dashboard">Dashboard</a><a href="#projects" data-tab="projects">Projects</a>
-    <a href="#inventory" data-tab="inventory">Inventory</a><a href="#spools" data-tab="spools">Spools</a><a href="/printers">Printers →</a></nav>
-  <button onclick="openNewJob()">+ New job</button>
-  <span class="dim" data-you></span>
+<header class="appbar">
+  <div class="bar1">
+    <div class="brand">sropqras <span>Farm Control</span></div>
+    <nav class="tabs"><a href="#dashboard" data-tab="dashboard">Dashboard</a><a href="#projects" data-tab="projects">Projects</a><a href="#inventory" data-tab="inventory">Inventory</a><a href="#spools" data-tab="spools">Spools</a><a href="/printers">Printers →</a></nav>
+    <div class="tools"><button onclick="openNewJob()">+ New job</button><span class="you" data-you></span><span data-settings></span></div>
+  </div>
   <div class="kpis" id="kpis"></div>
 </header>
 <main>
-  <div class="tab" data-tab="dashboard">
-    <section><h2>Printers</h2><div class="grid" id="printers"></div></section>
-    <section><h2>Review &amp; queue</h2><div class="card" style="overflow-x:auto"><table id="builds"></table></div></section>
-    <section><h2>Jobs</h2><div class="card" style="overflow-x:auto"><table id="jobs"></table></div></section>
+  <div class="tab" data-tab="dashboard" data-panels="dashboard">
+    <section class="panel" data-panel="printers"><div class="panel-h"><h2>Printers</h2><span class="grow"></span><span id="printers-view"></span></div>
+      <div class="panel-b grid" id="printers" data-cards="printers"></div></section>
+    <section class="panel" data-panel="review"><div class="panel-h"><h2>Review &amp; queue</h2></div>
+      <div class="panel-b card scroll-x"><table id="builds"></table></div></section>
+    <section class="panel" data-panel="jobs"><div class="panel-h"><h2>Jobs</h2></div>
+      <div class="panel-b card scroll-x"><table id="jobs"></table></div></section>
   </div>
   <div class="tab" data-tab="projects" hidden>
-    <section id="pj-list-sec"><h2>Farm projects <span class="stamp" style="text-transform:none;letter-spacing:0">a large order as groups of parts × qty - any maker, re-prints from the Inventory, or bought items</span>
-        <button class="mini" style="margin-left:auto" onclick="newProject()">+ Project</button></h2>
+    <section id="pj-list-sec" class="panel"><h2>Farm projects <span class="stamp">a large order as groups of parts × qty - any maker, re-prints from the Inventory, or bought items</span>
+        <span class="grow" style="flex:1"></span><button class="mini" onclick="newProject()">+ Project</button></h2>
       <div class="grid" id="pj-list"></div></section>
     <section id="pj-view" hidden></section>
   </div>
   <div class="tab" data-tab="inventory" hidden>
-    <section><h2>Inventory <span class="stamp" style="text-transform:none;letter-spacing:0">everything the farm has made or holds, and where it printed - the product portfolio starts here</span></h2>
+    <section class="panel"><h2>Inventory <span class="stamp">everything the farm has made or holds, and where it printed - the product portfolio starts here</span></h2>
       <div class="card pad ctl invbar">
         <span class="seg"><button class="mini" id="iv-v-designs" onclick="ivView('designs')">Designs</button><button class="mini ghost" id="iv-v-nas" onclick="ivView('nas')">NAS catalogue</button></span>
         <span id="iv-designs-ctl">Group by <select id="iv-by" onchange="loadInventory()"><option value="printer">Printer</option><option value="project">Project</option><option value="maker">Maker</option></select>
@@ -230,9 +200,9 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
       <div id="inventory"></div></section>
   </div>
   <div class="tab" data-tab="spools" hidden>
-    <section><h2>Spools</h2>
+    <section class="panel"><h2>Spools</h2>
       <div class="card pad"><div class="spools" id="spools"></div>
-        <div class="ctl" style="margin-top:12px; display:flex; gap:8px"><button onclick="saveInv()">Save spools</button>
+        <div class="ctl acts" style="margin-top:12px"><button onclick="saveInv()">Save spools</button>
         <button class="ghost" onclick="addSpool()">+ Spool</button><span class="stamp" id="invmsg"></span></div>
       </div></section>
   </div>
@@ -262,9 +232,9 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     <div class="acts"><button onclick="saveProduct()">Save to the portfolio</button><button class="ghost" id="pd-del" onclick="saveProduct(true)">Remove from portfolio</button><span class="stamp" id="pd-msg"></span></div>
   </div>
 </dialog>
-<dialog id="prdlg">
+<dialog id="prdlg" class="wide">
   <div class="vh"><span class="name" id="pr-title">Prints</span><button class="ghost x" onclick="$('prdlg').close()">Close</button></div>
-  <div class="pad" id="pr-body" style="overflow-x:auto"></div>
+  <div class="pad scroll-x" id="pr-body"></div>
   <div class="pad stamp">Good / Bad is your look at the part: a finished print isn't always a good one. Marks count in the portfolio.</div>
 </dialog>
 <dialog id="senddlg">
@@ -302,7 +272,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     <div class="stamp">Nothing prints from here: the job is generated and sliced, then waits in Review &amp; queue for your 3D check and approval.</div>
   </div>
 </dialog>
-<dialog id="startdlg">
+<dialog id="startdlg" class="narrow">
   <div class="vh"><span class="name" id="sd-title">Start</span><button class="ghost x" onclick="$('startdlg').close()">Close</button></div>
   <div class="pad">
     <div id="sd-info" class="stamp"></div>
@@ -317,8 +287,8 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     <div class="stamp">The server checks everything again (approval, file on the printer, audit, printer idle) before it starts.</div>
   </div>
 </dialog>
-<dialog id="nas-pack"><div class="vh" style="display:flex;gap:10px;align-items:center"><b id="np-title"></b><button class="ghost" style="margin-left:auto" onclick="$('nas-pack').close()">Close</button></div><div id="np-body" class="pad"></div></dialog>
-<dialog id="viewer">
+<dialog id="nas-pack" class="wide"><div class="vh"><b id="np-title"></b><button class="ghost x" onclick="$('nas-pack').close()">Close</button></div><div id="np-body" class="pad"></div></dialog>
+<dialog id="viewer" class="wide">
   <div class="vh"><span class="name" id="v-title">Model</span><select id="v-file" onchange="loadModel(viewerRun, this.value)"></select>
     <span id="v-layerpick" class="stamp"></span>
     <span class="stamp" id="v-file-note"></span><button class="ghost x" onclick="$('viewer').close()">Close</button></div>
@@ -349,14 +319,14 @@ function localStorageSafe(k, v) { try { if (v === undefined) return localStorage
 
 function ring(p, color) {
   const r = 52, c = 2 * Math.PI * r, off = c * (1 - p);
-  return `<svg viewBox="0 0 130 130" width="130" height="130"><circle cx="65" cy="65" r="${r}" fill="none" stroke="#0b1220" stroke-width="12"/>
+  return `<svg viewBox="0 0 130 130" width="130" height="130" aria-hidden="true"><circle cx="65" cy="65" r="${r}" fill="none" style="stroke:var(--track)" stroke-width="12"/>
     <circle cx="65" cy="65" r="${r}" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round"
       stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 65 65)"/></svg>`;
 }
 
 function tempRow(label, t) {
   const [a, tg] = t || [0, 0], pct = Math.min(100, a / 260 * 100);
-  return `<div class="temp"><span>${label}</span><div class="bar"><i style="width:${pct}%"></i></div><span><b style="color:var(--text)">${a.toFixed(0)}°</b> / ${tg.toFixed(0)}°</span></div>`;
+  return `<div class="temp"><span>${label}</span><div class="bar"><i style="width:${pct}%"></i></div><span><b>${a.toFixed(0)}°</b> / ${tg.toFixed(0)}°</span></div>`;
 }
 
 // PrintGuard (local failure detection, alert-only): what it last thought of this printer's camera
@@ -388,14 +358,32 @@ async function reconnect(name) {
   refresh();
 }
 
-function printerCard(p) {
-  if (!p.online) return `<div class="card"><div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}
-    <span class="pill s-offline">offline</span></div><div class="alert">${esc(p.error || "unreachable")}</div></div>`;
-  if (p.off) return `<div class="card"><div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}
-    <span class="pill s-off">switched off</span></div><div class="pad stamp">Board not connected — the printer is off (or its USB is out). Files, history and Inventory still work.
-    ${p.readonly ? "" : `<div style="margin-top:8px"><button class="mini" onclick="reconnect('${esc(p.name)}')">Reconnect</button> after switching it on</div>`}</div></div>`;
+// Printer cards follow the layout kept in this browser (static/ui.js): order, collapsed, hidden, and which parts show.
+// A card that needs attention (offline, error, paused, an alert, PrintGuard's ⚠) is never hidden: it shows collapsed.
+const CARD_PARTS = [["cam", "Camera"], ["temps", "Temperatures"], ["facts", "Speed, flow, spool & baseline"]];
+
+function cardFrame(p, i, st, urgent, head, inner) {
+  const hide = st.hidden && !urgent, collapsed = st.collapsed || (st.hidden && urgent);
+  return `<div class="card ccard${collapsed ? " collapsed" : ""}${hide ? " is-hidden" : ""}" data-card="${esc(p.name)}" data-scope="printers" style="order:${st.order}">
+    <div class="ph"><div class="phl"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}${head}</div>
+      <span class="end">${farmUI.cardControls("printers", p.name, CARD_PARTS)}</span></div>
+    ${st.hidden && urgent ? `<div class="cnote stamp">Hidden on this page, shown because it needs attention.</div>` : ""}
+    ${inner(collapsed)}</div>`;
+}
+
+function printerCard(p, i) {
+  const st = farmUI.cardState("printers", p.name, i);
+  if (!p.online) return cardFrame(p, i, st, true, `<span class="pill s-offline">offline</span>`,
+    () => `<div class="alert red">${esc(p.error || "unreachable")}</div>`);
+  if (p.off) return cardFrame(p, i, st, false, `<span class="pill s-off">switched off</span>`, (collapsed) => collapsed ? "" :
+    `<div class="pad stamp" style="padding-top:0">Board not connected — the printer is off (or its USB is out). Files, history and Inventory still work.
+    ${p.readonly ? "" : `<div style="margin-top:8px"><button class="mini" onclick="reconnect('${esc(p.name)}')">Reconnect</button> after switching it on</div>`}</div>`);
   const state = p.klipper !== "ready" ? "error" : (p.paused ? "paused" : p.job);
   const color = state === "paused" ? "var(--amber)" : state === "printing" ? "var(--teal)" : "var(--dim)";
+  const pgAlert = !!(p.printguard && p.printguard.alert && p.printguard.alert.ts);
+  const urgent = !!p.alert || pgAlert || state === "error" || state === "paused";
+  const active = ["printing", "paused"].includes(p.job);
+  const head = `${pgBadge(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span>`;
   const spool = (inv?.spools || []).filter((s) => s.location === p.name)
     .map((s) => `<span class="spool"><span class="sw" style="background:${esc(s.hex)}"></span>${esc(s.colour)} ${esc(s.material)}</span>`).join(" ") || "<span class='stamp'>no spool assigned</span>";
   const audit = p.audit_fails == null ? "" : p.audit_fails.length
@@ -405,28 +393,29 @@ function printerCard(p) {
                     : `<div class="job">${esc(p.file || "idle")}</div>`;
   const next = p.next ? `<div class="row">Next: <b>${esc(p.next.what)}</b> in <b>${hm(p.next.in_s)}</b></div>` : "";
   const queued = (data.builds || []).filter((b) => b.printer === p.name && b.state === "queued");
-  const nextq = queued.length ? `<div class="nextq">Queue ${queued.length}: <b style="color:var(--text)">${esc(queued[0].labels || queued[0].order)}</b>
+  const nextq = queued.length ? `<div class="nextq">Queue ${queued.length}: <b>${esc(queued[0].labels || queued[0].order)}</b>
       ${!["printing", "paused"].includes(p.job) && !p.readonly ? `<button class="mini" onclick="openStart(${queued[0].id})">Start…</button>` : ""}</div>` : "";
-  const active = ["printing", "paused"].includes(p.job);
-  return `<div class="card">
-    <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}${pgBadge(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span></div>
+  const t = (x) => `${(x || [0])[0].toFixed(0)}°`;
+  return cardFrame(p, i, st, urgent, head, (collapsed) => `
     ${p.alert ? `<div class="alert">⚑ ${esc(p.alert)}</div>` : ""}
-    ${p.fluidd_note ? `<div class="stamp" style="padding:0 16px 8px">Fluidd: ${esc(p.fluidd_note)}</div>` : ""}
+    ${p.fluidd_note && !collapsed ? `<div class="cnote stamp">Fluidd: ${esc(p.fluidd_note)}</div>` : ""}
+    ${collapsed ? `<div class="summary"><span class="job">${esc(p.run ? p.run.job : p.file || "idle")}</span>
+        ${active ? `<span class="mprog"><i style="width:${Math.round(p.progress * 100)}%"></i></span><b>${Math.round(p.progress * 100)}%</b> ETA <b>${hm(p.eta_s)}</b>` : ""}
+        <span>Nozzle <b>${t(p.nozzle)}</b></span><span>Bed <b>${t(p.bed)}</b></span>${queued.length ? `<span>Queue <b>${queued.length}</b></span>` : ""}</div>` : `
     <div class="body">
-      ${p.has_cam ? `<div class="cam ${boost[p.name] !== false ? "boost" : ""}" onclick="toggleBoost('${esc(p.name)}')" title="click: toggle low-light boost">
+      ${p.has_cam && st.part("cam") ? `<div class="cam ${boost[p.name] !== false ? "boost" : ""}" onclick="toggleBoost('${esc(p.name)}')" title="click: toggle low-light boost">
         <img id="cam-${esc(p.name)}" src="/api/cam/${encodeURIComponent(p.name)}?t=${Date.now()}" alt="${esc(p.name)} camera">
         <span class="tag">${boost[p.name] !== false ? "low-light boost" : "raw"}</span></div>` : ""}
       <div class="facts">
         ${run}
         <div class="row">Elapsed <b>${active ? hm(p.elapsed) : "–"}</b> ETA <b>${active ? hm(p.eta_s) : "–"}</b></div>
         ${next}${nextq}
-        ${tempRow("Nozzle", p.nozzle)}${tempRow("Bed", p.bed)}
-        <div class="row">Speed <b>${Math.round(p.speed * 100)}%</b> Flow <b>${Math.round(p.flow * 100)}%</b></div>
-        <div class="row">${spool}</div>
-        <div>${audit}</div>
+        ${st.part("temps") ? tempRow("Nozzle", p.nozzle) + tempRow("Bed", p.bed) : ""}
+        ${st.part("facts") ? `<div class="row">Speed <b>${Math.round(p.speed * 100)}%</b> Flow <b>${Math.round(p.flow * 100)}%</b></div>
+        <div class="row">${spool}</div><div>${audit}</div>` : ""}
       </div>
       <div class="ring">${ring(active ? p.progress : 0, color)}<div class="pct">${active ? Math.round(p.progress * 100) + "%" : "–"}</div></div>
-    </div></div>`;
+    </div>`}`);
 }
 
 function projectCard(pj) {
@@ -1331,7 +1320,9 @@ function render() {
     b ? [`${b.done}/${b.total}`, `${b.name.slice(0, 22)} done`] : null, b && b.hours_left ? [`${Math.round(b.hours_left)} h`, "project left"] : null,
     [`${(petg / 1000).toFixed(2)} kg`, "PETG on hand"], [new Date(data.time * 1000).toLocaleTimeString(), "updated"],
   ].filter(Boolean).map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><small>${esc(l)}</small></div>`).join("");
-  $("printers").innerHTML = P.map(printerCard).join("");
+  // not under an open card menu or a drag (static/ui.js): the layout follows this browser's saved order and states
+  if (!farmUI.busy($("printers"))) $("printers").innerHTML = P.map(printerCard).join("");
+  if (!$("printers-view").querySelector("details[open]")) $("printers-view").innerHTML = farmUI.viewMenu("printers", CARD_PARTS);
   $("jobs").innerHTML = jobsTable(data.runs);
   // don't redraw under an open printer drop-down (it would close it); anything else re-renders
   const busy = document.activeElement?.tagName === "SELECT" && document.activeElement.closest("#builds");
@@ -1620,6 +1611,7 @@ function bindControls(c) {
 
 showTab(location.hash.slice(1));
 refresh(); setInterval(refresh, 5000);
+farmUI.onCards("printers", () => { if (data) render(); });     // a layout change redraws the cards at once
 </script>
 </body>
 </html>

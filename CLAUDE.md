@@ -55,6 +55,15 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - **A job with `"plates"`** puts several labels on one bed. Without it, one design is auto-split into pieces, and each piece gets its own bed. `"base_top"` in `colour_changes` resolves to `base_thickness_mm`.
 - **`farm/audit.py`** encodes every lesson learned on any printer as a rule run against the **live** config (`/printer/objects/query?configfile=settings`). Each rule states why it exists. When a new printer problem is found, add a rule here so it's checked farm-wide.
 - **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and spools live in the farm DB (Spools tab; `data/inventory.json` was only the seed). The 3D viewer is hand-written WebGL2 in the page, with no libraries. It fetches `/api/model/<run>/<file>`, which `farm/model3mf.py` builds from the run's project `.3mf` (bed-space meshes plus the file's own colour changes, layer heights and bed shape). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
+- **Look and layout** (`static/farm.css` + `static/ui.js`, shared by both pages, served from an allowlist in `web.py`):
+  - Themes are token blocks in `farm.css` (dark, light, and System following the device). Colours appear only in
+    token declarations; `tests/test_static_ui.py` fails on a literal colour anywhere else. Data colours (spool hex,
+    colour pickers) come in through `${...}`.
+  - The ⚙ menu sets theme, density, text size and card size. **Edit layout** (Fluidd-style) moves, hides and collapses
+    sections (`<section class="panel" data-panel>` in a `data-panels` container) and cards (`data-card`; the page asks
+    `farmUI.cardState()` while building each card, so the poll's re-render keeps the layout).
+  - All of it is per browser (`localStorage["farm.ui.v1"]`), not farm state. A card that needs attention (offline,
+    error, paused, an alert, PrintGuard ⚠, staged changes, maintenance due) is never hidden, only shown collapsed.
 - **`farm/monitor.py`** is the serious-error watch. It alerts on Klipper error/shutdown, a print in the error state, Moonraker down two polls running, and new console `!!`/`Unknown command` lines. It's stateful, so it reports only new problems (loud) and recoveries (silent). On aali-cli the jobctl job `farm-monitor` runs it every 2 min and sends alerts through the ops Telegram bot. Each `Printer` carries its `fluidd` URL. Fluidd can't choose an instance from the URL, so a shared Fluidd gets a `fluidd_note`.
 - **PrintGuard** (`farm/printguard.py`; setup in `~/agent_workspace/infrastructure/printguard/`) is failure detection by
   a local vision model on 3dpnas:11111. The farm only reads its REST API (read scope).

@@ -374,16 +374,34 @@ async function saveSettings(name, form) {
   if (r) { alert(r.changed.length ? `Saved: ${r.changed.join("; ")}` : "Nothing changed."); refresh(); }
 }
 
-function card(v) {
-  if (!v.reachable) return `<div class="card"><div class="ph"><span class="name">${esc(v.host)}</span><span class="dim">:${v.port}</span><span class="chip bad">unreachable</span></div><div class="dim">${esc(v.error || "")}</div></div>`;
+// A printer card follows the layout kept in this browser (static/ui.js): order, collapsed, hidden. One with something
+// waiting on a person (unreachable, Klipper not ready, staged changes, maintenance due) is never hidden, only collapsed,
+// and its collapsed line says what is waiting.
+function frame(v, i, head, body, waiting, urgent) {
+  const st = farmUI.cardState("fleet", v.key, i);
+  const collapsed = st.collapsed || (st.hidden && urgent), hide = st.hidden && !urgent;
+  return `<div class="card ccard fcard${collapsed ? " collapsed" : ""}${hide ? " is-hidden" : ""}" data-card="${esc(v.key)}" data-scope="fleet" style="order:${st.order}">
+    <div class="ph"><div class="phl">${head}</div><span class="end">${farmUI.cardControls("fleet", v.key)}</span></div>
+    ${collapsed ? (waiting.length ? `<div class="row">${waiting.join(" ")}</div>` : "") : body}</div>`;
+}
+
+function card(v, i) {
+  if (!v.reachable) return frame(v, i, `<span class="name">${esc(v.host)}</span><span class="dim">:${v.port}</span><span class="chip bad">unreachable</span>`,
+    `<div class="dim">${esc(v.error || "")}</div>`, [], true);
+  const pending = (v.changes || []).filter((c) => c.state === "staged").length, due = (v.maintenance || []).filter((m) => m.due).length;
+  const fails = (v.audit || []).filter((a) => a.status === "FAIL").length;
+  const waiting = [pending ? `<span class="chip warn">${pending} staged</span>` : "", due ? `<span class="chip bad">${due} maintenance due</span>` : "",
+    v.klippy_state !== "ready" && !v.off ? `<span class="chip bad">Klipper ${esc(v.klippy_state || "?")}</span>` : ""].filter(Boolean);
+  const urgent = waiting.length > 0;
   const badge = v.readonly ? `<span class="chip warn">watch-only</span>` : v.registry ? `<span class="chip ok">onboarded</span>` : `<span class="chip warn">not onboarded</span>`;
   const st = v.off ? `<span class="chip">switched off</span>${v.readonly ? "" : ` <button class="ghost" onclick='reconnectPrinter(${js(v.key)})'>Reconnect</button>`}`
     : v.klippy_state !== "ready" ? `<span class="chip bad">${esc(v.klippy_state || "?")}</span>` : `<span class="chip ${v.paused ? "warn" : v.job === "printing" ? "ok" : ""}">${esc(v.paused ? "paused" : v.job || "?")}</span>`;
   const vers = Object.entries(v.versions || {}).map(([k, ver]) => `<span class="chip ${(v.updates || []).includes(k) ? "warn" : ""}" title="${(v.updates || []).includes(k) ? "update available" : ""}">${esc(k.replace("Klipper-Adaptive-Meshing-Purging", "KAMP").replace("moonraker-telegram-bot", "telegram-bot"))} ${esc(ver)}</span>`).join(" ");
   const cams = (v.cameras || []).map((c) => `<span class="chip ${c.ok ? "ok" : "bad"}">📷 ${esc(c.name)} ${c.ok ? "ok" : "no snapshot"}</span>`).join(" ") || `<span class="dim">no camera registered</span>`;
-  return `<div class="card">
-    <div class="ph"><span class="name">${esc(v.registry || v.name)}</span><span class="dim">${esc(v.host)}:${v.port}</span>${badge}${st}
-      <a class="lnk" href="${esc(v.fluidd)}" target="_blank" rel="noopener">Fluidd ↗</a></div>
+  if (fails) waiting.push(`<span class="chip warn">${fails} baseline gap${fails > 1 ? "s" : ""}</span>`);   // shown when collapsed, never forces a hidden card back
+  const head = `<span class="name">${esc(v.registry || v.name)}</span><span class="dim">${esc(v.host)}:${v.port}</span>${badge}${st}
+      <a class="lnk" href="${esc(v.fluidd)}" target="_blank" rel="noopener">Fluidd ↗</a>`;
+  return frame(v, i, head, `
     ${v.klippy_state !== "ready" && v.state_message && !v.off ? `<div class="warn" style="font-size:12px">${esc(v.state_message)}</div>` : ""}
     <div class="row">Print hours <b>${v.print_hours ?? "–"}</b> Jobs <b>${v.total_jobs ?? "–"}</b> ${v.file ? `File <b>${esc(v.file.split("/").pop())}</b>` : ""}</div>
     <div class="row">${cams}</div>
@@ -396,11 +414,11 @@ function card(v) {
     ${v.reachable ? `<details ontoggle='if (this.open) restorePoints(${js(v.key)}, this)'><summary>Restore points (original · last known good)</summary><div class="dim">loading…</div></details>` : ""}
     ${onboardBlock(v)}
     ${v.reachable && v.klippy_state === "ready" && !v.readonly ? `<details ontoggle='if (this.open) fluiddPreview(${js(v.key)}, this)'><summary>Fluidd layout (farm standard)</summary><div class="dim">loading…</div></details>` : ""}
-    <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div style="margin-top:6px">${vers}</div></details>
-  </div>`;
+    <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div class="cluster">${vers}</div></details>`,
+    waiting, urgent);
 }
 
-function render() {
+function render(force) {
   const inst = data.instances, up = inst.filter((v) => v.reachable);
   const fails = up.reduce((a, v) => a + (v.audit ? v.audit.filter((x) => x.status === "FAIL").length : 0), 0);
   const drift = up.filter((v) => v.snapshot && v.snapshot.drift && v.snapshot.reference && ((v.snapshot.drift.changed || []).length + (v.snapshot.drift.added || []).length + (v.snapshot.drift.removed || []).length)).length;
@@ -408,15 +426,41 @@ function render() {
   $("kpis").innerHTML = [[`${up.length}/${inst.length}`, "instances up"], [up.filter((v) => v.registry).length, "onboarded"],
     [fails, "baseline gaps"], [drift, "with drift"], [badSvc, "services failing"], [new Date(data.time * 1000).toLocaleTimeString(), "updated"]]
     .map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><small>${esc(l)}</small></div>`).join("");
-  $("hosts").innerHTML = data.hosts.map((h) => {
+  const box = $("hosts");
+  // not while someone is working in it: a drag, an open menu, a field with focus, or a block that loads on opening
+  // (restore points, Fluidd layout) - the next refresh after that redraws
+  if (farmUI.busy(box) || (!force && box.querySelector("details[open][ontoggle]"))) return;
+  box.innerHTML = data.hosts.map((h) => {
     const mine = inst.filter((v) => v.host === h.name), any = mine.find((v) => v.reachable);
     const stats = any ? `CPU <b>${any.cpu_temp != null ? Math.round(any.cpu_temp) + "°C" : "–"}</b> RAM <b>${any.mem_used_pct ?? "–"}%</b> Disk <b class="${any.disk_used_pct > 90 ? "bad" : ""}">${any.disk_used_pct ?? "–"}%</b> (${any.disk_free_gb ?? "–"} GB free)${(any.throttled || []).length ? ` <span class="bad">throttled: ${esc(any.throttled.join(","))}</span>` : ""}` : "";
-    return `<section class="host"><h2>${esc(h.name)} <span class="dim" style="text-transform:none;letter-spacing:0">${esc(h.address)}${h.note ? " · " + esc(h.note) : ""}</span>
-        ${any ? `<span class="row" style="text-transform:none;letter-spacing:0">${stats}</span>` : ""}</h2>
-      ${any ? `<div class="row" style="margin-bottom:8px">${serviceChips(data.host_services[h.name], h.name)}</div><div style="margin-bottom:8px">${hostTools(h)}</div>` : ""}
-      <div class="grid">${mine.map(card).join("")}</div></section>`;
+    return `<section class="panel host" data-panel="${esc(h.name)}">
+      <div class="panel-h"><h2>${esc(h.name)} <span class="dim">${esc(h.address)}${h.note ? " · " + esc(h.note) : ""}</span></h2>
+        ${any ? `<span class="row hoststats">${stats}</span>` : ""}</div>
+      <div class="panel-b stack">
+        ${any ? `<div class="row">${serviceChips(data.host_services[h.name], h.name)}</div>${hostTools(h)}` : ""}
+        <div class="grid" data-cards="fleet">${mine.map(card).join("")}</div></div></section>`;
   }).join("");
+  box.querySelectorAll("details:not(.menu)").forEach((d) => { if (d.style.display !== "inline-block") d.classList.add("sub"); });
+  restoreDetails(box);
+  farmUI.panels();
 }
+
+// a refresh keeps the <details> a person opened or closed (by card and position); the others keep their own default,
+// e.g. Changes opens by itself once something is staged
+const userOpen = new Map();
+function detailsKeys(box) {
+  return [...box.querySelectorAll("details:not(.menu)")].map((d) => {
+    const owner = d.closest("[data-card]") || d.closest("[data-panel]");
+    const peers = owner ? [...owner.querySelectorAll("details:not(.menu)")] : [];
+    return [d, `${owner ? owner.dataset.card || owner.dataset.panel : ""}#${peers.indexOf(d)}`];
+  });
+}
+function restoreDetails(box) { detailsKeys(box).forEach(([d, k]) => { if (userOpen.has(k) && !d.hasAttribute("ontoggle")) d.open = userOpen.get(k); }); }
+document.addEventListener("click", (e) => {
+  const sum = e.target.closest && e.target.closest("#hosts details:not(.menu) > summary");
+  if (!sum) return;
+  setTimeout(() => { const hit = detailsKeys($("hosts")).find(([d]) => d === sum.parentElement); if (hit) userOpen.set(hit[1], hit[0].open); }, 0);
+});
 
 async function refresh() {
   try { data = await (await fetch("/api/fleet")).json(); render(); }
@@ -455,3 +499,4 @@ async function showFile(i) {
 }
 
 refresh(); setInterval(refresh, 20000);
+farmUI.onCards("fleet", () => { if (data) render(true); });       // a layout change redraws at once

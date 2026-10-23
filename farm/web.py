@@ -62,6 +62,9 @@ from .printers import REPO
 from .runlog import RUNS_DIR
 
 STATIC = Path(__file__).resolve().parent / "static"
+# the only files served from static/ (an allowlist: nothing else in the folder, and no path, is reachable)
+STATIC_FILES = {"operator.js": "text/javascript; charset=utf-8", "printers.js": "text/javascript; charset=utf-8",
+                "ui.js": "text/javascript; charset=utf-8", "farm.css": "text/css; charset=utf-8"}
 DATA = REPO / "data"
 import os as _os0
 INVENTORY = Path(_os0.environ.get("FARM_INVENTORY", DATA / "inventory.json"))   # tests point elsewhere
@@ -640,12 +643,13 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
         if path in ("/printers", "/printers.html"):
             return self._send(200, (STATIC / "printers.html").read_bytes(), "text/html; charset=utf-8")
-        if path == "/static/operator.js":
-            from . import config
-            js = (STATIC / "operator.js").read_text(encoding="utf-8").replace("__DEFAULT__", json.dumps(config.OPERATOR))
-            return self._send(200, js.encode(), "text/javascript; charset=utf-8")
-        if path == "/static/printers.js":
-            return self._send(200, (STATIC / "printers.js").read_bytes(), "text/javascript; charset=utf-8")
+        if path.startswith("/static/") and path[len("/static/"):] in STATIC_FILES:
+            name = path[len("/static/"):]
+            body = (STATIC / name).read_bytes()
+            if name == "operator.js":
+                from . import config
+                body = body.replace(b"__DEFAULT__", json.dumps(config.OPERATOR).encode())
+            return self._send(200, body, STATIC_FILES[name])
         if path == "/api/fleet":
             return self._send(200, json.dumps(fleet.overview(), default=str).encode())
         if path.startswith("/api/hosts/") and path.endswith("/usb"):

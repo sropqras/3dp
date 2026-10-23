@@ -32,6 +32,8 @@ After a `git pull`: `~/agent_workspace/infrastructure/farm_control/stop.sh && wo
     Table / Matrix, saved views, a pack drawer with 3D preview, Import / Send / Add to project. Previews warm nightly
     (jobctl `farm-nas-thumbs`); works from the cache when OMV is off.
 - **Spools**: spool stock. Prints deduct from it automatically.
+- **Every page** (2026-10-24): ⚙ in the header picks the theme (System / Light / Dark), density, text and card size,
+  and **Edit layout** moves, hides and collapses sections and printer cards, like Fluidd. Kept per browser.
 - **Printers** (`/printers`): fleet health, audit with **Stage fix / Stage all fixes**, gated Apply and rollback.
   - Also: Telegram pack, service restarts, maintenance, onboarding (`docs/PRINTERS_TAB.md`).
   - **Farm standard** (`docs/FARM_STANDARD.md`): the shared macro library (audit WARN "farm macro library is

@@ -15,10 +15,10 @@ function farmOperatorEdit() {
   if (!d) {
     d = document.createElement("dialog");
     d.id = "youdlg";
-    d.style.cssText = "width:min(360px,calc(100vw - 32px));padding:18px;border:1px solid var(--line,#333);border-radius:12px;background:var(--panel,#111);color:var(--text,#eee)";
-    d.innerHTML = `<form method="dialog" style="display:grid;gap:10px">
+    d.className = "narrow";                // the frame and colours come from static/farm.css
+    d.innerHTML = `<form method="dialog" style="display:grid;gap:10px;padding:18px">
         <b>Who is using Farm Control?</b>
-        <div style="font-size:12px;opacity:.75">Recorded with everything you do here (applies, marks, edits). Only this browser changes.</div>
+        <div class="stamp">Recorded with everything you do here (applies, marks, edits). Only this browser changes.</div>
         <input id="you-input" maxlength="40" autocomplete="off" style="padding:8px">
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button value="reset" class="ghost" type="submit">Use default</button>
