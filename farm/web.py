@@ -43,6 +43,7 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/spools[/<id>]     add a spool / edit one ({"version": n, ...fields, "remaining_g"}); 409 if stale
 """
 import json
+import re
 import threading
 import time
 import urllib.parse
@@ -50,7 +51,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, cfgchange, config, db, fleet, gate, inventory, nas, ops, jobs, makers, model3mf, monitor, net, pipeline, printers, profiles, projects, spools, watch, worker
+from . import (audit, cfgchange, config, db, fleet, gate, inventory, jobs, makers, model3mf, monitor, moonraker, nas, net, ops,
+               pipeline, printers, profiles, projects, spools, tracker, watch, worker)
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -81,12 +83,15 @@ def project_files(run_dir: Path) -> list[str]:
     return [g.with_suffix(".3mf").name for g in sorted(run_dir.glob("*.gcode")) if g.with_suffix(".3mf").is_file()]
 
 
-def model_blob(run_name: str, file: str) -> bytes | None:
+def model_blob(run_name: str, file: str, viewed: bool = True) -> bytes | None:
     run_dir = RUNS_DIR / run_name
-    if run_dir.parent != RUNS_DIR or not run_dir.is_dir() or file not in project_files(run_dir):
+    if run_name in ("", ".", "..") or "/" in run_name or run_dir.parent != RUNS_DIR or not run_dir.is_dir() \
+            or file not in project_files(run_dir):
         return None
     path = run_dir / file
-    try:   # the gate checks that the 3D view of a build was actually opened before it can be started
+    try:
+        if not viewed:
+            raise PermissionError   # the gate checks that the 3D view of a build was actually opened before it can be started
         con = db.connect()
         try:
             gate.record_view(con, path)
@@ -362,7 +367,15 @@ def cam_snapshot(p) -> tuple[bytes, str]:
     cams = net.get_json(f"{p.moonraker}/server/webcams/list", timeout=4)["result"]["webcams"]
     host = urllib.parse.urlparse(p.moonraker).hostname
     with urllib.request.urlopen(f"http://{host}{cams[0]['snapshot_url']}", timeout=5) as r:
-        return r.read(), r.headers.get("Content-Type", "image/jpeg")
+        ct = r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        return r.read(), ct if ct in ("image/jpeg", "image/png") else "image/jpeg"
+
+
+def nas_image_path(rel: str) -> Path | None:
+    """Where a catalogued NAS picture is cached locally - inside data/nas/_images, or None."""
+    root = (nas.NAS_DIR / "_images").resolve()
+    dest = (root / rel.replace("@", "")).resolve()
+    return dest if dest.is_relative_to(root) and dest != root else None
 
 
 def product_photo(con, src: str) -> tuple[bytes, str] | None:
@@ -374,7 +387,10 @@ def product_photo(con, src: str) -> tuple[bytes, str] | None:
         data, ctype = cam_snapshot(printers.get(ref))
         return data, "png" if "png" in ctype else "jpg"
     if kind == "nas":
-        dest = nas.fetch_image(con, ref, nas.NAS_DIR / "_images" / ref.replace("@", ""))
+        dest = nas_image_path(ref)
+        if dest is None:
+            raise ValueError("photo: not a NAS picture path")
+        dest = dest if dest.is_file() else nas.fetch_image(con, ref, dest)
         return dest.read_bytes(), dest.suffix
     if kind == "upload":
         path = Path(_resolve_input(src))
@@ -483,7 +499,24 @@ def build_action(build_id: int, action: str, body: dict) -> dict:
                     if jobs.get(con, "job", jid)["state"] == "planned":
                         jobs.transition(con, "job", jid, "planned", "generated", "ui", rejected_build=build_id)
         elif action == "cancel":
-            jobs.transition(con, "build", build_id, b["state"], "cancelled", "ui")
+            with db.tx(con):   # its items go back to be planned again, as on reject
+                jobs.transition(con, "build", build_id, b["state"], "cancelled", "ui")
+                for (jid,) in con.execute("SELECT job_id FROM build_jobs WHERE build_id=?", (build_id,)).fetchall():
+                    if jobs.get(con, "job", jid)["state"] == "planned":
+                        jobs.transition(con, "job", jid, "planned", "generated", "ui", cancelled_build=build_id)
+        elif action == "finish":
+            # the tracker couldn't match the printer's history (a host clock off, history cleared): a person ends it
+            if b["state"] != "printing":
+                raise ValueError(f"build {build_id} is {b['state']}, not printing")
+            st = moonraker.status(printers.get(b["printer"]))
+            if st.get("job") in ("printing", "paused") or st.get("paused"):
+                raise ValueError(f"{b['printer']} is still {st.get('job')}: the tracker will see it end")
+            result = str(body.get("result", ""))
+            if result not in ("done", "failed"):
+                raise ValueError("result: done or failed")
+            status = "completed" if result == "done" else "error"
+            tracker.finish(con, b, status, {"end_time": db.now(), "start_time": b["started_at"] or 0, "status": status},
+                           log=lambda m: None, actor="ui")
         elif action == "reslice":
             pipeline.reslice(con, build_id, float(body["layer_height"]), "ui")
             worker.enqueue(con, "slice", build_id)
@@ -560,12 +593,23 @@ def overview() -> dict:
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body: bytes, ctype="application/json"):
         self.send_response(code)
+        if not ctype.startswith(("application/", "text/")) and not re.match(r"^image/(png|jpeg|gif|webp)$", ctype):
+            ctype = "application/octet-stream"   # a printer's proxied image can't become an HTML page here
         self.send_header("Content-Type", ctype)
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
+        try:
+            return self._get()
+        except (BrokenPipeError, ConnectionResetError):
+            return None
+        except Exception as e:
+            return self._send(500, json.dumps({"error": f"{type(e).__name__}: {str(e)[:300]}"}).encode())
+
+    def _get(self):
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html"):
             return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
@@ -685,8 +729,8 @@ class Handler(BaseHTTPRequestHandler):
                            "cameras": [x.name for x in printers.PRINTERS.values()], "proven": inventory.proven(con, q.get("d", ""))}
                     return self._send(200, json.dumps(out, default=str).encode())
                 rel = q.get("path", "")
-                dest = (nas.NAS_DIR / "_images" / rel.replace("@", "")).resolve()
-                if not str(dest).startswith(str((nas.NAS_DIR / "_images").resolve())):
+                dest = nas_image_path(rel)
+                if dest is None:
                     return self._send(400, b"{}")
                 if not dest.is_file():
                     nas.fetch_image(con, rel, dest)
@@ -698,7 +742,8 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
         if path.startswith("/api/model/"):
             parts = [urllib.parse.unquote(x) for x in path[len("/api/model/"):].split("/")]
-            blob = model_blob(*parts) if len(parts) == 2 else None
+            # only the page's own viewer (X-Farm) counts as "viewed" for the gate; an <img> elsewhere can't send it
+            blob = model_blob(*parts, viewed=self.headers.get("X-Farm") == "1") if len(parts) == 2 else None
             return self._send(200, blob, "application/octet-stream") if blob else self._send(404, b"{}")
         return self._send(404, b"{}")
 
@@ -706,11 +751,30 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0) or 0)
         if n > 1_000_000:
             raise ValueError("body too large")
-        return json.loads(self.rfile.read(n) or b"{}")
+        body = json.loads(self.rfile.read(n) or b"{}")
+        if not isinstance(body, dict):
+            raise ValueError("the body must be a JSON object")
+        return body
+
+    def _cross_site(self) -> bool:
+        """A POST not from Farm Control's own pages: no X-Farm header (a cross-site form or fetch can't send one
+        without a preflight we never answer), or an Origin naming another host."""
+        if self.headers.get("X-Farm") != "1":
+            return True
+        origin = self.headers.get("Origin")
+        return bool(origin) and urllib.parse.urlparse(origin).netloc != self.headers.get("Host", "")
 
     def do_POST(self):
+        try:
+            return self._post()
+        except Exception as e:   # one bad request must answer, not drop the connection
+            return self._send(500, json.dumps({"error": f"{type(e).__name__}: {str(e)[:300]}"}).encode())
+
+    def _post(self):
         path = urllib.parse.urlparse(self.path).path
         parts = path.strip("/").split("/")
+        if self._cross_site():
+            return self._send(403, json.dumps({"error": "cross-site request refused (Farm Control's own pages only)"}).encode())
         if len(parts) == 4 and parts[:2] == ["api", "builds"] and parts[2].isdigit():
             try:
                 out = build_action(int(parts[2]), parts[3], self._json_body())

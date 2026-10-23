@@ -99,12 +99,26 @@ def run_once(con, log=print) -> bool:
         else:
             _finish(con, t["id"], "failed", str(e))
             log(f"task {t['id']}: FAILED: {e}")
+            _gave_up(con, t, str(e), log)
     except BaseException as e:   # incl. SystemExit from a stage: never let one task kill the worker
         if isinstance(e, KeyboardInterrupt):
             raise
         _finish(con, t["id"], "failed", f"{type(e).__name__}: {e}")
         log(f"task {t['id']}: CRASHED: {type(e).__name__}: {e}\n{traceback.format_exc(limit=5)}")
+        _gave_up(con, t, f"{type(e).__name__}: {e}", log)
     return True
+
+
+def _gave_up(con, t: dict, error: str, log) -> None:
+    """A task that won't be retried: an upload's build is failed; a job's siblings are still planned (one failed
+    item must not hold the rest of the order back)."""
+    try:
+        if t["kind"] == "upload":
+            pipeline.give_up_upload(con, t["ref_id"], error)
+        elif t["kind"] == "generate":
+            _after_generate(con, t["ref_id"])
+    except Exception as e:
+        log(f"task {t['id']}: clean-up after failure: {type(e).__name__}: {e}")
 
 
 def heartbeat(con, detail: str = "") -> None:

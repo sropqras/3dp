@@ -63,10 +63,28 @@ def refresh(force: bool = False) -> bool:
     for name, url in json.loads(os.environ.get("FARM_MOONRAKER_OVERRIDE", "{}")).items():
         if name in fresh:
             fresh[name] = dataclasses.replace(fresh[name], moonraker=url)
-    PRINTERS.clear()
+    for gone in [k for k in PRINTERS if k not in fresh]:   # in place, never empty: other threads read it
+        del PRINTERS[gone]
     PRINTERS.update(fresh)
     _loaded["mtime"] = mtime
     return True
+
+
+def _endpoint(url: str) -> tuple:
+    import socket
+    import urllib.parse
+    u = urllib.parse.urlparse(url)
+    try:
+        host = socket.gethostbyname(u.hostname or "")
+    except OSError:
+        host = u.hostname or ""
+    return host, u.port or 80
+
+
+def watch_only_url(url: str) -> bool:
+    """The Moonraker at url belongs to a watch-only printer, whatever name or key the caller knows it by."""
+    ep = _endpoint(url)
+    return any(p.readonly and _endpoint(p.moonraker) == ep for p in PRINTERS.values())
 
 
 def registry_entries() -> list[dict]:

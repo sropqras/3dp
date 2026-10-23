@@ -1,8 +1,14 @@
+// every request carries X-Farm: a page on another site can't add a custom header without a CORS preflight, which
+// Farm Control never answers - so it can't drive the API (approve, apply, ...) from someone's browser
+const _farmFetch = window.fetch.bind(window);
+window.fetch = (u, o = {}) => _farmFetch(u, { ...o, headers: { ...(o.headers || {}), "X-Farm": "1" } });
 "use strict";
 // Printers tab: fleet health, farm-baseline audit, config snapshots and drift. Read-only towards the printers;
 // changes to printers are staged and applied through the gate; onboarding writes printers/registry.json.
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// a value as a JS literal inside an HTML attribute (instance keys and paths come from the printers)
+const js = (v) => esc(JSON.stringify(v));
 const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 const ago = (t) => { if (!t) return "never"; const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
 let data = null, fd = { key: null, files: [], path: null, mode: "diff" };
@@ -22,7 +28,7 @@ function serviceChips(svcs, hostName) {
   const entries = Object.entries(svcs || {}).filter(([n]) => !/backup-on-boot|backup-filewatch/.test(n));
   const bad = entries.filter(([, s]) => !s.startsWith("active/running"));
   const chip = ([n, s]) => `<span class="chip ${s.startsWith("active/running") ? "ok" : /auto-restart|failed/.test(s) ? "bad" : "warn"}" title="${esc(s)}">${esc(n)}${s.startsWith("active/running") ? "" : ": " + esc(s.split("/")[1])}
-      ${any ? `<a href="#" class="lnk" title="restart ${esc(n)}" onclick='restartSvc(${JSON.stringify(any.key)}, ${JSON.stringify(n)});return false'>↻</a>` : ""}</span>`;
+      ${any ? `<a href="#" class="lnk" title="restart ${esc(n)}" onclick='restartSvc(${js(any.key)}, ${js(n)});return false'>↻</a>` : ""}</span>`;
   return (bad.length ? bad.map(chip).join(" ") : `<span class="chip ok">all services running</span>`) +
     ` <details style="display:inline-block"><summary>all ${entries.length}</summary>${entries.map(chip).join(" ")}</details>`;
 }
@@ -92,9 +98,9 @@ function auditBlock(v) {
   const head = fails.length ? `<span class="bad">✗ ${fails.length} baseline gap${fails.length > 1 ? "s" : ""}</span>` : `<span class="ok">✓ farm baseline</span>`;
   const nfix = v.readonly ? 0 : fails.filter((a) => a.fixable).length;
   return `<details><summary>${head}${warns.length ? ` <span class="warn">· ${warns.length} warning</span>` : ""} — ${v.audit.length} rules</summary>
-    ${nfix > 1 ? `<div class="row" style="margin:6px 0"><button class="ghost" onclick='stageAllFixes(${JSON.stringify(v.key)}, ${nfix})'>Stage all ${nfix} fixes (one change per file)</button></div>` : ""}
+    ${nfix > 1 ? `<div class="row" style="margin:6px 0"><button class="ghost" onclick='stageAllFixes(${js(v.key)}, ${nfix})'>Stage all ${nfix} fixes (one change per file)</button></div>` : ""}
     <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td>
-      <td>${a.status === "FAIL" && !v.readonly && !a.fixable ? `<span class="dim" title="needs judgement: use + Stage change">edit manually</span>` : ""}${a.status === "FAIL" && !v.readonly && a.fixable ? `<button class="ghost" onclick='stageFix(${JSON.stringify(v.key)}, ${JSON.stringify(a.rule)})'>Stage fix</button>` : ""}</td></tr>`).join("")}</table></details>`;
+      <td>${a.status === "FAIL" && !v.readonly && !a.fixable ? `<span class="dim" title="needs judgement: use + Stage change">edit manually</span>` : ""}${a.status === "FAIL" && !v.readonly && a.fixable ? `<button class="ghost" onclick='stageFix(${js(v.key)}, ${js(a.rule)})'>Stage fix</button>` : ""}</td></tr>`).join("")}</table></details>`;
 }
 
 function configBlock(v) {
@@ -182,8 +188,8 @@ function maintBlock(v) {
   const row = (m) => `<tr><td>${esc(m.kind.replace("_", " "))}</td>
     <td class="${m.due ? "bad" : m.soon ? "warn" : m.no_record ? "dim" : "ok"}">${m.no_record ? "no record" : `${m.since_hours ?? "?"} h since`}</td>
     <td class="dim">${m.interval ? "every " + m.interval + " h" : "no reminder"}</td>
-    <td><button class="ghost" onclick='maintDone(${JSON.stringify(v.key)}, ${JSON.stringify(m.kind)})'>Done</button>
-        <button class="ghost" title="reminder interval in print hours" onclick='maintInterval(${JSON.stringify(v.key)}, ${JSON.stringify(m.kind)}, ${m.interval || 0})'>⏱</button></td></tr>`;
+    <td><button class="ghost" onclick='maintDone(${js(v.key)}, ${js(m.kind)})'>Done</button>
+        <button class="ghost" title="reminder interval in print hours" onclick='maintInterval(${js(v.key)}, ${js(m.kind)}, ${m.interval || 0})'>⏱</button></td></tr>`;
   return `<details ${due.length ? "open" : ""}><summary>Maintenance${due.length ? ` · <span class="bad">${due.length} due</span>` : ""}${soon.length ? ` · <span class="warn">${soon.length} soon</span>` : ""} · ${v.print_hours ?? "?"} print h</summary>
     <table>${v.maintenance.map(row).join("")}</table></details>`;
 }
@@ -201,7 +207,7 @@ async function maintInterval(key, kind, cur) {
 
 function onboardBlock(v) {
   if (v.registry) return farmSettings(v);
-  const k = JSON.stringify(v.key);
+  const k = js(v.key);
   const fails = (v.audit || []).filter((a) => a.status === "FAIL").length;
   const steps = [
     ["reachable", v.reachable, ""],
@@ -210,8 +216,8 @@ function onboardBlock(v) {
       (/Unable to open config file/.test(v.state_message || "")
         ? `<button class="ghost" onclick='stageMissingInclude(${k})'>Stage: comment out the missing include</button>`
         : v.off ? `<button class="ghost" onclick='reconnectPrinter(${k})'>Reconnect (after switching it on)</button> `
-                + `<button class="ghost" onclick='findSerial(${k}, ${JSON.stringify(v.host)}, this.parentNode)'>Find the board's USB port</button>`
-        : `<button class="ghost" onclick='findSerial(${k}, ${JSON.stringify(v.host)}, this.parentNode)'>Find the board's USB port</button>`)],
+                + `<button class="ghost" onclick='findSerial(${k}, ${js(v.host)}, this.parentNode)'>Find the board's USB port</button>`
+        : `<button class="ghost" onclick='findSerial(${k}, ${js(v.host)}, this.parentNode)'>Find the board's USB port</button>`)],
     ["farm baseline audit passes", v.audit && !fails, fails ? `<span class="dim">Stage fix on the ${fails} failing rule(s) above, then Apply</span>` : ""],
     ["camera registered and working", (v.cameras || []).some((c) => c.ok),
       `<input placeholder="webcam3" style="width:90px"> <button class="ghost" onclick='registerCam(${k}, this.previousElementSibling.value)'>Register</button>
@@ -238,7 +244,7 @@ function onboardBlock(v) {
 function farmSettings(v) {
   const e = (data.registry || []).find((x) => x.name === v.registry);
   if (!e) return "";
-  const k = JSON.stringify(v.registry);
+  const k = js(v.registry);
   const profs = data.profiles.map((p) => `<label><input type="checkbox" name="profiles" value="${esc(p.id)}" ${e.profiles.includes(p.id) ? "checked" : ""}> ${esc(p.id)}</label>`).join(" ");
   return `<details><summary>Farm settings · ${e.profiles.length ? esc(e.profiles.join(", ")) : "no profiles"}</summary>
     <form onsubmit='saveSettings(${k}, this);return false' style="display:grid;gap:6px;margin-top:6px">
@@ -251,7 +257,7 @@ async function fluiddPreview(key, el) {
   const box = el.querySelector("div");
   const r = await (await fetch(`/api/fleet/${encodeURIComponent(key)}/fluidd`)).json();
   if (r.error) { box.textContent = r.error; return; }
-  const k = JSON.stringify(key);
+  const k = js(key);
   box.innerHTML = `<div class="dim">Macro panel grouped by each macro's description; farm temperature presets first. Only the macro panel and presets change; Undo puts back what was there.</div>
     <table>${Object.entries(r.groups).map(([g, ms]) => `<tr><td>${esc(g)}</td><td class="dim">${ms.map(esc).join(", ")}</td></tr>`).join("")}
       <tr><td>Presets</td><td class="dim">${r.presets.map(esc).join(", ")}</td></tr></table>
@@ -288,7 +294,7 @@ async function findSerial(key, host, td) {
   if (r.error) { td.innerHTML = `<span class="warn">${esc(r.error)}</span>`; return; }
   const free = r.serial.filter((d) => !d.used_by);
   td.innerHTML = free.length ? free.map((d) => `<div><code>${esc(d.path.replace("/dev/serial/by-path/", ""))}</code> <span class="dim">${esc(d.target)}</span>
-      <button class="ghost" onclick='setSerial(${JSON.stringify(key)}, ${JSON.stringify(d.path)})'>Use this</button></div>`).join("")
+      <button class="ghost" onclick='setSerial(${js(key)}, ${js(d.path)})'>Use this</button></div>`).join("")
     : `<span class="warn">no unused serial device on ${esc(host)} — is the board plugged in?</span>`;
 }
 async function setSerial(key, port) {
@@ -323,7 +329,7 @@ async function saveSettings(name, form) {
 function card(v) {
   if (!v.reachable) return `<div class="card"><div class="ph"><span class="name">${esc(v.host)}</span><span class="dim">:${v.port}</span><span class="chip bad">unreachable</span></div><div class="dim">${esc(v.error || "")}</div></div>`;
   const badge = v.readonly ? `<span class="chip warn">watch-only</span>` : v.registry ? `<span class="chip ok">onboarded</span>` : `<span class="chip warn">not onboarded</span>`;
-  const st = v.off ? `<span class="chip">switched off</span>${v.readonly ? "" : ` <button class="ghost" onclick='reconnectPrinter(${JSON.stringify(v.key)})'>Reconnect</button>`}`
+  const st = v.off ? `<span class="chip">switched off</span>${v.readonly ? "" : ` <button class="ghost" onclick='reconnectPrinter(${js(v.key)})'>Reconnect</button>`}`
     : v.klippy_state !== "ready" ? `<span class="chip bad">${esc(v.klippy_state || "?")}</span>` : `<span class="chip ${v.paused ? "warn" : v.job === "printing" ? "ok" : ""}">${esc(v.paused ? "paused" : v.job || "?")}</span>`;
   const vers = Object.entries(v.versions || {}).map(([k, ver]) => `<span class="chip ${(v.updates || []).includes(k) ? "warn" : ""}" title="${(v.updates || []).includes(k) ? "update available" : ""}">${esc(k.replace("Klipper-Adaptive-Meshing-Purging", "KAMP").replace("moonraker-telegram-bot", "telegram-bot"))} ${esc(ver)}</span>`).join(" ");
   const cams = (v.cameras || []).map((c) => `<span class="chip ${c.ok ? "ok" : "bad"}">📷 ${esc(c.name)} ${c.ok ? "ok" : "no snapshot"}</span>`).join(" ") || `<span class="dim">no camera registered</span>`;
@@ -340,7 +346,7 @@ function card(v) {
     ${changesBlock(v)}
     ${maintBlock(v)}
     ${onboardBlock(v)}
-    ${v.reachable && v.klippy_state === "ready" && !v.readonly ? `<details ontoggle='if (this.open) fluiddPreview(${JSON.stringify(v.key)}, this)'><summary>Fluidd layout (farm standard)</summary><div class="dim">loading…</div></details>` : ""}
+    ${v.reachable && v.klippy_state === "ready" && !v.readonly ? `<details ontoggle='if (this.open) fluiddPreview(${js(v.key)}, this)'><summary>Fluidd layout (farm standard)</summary><div class="dim">loading…</div></details>` : ""}
     <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div style="margin-top:6px">${vers}</div></details>
   </div>`;
 }

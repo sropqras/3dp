@@ -169,14 +169,16 @@ def backfill_printer(con, p, log=print) -> dict:
                             (p.name, f["path"])).fetchone()
         if known and known[0] == f.get("modified"):
             continue
+        meta = _meta(p, f["path"])          # network first: never hold the write lock over an HTTP call
         with db.tx(con):
-            _gcode_artefact(con, p.name, f["path"], f.get("modified"), _meta(p, f["path"]))
+            _gcode_artefact(con, p.name, f["path"], f.get("modified"), meta)
         new_files += 1 if not known else 0
     last = con.execute("SELECT MAX(started_at) FROM prints WHERE printer=? AND status <> 'printing'",
                        (p.name,)).fetchone()[0]
     n = 0
+    history = list(_history_all(p, max(0, (last or 0) - 86400)))   # all pages fetched before the transaction
     with db.tx(con):
-        for e in _history_all(p, max(0, (last or 0) - 86400)):
+        for e in history:
             fn = e.get("filename") or ""
             bid, arts = _build_artefacts(con, p.name, fn, float(e.get("start_time") or 0))
             if not arts:
@@ -212,7 +214,8 @@ def thumb(con, artefact_id: int) -> tuple[bytes, str] | None:
         return None
     status, headers, body = net.get_bytes(
         f"{printers.PRINTERS[a[0]].moonraker}/server/files/gcodes/{urllib.parse.quote(t)}", timeout=8)
-    return (body, headers.get("Content-Type", "image/png")) if status == 200 else None
+    ct = headers.get("Content-Type", "image/png").split(";")[0].strip()
+    return (body, ct if ct in ("image/png", "image/jpeg") else "image/png") if status == 200 else None
 
 
 # ---------------------------------------------------------------- people: quality marks

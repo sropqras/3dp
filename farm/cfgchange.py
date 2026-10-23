@@ -111,7 +111,7 @@ def stage(con, printer: str, url: str, path: str, *, new_content: str | None = N
     if not reason.strip():
         raise Refused("say why (the reason goes into the change log)")
     p = printers.PRINTERS.get(printer)
-    if p and p.readonly:
+    if (p and p.readonly) or printers.watch_only_url(url):
         raise Refused(f"{printer} is watch-only: no config changes")
     try:
         live = configs.read_file(url, path)
@@ -164,8 +164,10 @@ def preview(con, cid: int) -> str:
 def _gate(con, c: dict, actor: str):
     if not actor.startswith(("ui:", "cli:")):
         raise Refused("only a person applies or rolls back printer config changes (Farm Control or a terminal)")
+    if actor.split(":", 1)[1] in ("", "unknown"):
+        raise Refused("put your name in the 'You' box first (it's recorded with the change)")
     p = printers.PRINTERS.get(c["printer"])
-    if p and p.readonly:
+    if (p and p.readonly) or printers.watch_only_url(c["url"]):
         raise Refused(f"{c['printer']} is watch-only")
     st = _state(c["url"])
     if st.get("job") in ("printing", "paused") or st.get("paused"):
@@ -221,6 +223,19 @@ def apply(con, cid: int, actor: str) -> dict:
             raise Refused(f"apply change {first[0]} ({target}) first - this one includes it")
     jobs.transition(con, "config_change", cid, "staged", "applying", "cfggate", by=actor)
     con.execute("UPDATE config_changes SET applied_by=?, applied_at=? WHERE id=?", (actor, db.now(), cid))
+    try:
+        return _apply(con, c, cid, st, live, actor)
+    except Exception as e:
+        # anything unexpected (printer gone mid-verify, ...) must not leave the change "applying"/"verifying": that
+        # would block every later change to this printer. Failed = a person looks (the snapshot is there to restore)
+        cur = get(con, cid)
+        if cur["state"] in ("applying", "verifying"):
+            con.execute("UPDATE config_changes SET error=? WHERE id=?", (f"{type(e).__name__}: {str(e)[:500]}", cid))
+            jobs.transition(con, "config_change", cid, cur["state"], "failed", "cfggate", error=str(e)[:300])
+        raise
+
+
+def _apply(con, c: dict, cid: int, st: dict, live, actor: str) -> dict:
     snap = configs.snapshot(con, c["printer"], c["url"], actor=f"before change {cid}")
     con.execute("UPDATE config_changes SET before_snapshot=? WHERE id=?", (snap["id"], cid))
     before_fails = _fails(c["url"], c["printer"]) if st["klippy"] == "ready" else set()

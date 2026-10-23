@@ -35,6 +35,8 @@ def cmd_run(args):
     printer = printers.get(job["printer"])
     if printer.readonly:
         sys.exit(f"{printer.name} is watch-only (readonly in printers/registry.json); no jobs are sent to it")
+    if args.upload:   # --upload approves: a person's decision, like `farm approve`
+        _person_at_terminal("approve")
     con = db.connect()
     order_id, run = pipeline.submit_job_file(con, job, job_path)
     with run.guard():

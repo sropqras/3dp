@@ -36,9 +36,36 @@ def model_out(path: Path, label: str) -> ModelOut:
 
 
 def unzip_stls(blob: bytes, out_dir: Path) -> list[Path]:
+    """The zip's own STLs only (flat names), into out_dir - which callers keep per job, so one job never picks up
+    another's pieces from a shared folder."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    got = []
     with zipfile.ZipFile(io.BytesIO(blob)) as z:
-        z.extractall(out_dir)
-    return sorted(Path(out_dir).glob("*.stl"))
+        for info in z.infolist():
+            name = Path(info.filename).name
+            if info.is_dir() or not name.lower().endswith(".stl"):
+                continue
+            (out_dir / name).write_bytes(z.read(info))
+            got.append(out_dir / name)
+    return sorted(got)
+
+
+def fresh_dir(base: Path) -> Path:
+    """base, or base_2, base_3... - the first that doesn't exist yet (jobs of one order share the run folder)."""
+    d, n = Path(base), 2
+    while d.exists():
+        d, n = Path(f"{base}_{n}"), n + 1
+    return d
+
+
+def fresh_file(path: Path, data: bytes) -> Path:
+    """Write data to path, or beside it as name_2.stl... when another job already wrote different bytes there."""
+    path, n, stem = Path(path), 2, Path(path).stem
+    while path.exists() and path.read_bytes() != data:
+        path, n = path.with_name(f"{stem}_{n}{path.suffix}"), n + 1
+    path.write_bytes(data)
+    return path
 
 
 def fit_problems(models: list[ModelOut], ctx: GenContext) -> list[str]:

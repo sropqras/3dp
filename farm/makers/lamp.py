@@ -9,8 +9,8 @@ from pathlib import Path
 
 from .. import config, net
 from . import FileInput, GenContext, GenResult, MakerError, Maker, MakerSpec, register
-from .base import (OVERRIDES, defaults_from, fit_problems, http_error, model_out, nested_params, safe_stem,
-                   unzip_stls)
+from .base import (OVERRIDES, defaults_from, fit_problems, fresh_dir, http_error, model_out, nested_params,
+                   safe_stem, unzip_stls)
 
 N, I, B, S = "number", "integer", "boolean", "string"
 
@@ -25,7 +25,7 @@ def _post_parameters(url, parameters, files, timeout, what):
 def _models_from(headers, body, out_dir: Path, stem: str, label: str):
     if "zip" in headers.get("Content-Type", "") or body[:2] == b"PK":
         (out_dir / f"{stem}.zip").write_bytes(body)
-        stls = unzip_stls(body, out_dir / f"{stem}_parts")
+        stls = unzip_stls(body, fresh_dir(out_dir / f"{stem}_parts"))
         return [model_out(s, f"{label} {s.stem}".strip()) for s in stls]
     stl = out_dir / f"{stem}.stl"
     stl.write_bytes(body)

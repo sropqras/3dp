@@ -3,7 +3,7 @@ from pathlib import Path
 
 from .. import config, net
 from . import FileInput, GenContext, GenResult, Maker, MakerSpec, register
-from .base import fit_problems, form_fields, http_error, model_out, safe_stem, unzip_stls
+from .base import fit_problems, form_fields, fresh_dir, fresh_file, http_error, model_out, safe_stem, unzip_stls
 
 N, I, B, S = "number", "integer", "boolean", "string"
 
@@ -77,13 +77,12 @@ class Likhan(Maker):
                 f"{info['X-Likhan-Height']} mm triangles={info['X-Likhan-Triangles']}")
         stem = safe_stem(params.get("text") or "model")
         if "zip" in headers.get("Content-Type", ""):
-            (ctx.out_dir / f"{stem}_pieces.zip").write_bytes(body)
-            stls = unzip_stls(body, ctx.out_dir / "pieces")
+            pieces = fresh_dir(ctx.out_dir / "pieces")
+            fresh_file(ctx.out_dir / f"{stem}_pieces.zip", body)
+            stls = unzip_stls(body, pieces)
         else:
             # the STL name becomes the EXCLUDE_OBJECT label and the G-code file name
-            stl = ctx.out_dir / f"{stem}.stl"
-            stl.write_bytes(body)
-            stls = [stl]
+            stls = [fresh_file(ctx.out_dir / f"{stem}.stl", body)]
         models = [model_out(s, ctx.label or s.stem) for s in stls]
         colour_zs = {"base_top": float(params.get("base_thickness_mm", 2.0))} if params.get("base", True) else {}
         return GenResult(models=models, colour_zs=colour_zs, stats=info, warnings=fit_problems(models, ctx))

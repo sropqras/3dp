@@ -153,12 +153,14 @@ def start_build(con, build_id: int, operator: str, checklist: dict, spool_id: st
     if pf["reasons"]:
         raise GateRefused("; ".join(pf["reasons"]))
     b = pf["build"]
+    printer = printers.PRINTERS.get(b["printer"])     # looked up before "starting", so a miss can't strand it there
+    if printer is None:
+        raise GateRefused(f"{b['printer']} is not in the registry")
+    run = pipeline.run_for(con, b["order_id"])
     try:
         jobs.transition(con, "build", build_id, "queued", "starting", "gate", operator=operator, via=via)
     except jobs.StateConflict as e:
         raise GateRefused(f"someone else is starting it ({e})") from None
-    printer = printers.PRINTERS[b["printer"]]
-    run = pipeline.run_for(con, b["order_id"])
     try:
         with db.tx(con):
             con.execute("INSERT INTO approvals (build_id, kind, gcode_sha256, actor, at, checklist) "

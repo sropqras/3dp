@@ -37,6 +37,8 @@ def check(p, prev: dict) -> tuple[dict, list[tuple[str, str]]]:
     except Exception as e:
         now["misses"] = prev.get("misses", 0) + 1
         now["problems"] = dict(prev.get("problems", {}))
+        if prev.get("off"):
+            now["off"] = True                 # one missed poll isn't "board connected again"
         if now["misses"] >= UNREACHABLE_PASSES:
             now["problems"]["unreachable"] = f"Moonraker unreachable: {str(e)[:120]}"
     else:

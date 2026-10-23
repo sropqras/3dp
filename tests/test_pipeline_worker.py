@@ -65,6 +65,38 @@ class Pipeline(unittest.TestCase):
         self.assertIn(b'name="bed_width_mm"\r\n\r\n290', self.fake.requests[0][1])   # bed from the printer
         self.assertEqual(self.uploads, [])                               # nothing goes to a printer unapproved
 
+    def test_upload_retries_while_the_printer_is_away_then_gives_up(self):
+        self.submit()
+        self.drain()
+        bid = jobs.builds(self.con)[0]["id"]
+        pipeline.approve(self.con, bid, "ui", note="looked")
+        ok = moonraker.upload
+        tries = []
+        moonraker.upload = lambda *a: tries.append(1) or (_ for _ in ()).throw(OSError("printer offline"))
+        worker.enqueue(self.con, "upload", bid)
+        self.drain()
+        self.assertEqual(jobs.get(self.con, "build", bid)["state"], "uploading")   # waiting to retry, not failed
+        moonraker.upload = ok                                                     # printer back
+        self.con.execute("UPDATE tasks SET run_after=0")
+        self.drain()
+        self.assertEqual(jobs.get(self.con, "build", bid)["state"], "queued")
+        self.assertEqual(len(tries), 1)
+        # a printer that never comes back: the last attempt fails the build
+        b2 = pipeline.send_jobs(self.con, [r[0] for r in self.con.execute("SELECT id FROM jobs")], "Ender3MaxNeo",
+                                "neo-petg-036", 0.4, "ui")[0]
+        worker.enqueue(self.con, "slice", b2)
+        self.drain()
+        pipeline.approve(self.con, b2, "ui", note="looked")
+        moonraker.upload = lambda *a: (_ for _ in ()).throw(OSError("printer offline"))
+        worker.enqueue(self.con, "upload", b2)
+        for _ in range(worker.MAX_ATTEMPTS + 1):
+            self.con.execute("UPDATE tasks SET run_after=0")
+            self.drain()
+        moonraker.upload = ok
+        b = jobs.get(self.con, "build", b2)
+        self.assertEqual(b["state"], "failed")
+        self.assertIn("printer offline", b["error"])
+
     def test_approval_is_a_person_and_upload_follows(self):
         self.submit()
         self.drain()
@@ -192,6 +224,25 @@ class Pipeline(unittest.TestCase):
             pass
         failed = self.con.execute("SELECT last_error FROM tasks WHERE kind='plan'").fetchone()[0]
         self.assertIn("share a bed but differ", failed)
+
+class NameCollisions(Pipeline):
+    def test_resending_the_same_jobs_keeps_both_builds_files(self):
+        import hashlib
+        self.submit()
+        self.drain()
+        a = jobs.builds(self.con)[0]
+        before = hashlib.sha256(Path(a["gcode"]).read_bytes()).hexdigest()
+        jids = [r[0] for r in self.con.execute("SELECT id FROM jobs")]
+        new = pipeline.send_jobs(self.con, jids, a["printer"], "neo-petg-036", 0.4, "ui")
+        for bid in new:
+            worker.enqueue(self.con, "slice", bid)
+        self.drain()
+        b = jobs.get(self.con, "build", new[0])
+        self.assertEqual(b["state"], "review", b["error"])
+        self.assertNotEqual(Path(b["gcode"]).name, Path(a["gcode"]).name)      # its own name: _b<id>
+        self.assertTrue(Path(b["gcode"]).name.endswith(f"_b{b['id']}.gcode"))
+        self.assertEqual(hashlib.sha256(Path(a["gcode"]).read_bytes()).hexdigest(), before)   # A untouched
+        self.assertEqual(a["gcode_sha256"], jobs.get(self.con, "build", a["id"])["gcode_sha256"])
 
 
 if __name__ == "__main__":

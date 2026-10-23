@@ -24,8 +24,8 @@ TRANSITIONS = {
         ("generated", "planned"): PIPELINE,                     # placed on a build
         ("planned", "generated"): HUMAN | {"worker"},           # its build was rejected: re-plan
         ("planned", "printing"): {"tracker", "gate"},
-        ("printing", "done"): {"tracker"},
-        ("printing", "planned"): {"tracker"},                   # print failed/cancelled: back to re-plan
+        ("printing", "done"): {"tracker"} | HUMAN,              # HUMAN: a person ends a build the tracker lost
+        ("printing", "planned"): {"tracker"} | HUMAN,           # print failed/cancelled: back to re-plan
         **{(s, "cancelled"): HUMAN for s in ("received", "generating", "generated", "planned", "failed")},
     },
     # printer config changes: anyone may stage; only farm/cfgchange.py's gate ("cfggate"), started by a person,
@@ -53,8 +53,8 @@ TRANSITIONS = {
         ("queued", "starting"): {"gate"},                       # only farm/gate.py starts prints
         ("starting", "queued"): {"gate"},                       # start refused by the printer: back in line
         ("starting", "printing"): {"gate", "tracker"},
-        ("printing", "done"): {"tracker"},
-        ("printing", "failed"): {"tracker"},
+        ("printing", "done"): {"tracker"} | HUMAN,              # HUMAN: Mark finished / failed (printer idle)
+        ("printing", "failed"): {"tracker"} | HUMAN,
         ("printing", "cancelled"): {"tracker"},
         ("failed", "slicing"): HUMAN,                           # retry
         ("review", "slicing"): HUMAN,                           # re-slice (another layer height): review again

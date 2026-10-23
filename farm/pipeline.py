@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 from pathlib import Path
 
 from . import config, db, gcode, inventory, jobs, makers, moonraker, printers, profiles, project, slicer
@@ -379,18 +380,27 @@ def slice_build(con, build_id: int, actor: str = "worker") -> dict:
     printer = printers.get(b["printer"])
     profile = profiles.get(b["profile"])
     stls = [Path(m["path"]) for m in build_models(con, build_id)]
+    # G-code names must be unique across builds: the same name would overwrite another build's approved file on
+    # disk and on the printer (uploads go to farm/<folder>/<name>)
+    taken = {Path(g).name for (g,) in con.execute("SELECT gcode FROM builds WHERE id<>? AND gcode IS NOT NULL",
+                                                  (build_id,))}
     try:
         out, cmd, colour_layers = slicer.slice_model(run, printer, stls, profile.material, b["layer_height"],
-                                                     b["change_zs"], profile=profile)
+                                                     b["change_zs"], profile=profile, avoid=taken, tag=f"b{build_id}")
         facts = gcode.validate(run, out, printer, b["change_zs"], max_flow=profile.max_volumetric)
         proj = project.export_project(run, cmd, out, colour_layers, b["colour_hex"])
     except SystemExit as e:   # the stages report problems with run.fail
         _fail(con, "build", b, actor, str(e) or "slice failed")
-    with db.tx(con):
-        jobs.update_build(con, build_id, gcode=str(out), gcode_sha256=sha256(out), project_3mf=str(proj),
-                          estimate_s=duration_s(facts.get("estimated printing time (normal mode)")),
-                          grams=float(facts.get("filament used [g]", 0) or 0), segments=_segments(out), error=None)
-        jobs.transition(con, "build", build_id, "slicing", "review", actor)
+    except Exception as e:    # anything else must not strand the build in "slicing"
+        _fail(con, "build", b, actor, f"slice: {type(e).__name__}: {e}")
+    try:
+        with db.tx(con):
+            jobs.update_build(con, build_id, gcode=str(out), gcode_sha256=sha256(out), project_3mf=str(proj),
+                              estimate_s=duration_s(facts.get("estimated printing time (normal mode)")),
+                              grams=float(facts.get("filament used [g]", 0) or 0), segments=_segments(out), error=None)
+            jobs.transition(con, "build", build_id, "slicing", "review", actor)
+    except sqlite3.IntegrityError as e:
+        _fail(con, "build", b, actor, f"slice: {e}")
     run.manifest["result"] = "ok"
     run.save()
     return facts
@@ -421,7 +431,9 @@ def upload_build(con, build_id: int, actor: str = "worker") -> str:
     try:
         remote = moonraker.upload(run, printer, Path(b["gcode"]), order["upload_folder"] or "farm")
     except Exception as e:
-        _fail(con, "build", {**b, "state": "uploading"}, actor, f"upload: {e}", retryable=True)
+        # stay "uploading": the worker retries (a printer briefly offline); give_up_upload fails it at the end
+        con.execute("UPDATE builds SET error=? WHERE id=?", (f"upload: {e}"[:2000], build_id))
+        raise StepFailed(f"upload: {e}", True)
     with db.tx(con):
         jobs.update_build(con, build_id, remote_path=remote)
         jobs.transition(con, "build", build_id, "uploading", "queued", actor, remote=remote)
@@ -430,6 +442,15 @@ def upload_build(con, build_id: int, actor: str = "worker") -> str:
         run.manifest["uploaded"].append(remote)
     run.save()
     return remote
+
+
+def give_up_upload(con, build_id: int, error: str) -> None:
+    """The worker's last upload attempt failed: the build is failed (re-send it once the printer is back)."""
+    b = jobs.get(con, "build", build_id)
+    if b and b["state"] == "uploading":
+        with db.tx(con):
+            con.execute("UPDATE builds SET error=? WHERE id=?", (error[:2000], build_id))
+            jobs.transition(con, "build", build_id, "uploading", "failed", "worker", error=error[:500])
 
 
 def slicer_version_of(gcode_path: Path) -> str | None:

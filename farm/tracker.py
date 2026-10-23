@@ -28,17 +28,17 @@ def _assignments(con, build_id: int) -> list:
     return c.get("spools") or ([c["spool"]] if c.get("spool") else [])
 
 
-def finish(con, b: dict, status: str, entry: dict, log=print) -> str:
+def finish(con, b: dict, status: str, entry: dict, log=print, actor: str = "tracker") -> str:
     to = DONE[status]
     used_mm = None if to == "done" else float(entry.get("filament_used") or 0)
     with db.tx(con):
         jobs.update_build(con, b["id"], finished_at=entry.get("end_time") or db.now(),
                           moonraker_job_id=str(entry.get("job_id", "")))
-        jobs.transition(con, "build", b["id"], "printing", to, "tracker", moonraker_status=status,
+        jobs.transition(con, "build", b["id"], "printing", to, actor, moonraker_status=status,
                         filament_used_mm=entry.get("filament_used"))
         for (jid,) in con.execute("SELECT job_id FROM build_jobs WHERE build_id=?", (b["id"],)).fetchall():
             if jobs.get(con, "job", jid)["state"] == "printing":
-                jobs.transition(con, "job", jid, "printing", "done" if to == "done" else "planned", "tracker",
+                jobs.transition(con, "job", jid, "printing", "done" if to == "done" else "planned", actor,
                                 build=b["id"])
         inventory.record_build(con, b, entry)
         written = spools.deduct(con, b["id"], b["attempt"], _assignments(con, b["id"]), b["segments"] or [],

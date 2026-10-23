@@ -86,6 +86,17 @@ class Projects(unittest.TestCase):
         g = projects.grid(self.con, self.pid)
         self.assertEqual((g["done"], g["total"], g["hours_left"]), (1, 6, 4.0))
 
+    def test_qty_on_separate_beds_gets_one_build_each(self):
+        t = [dict(TEMPLATES[0], id="solo", same_bed=False)]
+        ids = projects.add_parts(self.con, self.gid, [{"label": "T02", "template": "solo", "qty": 2}])
+        for jid in projects.generate(self.con, self.pid, ids, "ui:Amir", t, str)[0]["jobs"]:
+            worker.enqueue(self.con, "generate", jid)
+        self.drain()
+        bs = jobs.builds(self.con)
+        self.assertEqual([b["state"] for b in bs], ["review", "review"])
+        self.assertEqual(len({b["gcode"] for b in bs}), 2)                     # two files, neither overwritten
+        self.assertEqual(self.cells()["T02"], ["sliced", "sliced"])
+
     def test_send_generated_parts_and_artefact_reprints(self):
         ids = projects.add_parts(self.con, self.gid, [{"label": "T01", "template": "plate"}])
         for jid in projects.generate(self.con, self.pid, ids, "ui:Amir", TEMPLATES, str)[0]["jobs"]:

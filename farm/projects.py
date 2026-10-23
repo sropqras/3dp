@@ -316,6 +316,8 @@ def items(con, project_id: int, part_ids: list[int], delta: int, actor: str) -> 
 
 def remove(con, project_id: int, part_ids: list[int], actor: str) -> int:
     _person(actor)
+    if not part_ids:
+        raise ValueError("select parts first")
     _selected(con, project_id, part_ids)
     return con.execute("UPDATE project_parts SET removed=1 WHERE id IN (%s)" % ",".join("?" * len(part_ids)),
                        part_ids).rowcount

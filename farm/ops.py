@@ -239,7 +239,9 @@ curl -s -o /dev/null -w "snapshot on :{port}: %{{http_code}} %{{size_download}} 
 """
     if kind == "instance":
         name, port = re.sub(r"[^A-Za-z0-9_-]", "", p["name"]), int(p["port"])
-        own = p.get("klipper_commit")
+        own = str(p.get("klipper_commit") or "")
+        if own and not re.fullmatch(r"[A-Za-z0-9._/-]{1,64}", own):   # goes into a script run with sudo
+            raise Refused("klipper_commit: a commit hash or tag (letters, digits, . _ / -)")
         klipper_lines = ""
         if own:
             klipper_lines = f"""mkdir -p /etc/systemd/system/klipper-{name}.service.d

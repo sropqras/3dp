@@ -278,6 +278,8 @@ NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,31}$")
 def _person(actor: str):
     if not actor.startswith(("ui:", "cli:")):
         raise cfgchange.Refused("only a person changes the farm's printer registry")
+    if actor.split(":", 1)[1] in ("", "unknown"):
+        raise cfgchange.Refused("put your name in the 'You' box first (it's recorded with the change)")
 
 
 def _farm_md_row(printer: str, change: str):
@@ -392,8 +394,7 @@ def stage_missing_include(key: str, actor: str) -> list[dict]:
     moonraker_obico_macros.cfg): stage commenting that include out, in every file printer.cfg reaches. A staged
     change like any other - a person Applies it, and the gate's restart shows whether Klipper comes up."""
     v = _instance(key)
-    if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly:
-        raise cfgchange.Refused(f"{key} is watch-only: no config changes")
+    _not_watch_only(key, v)
     info = net.get_json(f"{v['url']}/printer/info", timeout=5)["result"]
     m = MISSING_INCLUDE.search(info.get("state_message") or "")
     if not m:
@@ -452,7 +453,8 @@ def register_camera(key: str, body: dict, actor: str) -> dict:
 
 
 def _not_watch_only(key: str, v: dict):
-    if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly:
+    if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly \
+            or printers.watch_only_url(v["url"]):
         raise cfgchange.Refused(f"{key} is watch-only: use its own Fluidd")
 
 
@@ -504,8 +506,7 @@ def reconnect(key: str, actor: str, wait_s: float = 20) -> dict:
     from .monitor import powered_off
     _person(actor)
     v = _instance(key)
-    if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly:
-        raise cfgchange.Refused(f"{key} is watch-only: use its own Fluidd")
+    _not_watch_only(key, v)
     info = net.get_json(f"{v['url']}/printer/info", timeout=5)["result"]
     job = ((net.get_json(f"{v['url']}/printer/objects/query?print_stats=state", timeout=5)["result"]["status"]
             .get("print_stats") or {}).get("state"))

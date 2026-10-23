@@ -25,21 +25,20 @@ class Run:
             except FileExistsError:
                 continue
         self.manifest = {"job": job_name, "started": time.strftime("%Y-%m-%d %H:%M:%S"), "steps": {}}
-        self._log = open(self.dir / "run.log", "a", encoding="utf-8")
+        (self.dir / "run.log").touch()
 
     @classmethod
     def resume(cls, run_dir: Path) -> "Run":
         run = cls.__new__(cls)
         run.dir = Path(run_dir)
         run.manifest = json.loads((run.dir / "manifest.json").read_text(encoding="utf-8"))
-        run._log = open(run.dir / "run.log", "a", encoding="utf-8")
         return run
 
     def log(self, msg: str) -> None:
         line = f"{time.strftime('%H:%M:%S')} {msg}"
         print(line, flush=True)
-        self._log.write(line + "\n")
-        self._log.flush()
+        with open(self.dir / "run.log", "a", encoding="utf-8") as f:   # no handle kept open per Run
+            f.write(line + "\n")
 
     def path(self, name: str) -> Path:
         return self.dir / name

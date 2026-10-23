@@ -284,9 +284,13 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
   </div>
 </dialog>
 <script>
+// every request carries X-Farm: a page on another site can't add a custom header without a CORS preflight, which
+// Farm Control never answers - so it can't drive the API (approve, apply, ...) from someone's browser
+const _farmFetch = window.fetch.bind(window);
+window.fetch = (u, o = {}) => _farmFetch(u, { ...o, headers: { ...(o.headers || {}), "X-Farm": "1" } });
 "use strict";
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const hm = (s) => { if (s == null || !isFinite(s)) return "–"; s = Math.max(0, Math.round(s / 60)); return s >= 60 ? `${Math.floor(s/60)}h ${s%60}m` : `${s}m`; };
 const boost = JSON.parse(localStorageSafe("boost") || "{}");
 let data = null, inv = null, invDirty = false;
@@ -386,6 +390,7 @@ function buildActions(b) {
       (layer ? "" : `<button class="mini ghost" onclick="act(${b.id},'retry',{})">Retry</button>`) + cancel;
   }
   if (b.state === "approved") return view + `<span class="stamp">uploading soon</span>` + cancel;
+  if (b.state === "printing") return view + `<button class="mini ghost" title="only when the printer has finished and the tracker missed it" onclick="endBuild(${b.id})">Ended…</button>`;
   return view + `<span class="stamp">${esc(b.state)}…</span>`;
 }
 
@@ -567,6 +572,11 @@ function jobsInProgress(js) {
     <td>${j.error ? `<span class="err" title="${esc(j.error)}">${esc(j.error.slice(0, 90))}</span>` : j.state === "generated" && !j.planning ? `<span class="stamp">generated, not on a bed (its build was rejected) - <a href="#inventory" style="color:var(--blue)">Inventory → Send to printer</a> (or its project)</span>` : `<span class="stamp">${j.state === "generated" ? "planning…" : "making the model…"}</span>`}</td></tr>`).join("");
 }
 
+function endBuild(id) {
+  const r = (prompt(`Build ${id} has ended on the printer but the tracker didn't see it. Type done or failed:`, "done") || "").trim().toLowerCase();
+  if (r === "done" || r === "failed") act(id, "finish", { result: r });
+  else if (r) alert("Type done or failed.");
+}
 async function act(id, action, body, confirmText) {
   if (confirmText && !confirm(confirmText)) return null;
   const r = await fetch(`/api/builds/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });

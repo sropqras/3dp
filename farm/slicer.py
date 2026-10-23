@@ -12,6 +12,8 @@ from pathlib import Path
 
 from . import config, profiles
 
+SLICE_TIMEOUT_S = 1800   # a big multi-plate bed takes a few minutes; 30 is a hang
+
 EPS = 1e-4
 
 # The 2.9.6 CLI segfaults on "<something>_extruder = 0" (GUI meaning: "current extruder"), e.g.
@@ -50,7 +52,7 @@ def align_first_layer(layer_h: float, change_zs: list[float], lo: float = 0.25, 
 
 
 def slice_model(run, printer, stls: list[Path], material: str, layer_h: float, change_zs: list[float],
-                spacing_mm: float = 10.0, profile=None) -> Path:
+                spacing_mm: float = 10.0, profile=None, avoid: set | None = None, tag: str = "") -> Path:
     """Slice one or more STLs onto one bed (PrusaSlicer arranges several, spacing_mm apart) with the job's
     profile; jobs without one get the printer's own presets (profiles.legacy), exactly as before profiles."""
     profile = profile or profiles.legacy(printer, material)
@@ -69,6 +71,8 @@ def slice_model(run, printer, stls: list[Path], material: str, layer_h: float, c
     cx, cy = printer.bed_center
     stem = "+".join(s.stem for s in stls)  # computed before layout_bed swaps the STLs for bed.3mf
     out = run.path(f"{stem}_{layer_h}mm_{profile.material}_{printer.name}.gcode")
+    if avoid and out.name in avoid:   # another build already has this name (qty > 1, a re-send): keep both files
+        out = run.path(f"{stem}_{layer_h}mm_{profile.material}_{printer.name}_{tag}.gcode")
     if len(stls) == 1:
         placement = ["--center", f"{cx},{cy}"]
     else:
@@ -82,7 +86,10 @@ def slice_model(run, printer, stls: list[Path], material: str, layer_h: float, c
         "--export-gcode", "--output", str(out), "--loglevel", "2", *map(str, stls),
     ]
     run.log(f"slice: layer {layer_h} mm, first layer {first} mm (aligned for colour changes at {change_zs})")
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:   # a hung slicer must not stop every queue while the worker's heartbeat says it's alive
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=SLICE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        run.fail(f"PrusaSlicer did not finish in {SLICE_TIMEOUT_S // 60} min; killed")
     run.path("slicer.log").write_text(" ".join(cmd) + "\n\n" + proc.stdout + proc.stderr, encoding="utf-8")
     if proc.returncode != 0 or not out.is_file():
         run.fail(f"PrusaSlicer exited {proc.returncode}; see slicer.log")
