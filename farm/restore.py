@@ -231,7 +231,15 @@ def archive_kiauh(ssh: str = "aali@enders3dp.local") -> dict:
 
 # ---------------------------------------------------------------- evidence
 
+# calibration runs (towers, cubes, PA/retraction tests) say nothing about a config printing real work: never evidence
+CALIBRATION = re.compile(r"(?i)calibrat|tower|benchy|xyz|pressure.?advance|retraction|_test|test_|\btest\b")
+
+
 def _prints(con, key: str, url: str | None) -> list[dict]:
+    return [p for p in _all_prints(con, key, url) if not CALIBRATION.search(str(p["file"] or "").rsplit("/", 1)[-1])]
+
+
+def _all_prints(con, key: str, url: str | None) -> list[dict]:
     if key in printers.PRINTERS:
         return [{"start": r[0], "end": r[1], "status": r[2], "file": r[3], "quality": r[4]} for r in con.execute(
             "SELECT started_at, finished_at, status, file, quality FROM prints WHERE printer=? ORDER BY started_at", (key,))]

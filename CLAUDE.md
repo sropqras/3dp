@@ -109,7 +109,7 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     `telegram.conf.bak-*`) and by content. Tarballs are never archived.
   - Snapshots keep file times (`mtimes`), so each config has a live window. Prints that started and finished
     inside it are its evidence ("exact" / "likely"); **last known good** = the newest config with completed prints
-    and none marked bad.
+    and none marked bad. Calibration prints (towers, cubes, PA tests) never count.
   - A restore stages one change per differing file as a **batch** (`config_changes.batch`, kind `restore`). The gate
     applies a batch together: one snapshot, one restart, all put back if Klipper doesn't load. Audit FAILs the old
     config had are reported, not counted as failure. Rollback and Cancel act on the whole set. The gate also takes

@@ -87,6 +87,9 @@ class Restore(unittest.TestCase):
         self.print_(T0 - DAY, T0 - DAY + 3600)                 # before the original's newest file: not evidence
         self.print_(EDIT - 600, EDIT + 600)                    # straddles the edit: not evidence for either
         self.print_(EDIT + 3600, EDIT + 7200, "error")         # on the edited config, failed
+        self.con.execute("INSERT INTO prints (artefact_id, printer, file, started_at, finished_at, status, source) "
+                         "VALUES (1, 'Ender3MaxNeo', 'retraction_tower_PLA.gcode', ?, ?, 'completed', 'test')",
+                         (T0 + 3 * DAY, T0 + 3 * DAY + 600))   # calibration: never evidence
         pts = {p["kind"]: p for p in restore.points(self.con, "Ender3MaxNeo", self.m.url)}
         o = pts["origin"]
         self.assertEqual((o["prints"]["completed"], o["prints"]["good"], o["evidence"]), (2, 1, "exact"))
