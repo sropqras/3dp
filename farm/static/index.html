@@ -92,6 +92,13 @@ dialog#startdlg { width: min(520px, calc(100vw - 32px)); padding: 0; border: 1px
 dialog#startdlg::backdrop { background: rgba(3,6,12,.72); }
 #startdlg .pad { display: grid; gap: 10px; } #startdlg label { display: flex; gap: 8px; align-items: center; }
 #startdlg ul { margin: 0; padding-left: 18px; color: var(--red); font-size: 13px; }
+dialog#newjob { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
+dialog#newjob::backdrop { background: rgba(3,6,12,.72); }
+.nj { display: grid; gap: 12px; } .nj .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.nj label.f { display: grid; gap: 3px; font-size: 12px; color: var(--muted); } .nj label.f input, .nj label.f select, .nj textarea { width: 100%; } .nj label.f input[type=checkbox] { width: auto; margin: 0 6px 0 0; }
+.nj label.f > span:not(.stamp) { display: flex; align-items: center; color: var(--text); font-size: 13px; }
+.nj textarea { background: #0b1220; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 12px; min-height: 64px; }
+.nj details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; } .nj summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
@@ -116,6 +123,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
 <body>
 <header>
   <div class="brand">sropqras <span>Farm Control</span></div>
+  <button onclick="openNewJob()">+ New job</button>
   <div class="kpis" id="kpis"></div>
 </header>
 <main>
@@ -135,6 +143,24 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     </div>
   </section>
 </main>
+<dialog id="newjob">
+  <div class="vh"><span class="name">New job</span><span class="stamp" id="nj-health"></span><button class="ghost x" onclick="$('newjob').close()">Close</button></div>
+  <div class="pad nj">
+    <div class="grid2">
+      <label class="f">Maker <select id="nj-maker" onchange="renderNewJob()"></select></label>
+      <label class="f">Order title <input id="nj-title" placeholder="e.g. ZA011 lithophane for Zahabiya"></label>
+    </div>
+    <div id="nj-form"></div>
+    <div class="grid2">
+      <label class="f">Profile <select id="nj-profile" onchange="renderProfileBits()"></select></label>
+      <label class="f">Layer height <select id="nj-layer"></select></label>
+      <label class="f">Printer <select id="nj-printer"></select></label>
+    </div>
+    <div class="grid2" id="nj-colours"></div>
+    <div class="acts"><button onclick="submitNewJob()">Create — generate &amp; slice for review</button><span class="stamp" id="nj-msg"></span></div>
+    <div class="stamp">Nothing prints from here: the job is generated and sliced, then waits in Review &amp; queue for your 3D check and approval.</div>
+  </div>
+</dialog>
 <dialog id="startdlg">
   <div class="vh"><span class="name" id="sd-title">Start</span><button class="ghost x" onclick="$('startdlg').close()">Close</button></div>
   <div class="pad">
@@ -259,12 +285,124 @@ function printerSelect(b) {
 }
 
 function buildsTable(bs) {
-  if (!bs.length) return `<tr><td class="stamp">Nothing to review or queued. <code>python3 -m farm submit job.json</code> or the New-job page (coming) adds work.</td></tr>`;
+  if (!bs.length && !(data.jobs_in_progress || []).length) return `<tr><td class="stamp">Nothing to review or queued. <b>+ New job</b> (top) or <code>python3 -m farm submit job.json</code> adds work.</td></tr>`;
   return `<tr><th>#</th><th>Order / items</th><th>Printer</th><th>Profile</th><th>Time · filament</th><th>State</th><th></th></tr>` +
     bs.map((b) => `<tr><td>${b.id}</td><td>${esc(b.order)}<div class="labels">${(b.labels || "").split(" ").filter(Boolean).map((l) => `<span class="chip">${esc(l)}</span>`).join("")}</div></td>
       <td>${printerSelect(b)}</td><td>${esc(b.profile_name)}${b.profile_confirmed ? "" : ` <span class="warn">unconfirmed</span>`}</td>
       <td>${b.estimate_s ? hm(b.estimate_s) : "–"} · ${b.grams ? b.grams.toFixed(0) + " g" : "–"}</td>
       <td><span class="chip s-${esc(b.state)}">${esc(b.state)}</span></td><td><div class="acts">${buildActions(b)}</div></td></tr>`).join("");
+}
+
+// ---------------------------------------------------------------- New job (maker plugins)
+let MK = null;
+async function openNewJob() {
+  $("newjob").showModal();
+  $("nj-msg").textContent = "loading makers…";
+  MK = await (await fetch("/api/makers")).json();
+  $("nj-maker").innerHTML = MK.makers.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}${m.healthy ? "" : " (offline)"}${m.experimental ? " (experimental)" : ""}</option>`).join("");
+  $("nj-msg").textContent = "";
+  renderNewJob();
+}
+const mk = () => MK.makers.find((m) => m.id === $("nj-maker").value);
+function fieldInput(name, p, value) {
+  const id = `nj-p-${name}`, v = value ?? p.default ?? "";
+  if (p.type === "boolean") return `<label class="f"><span><input type="checkbox" id="${id}" ${v ? "checked" : ""}> ${esc(p.label || name)}</span></label>`;
+  if (p.type === "enum") return `<label class="f">${esc(p.label || name)}<select id="${id}">${p.enum.map((o) => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>`;
+  if (p.type === "json") return `<label class="f" style="grid-column:1/-1">${esc(p.label || name)}<textarea id="${id}" placeholder="{}"></textarea></label>`;
+  const t = p.type === "string" ? "text" : "number";
+  const lim = t === "number" ? ` step="any" ${p.min != null ? `min="${p.min}"` : ""} ${p.max != null ? `max="${p.max}"` : ""}` : "";
+  return `<label class="f">${esc(p.label || name)}${p.min != null ? ` <span class="stamp">${p.min}–${p.max}</span>` : ""}<input type="${t}" id="${id}" value="${esc(v)}"${lim}></label>`;
+}
+function renderNewJob() {
+  const m = mk(); if (!m) return;
+  $("nj-health").textContent = m.healthy ? "" : "maker app is offline";
+  const params = Object.entries(m.params);
+  const perItem = params.find(([, p]) => p.personalise);
+  const basic = params.filter(([n, p]) => !p.advanced && (!perItem || n !== perItem[0]));
+  const adv = params.filter(([, p]) => p.advanced);
+  // private inputs (licensed fonts) are chosen by NAME from what is installed on the server, never uploaded here
+  const files = m.inputs.map((fi) => fi.private
+    ? `<label class="f">${esc(fi.label || fi.name)}<select id="nj-f-${esc(fi.name)}"><option value="">${MK.fonts.length ? "none (maker's default)" : "none installed (copy into assets/fonts/)"}</option>${MK.fonts.map((f) => `<option value="font:${esc(f)}">${esc(f)}</option>`).join("")}</select></label>`
+    : `<label class="f">${esc(fi.label || fi.name)}${fi.required ? " *" : ""}<input type="file" id="nj-f-${esc(fi.name)}" accept="${esc(fi.accept.join(","))}"></label>`).join("");
+  $("nj-form").innerHTML = `
+    ${perItem ? `<label class="f">${esc(perItem[1].label || perItem[0])} — one item per line (each line is one ${esc(m.id)} job)<textarea id="nj-items" placeholder="A01&#10;A02"></textarea></label>
+      <label class="f"><span><input type="checkbox" id="nj-samebed"> put all items on one bed</span></label>` :
+      `<div class="grid2"><label class="f">Item label <input id="nj-label" placeholder="e.g. ZA011"></label><label class="f">Quantity <input type="number" id="nj-qty" value="1" min="1"></label></div>`}
+    ${files ? `<div class="grid2">${files}</div>` : ""}
+    <div class="grid2">${basic.map(([n, p]) => fieldInput(n, p, m.defaults[n])).join("")}</div>
+    ${adv.length ? `<details><summary>Advanced (${adv.length})</summary><div class="grid2" style="margin-top:8px">${adv.map(([n, p]) => fieldInput(n, p, m.defaults[n])).join("")}</div></details>` : ""}`;
+  const typical = m.typical.profiles || [];
+  const profs = MK.profiles.filter((p) => !m.supports || p.supports);
+  $("nj-profile").innerHTML = profs.length ? profs.sort((a, b) => typical.indexOf(b.id) - typical.indexOf(a.id))
+    .map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.confirmed ? "" : " (unconfirmed)"}${typical.includes(p.id) ? " ★" : ""}</option>`).join("")
+    : `<option value="">no profile with supports yet</option>`;
+  renderProfileBits();
+}
+function renderProfileBits() {
+  const m = mk(), p = MK.profiles.find((x) => x.id === $("nj-profile").value);
+  $("nj-layer").innerHTML = p ? p.layer_heights.map((l) => `<option ${(m.typical.layer_heights || []).includes(l) ? "selected" : ""}>${l}</option>`).join("") : "";
+  $("nj-printer").innerHTML = p ? p.printers.map((x) => `<option>${esc(x)}</option>`).join("") : "";
+  const heights = m.colour_heights || [];
+  $("nj-colours").innerHTML = `<label class="f">Colour 1 <input id="nj-c1" value="${p && p.material === "petg" ? "black" : "white"}"></label>
+    <label class="f">Colour 1 hex <input type="color" id="nj-h1" value="${p && p.material === "petg" ? "#1c1c1c" : "#f2f2f2"}"></label>` +
+    heights.map((h) => `<label class="f"><span><input type="checkbox" id="nj-cc-${esc(h)}" ${h === "base_top" ? "checked" : ""}> colour change at ${esc(h)}</span></label>
+      <label class="f">Colour 2 <input id="nj-c2" value="white"></label><label class="f">Colour 2 hex <input type="color" id="nj-h2" value="#f2f2f2"></label>`).join("");
+  if (p && !p.confirmed) $("nj-msg").textContent = `Profile unconfirmed: ${p.note}. It slices for review but can't be approved yet.`;
+  else $("nj-msg").textContent = "";
+}
+function readParams(m) {
+  const out = {};
+  for (const [n, p] of Object.entries(m.params)) {
+    const el = $(`nj-p-${n}`); if (!el) continue;
+    if (p.type === "boolean") out[n] = el.checked;
+    else if (p.type === "json") { if (el.value.trim()) out[n] = JSON.parse(el.value); }
+    else if (el.value === "") continue;
+    else out[n] = (p.type === "number" || p.type === "integer") ? +el.value : el.value;
+  }
+  return out;
+}
+async function submitNewJob() {
+  const m = mk(); $("nj-msg").textContent = "uploading…";
+  try {
+    const files = {};
+    for (const fi of m.inputs) {
+      const el = $(`nj-f-${fi.name}`); if (!el) continue;
+      if (el.tagName === "SELECT") { if (el.value) files[fi.name] = el.value; continue; }
+      if (!el.files.length) continue;
+      const f = el.files[0];
+      const r = await fetch(`/api/uploads?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+      const out = await r.json(); if (!r.ok) throw new Error(out.error || r.status);
+      files[fi.name] = "upload:" + out.ref;
+    }
+    const base = readParams(m), perItem = Object.entries(m.params).find(([, p]) => p.personalise);
+    let items;
+    if (perItem) {
+      const lines = $("nj-items").value.split("\n").map((x) => x.trim()).filter(Boolean);
+      if (!lines.length) throw new Error(`enter at least one ${perItem[1].label || perItem[0]}`);
+      items = lines.map((l) => ({ label: l, params: { ...base, [perItem[0]]: l }, files }));
+    } else {
+      items = [{ label: $("nj-label").value.trim() || m.id, qty: +$("nj-qty").value || 1, params: base, files }];
+    }
+    const changes = (m.colour_heights || []).filter((h) => $(`nj-cc-${h}`)?.checked);
+    const colours = [$("nj-c1").value], hexes = [$("nj-h1").value];
+    if (changes.length && $("nj-c2")) { colours.push($("nj-c2").value); hexes.push($("nj-h2").value); }
+    const body = { maker: m.id, title: $("nj-title").value.trim() || `${m.name} ${new Date().toLocaleDateString()}`,
+                   profile: $("nj-profile").value, layer_height: +$("nj-layer").value, printer: $("nj-printer").value,
+                   colours, colour_hex: hexes, colour_changes: changes, same_bed: !!$("nj-samebed")?.checked, items };
+    $("nj-msg").textContent = "creating…";
+    const r = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const out = await r.json();
+    if (!r.ok) throw new Error(out.error || r.status);
+    $("nj-msg").textContent = `order ${out.order}: ${out.jobs.length} job(s) queued — watch Review & queue`;
+    refresh();
+  } catch (e) { $("nj-msg").textContent = "not created: " + e.message; }
+}
+
+function jobsInProgress(js) {
+  if (!js || !js.length) return "";
+  return js.map((j) => `<tr><td></td><td>${esc(j.title)}<div class="labels"><span class="chip">${esc(j.label)}</span></div></td><td>${esc(j.printer)}</td>
+    <td>${esc(j.maker)}</td><td>–</td><td><span class="chip s-${j.state === "failed" ? "failed" : "slicing"}">${esc(j.state)}</span></td>
+    <td>${j.error ? `<span class="err" title="${esc(j.error)}">${esc(j.error.slice(0, 90))}</span>` : `<span class="stamp">${j.state === "generated" ? "planning…" : "making the model…"}</span>`}</td></tr>`).join("");
 }
 
 async function act(id, action, body, confirmText) {
@@ -373,7 +511,7 @@ function render() {
   $("jobs").innerHTML = jobsTable(data.runs);
   // don't redraw under an open printer drop-down (it would close it); anything else re-renders
   const busy = document.activeElement?.tagName === "SELECT" && document.activeElement.closest("#builds");
-  if (!busy) $("builds").innerHTML = buildsTable(data.builds || []);
+  if (!busy) $("builds").innerHTML = buildsTable(data.builds || []) + jobsInProgress(data.jobs_in_progress);
   if (!invDirty && !document.activeElement?.closest?.("#spools")) renderSpools();
 }
 

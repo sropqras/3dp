@@ -41,3 +41,19 @@ def post_multipart(url: str, fields: dict, files: dict, timeout: float = 120):
     req = urllib.request.Request(url, data=b"".join(parts), method="POST",
                                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     return _send(req, timeout)
+
+
+def post_json_body(url: str, obj, timeout: float = 30):
+    """POST a JSON body. Returns (status, headers, body bytes)."""
+    req = urllib.request.Request(url, data=json.dumps(obj).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    return _send(req, timeout)
+
+
+def post_bytes(url: str, data: bytes, content_type: str, timeout: float = 120):
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": content_type})
+    return _send(req, timeout)
+
+
+def get_bytes(url: str, timeout: float = 60):
+    return _send(urllib.request.Request(url), timeout)

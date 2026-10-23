@@ -63,3 +63,38 @@ def http_error(e: Exception, what: str) -> MakerError:
     m = re.search(r"HTTP (\d{3})", msg)
     retryable = not (m and 400 <= int(m.group(1)) < 500)
     return MakerError(f"{what}: {msg[:300]}", retryable=retryable)
+
+
+def deep_merge(base: dict, extra: dict) -> dict:
+    out = dict(base)
+    for k, v in (extra or {}).items():
+        out[k] = deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def nested_params(spec_params: dict, params: dict, defaults: dict | None = None) -> dict:
+    """Flat form fields -> the maker's nested JSON: a spec param with "path": "lithophane.topDiameter" lands
+    there; params["overrides"] (a JSON object) is merged on top for anything the form doesn't expose."""
+    out = deep_merge({}, defaults or {})
+    for name, p in spec_params.items():
+        if name == "overrides" or name not in params or params[name] is None:
+            continue
+        node = out
+        keys = p.get("path", name).split(".")
+        for k in keys[:-1]:
+            node = node.setdefault(k, {})
+        node[keys[-1]] = params[name]
+    return deep_merge(out, params.get("overrides") or {})
+
+
+def defaults_from(url: str, key: str | None = None, timeout: float = 10) -> dict:
+    """A maker's own /api/defaults (or a key inside it); {} if it can't be read - the spec defaults still apply."""
+    from .. import net
+    try:
+        d = net.get_json(url, timeout=timeout)
+        return d.get(key, {}) if key else d
+    except Exception:
+        return {}
+
+
+OVERRIDES = {"type": "json", "label": "Advanced: JSON merged into the maker's parameters", "advanced": True}

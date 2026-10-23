@@ -114,6 +114,10 @@ class Maker:
                     problems.append(f"{name}: {v} outside [{p.get('min')}, {p.get('max')}]")
             elif t == "enum" and v not in p.get("enum", ()):
                 problems.append(f"{name}: {v!r} not one of {p.get('enum')}")
+            elif t == "json" and not isinstance(v, dict):
+                problems.append(f"{name}: expected a JSON object")
+            elif t == "string" and not isinstance(v, str):
+                problems.append(f"{name}: expected text")
             elif t == "boolean" and not isinstance(v, bool):
                 problems.append(f"{name}: expected true/false, got {v!r}")
         unknown = sorted(set(params) - set(self.spec.params))
@@ -158,4 +162,5 @@ def all_makers() -> dict:
 
 
 def _load():
-    from . import likhan  # noqa: F401  (each adapter registers itself on import)
+    # each adapter registers itself on import
+    from . import holder, lamp, likhan, lithophane, namakdani  # noqa: F401

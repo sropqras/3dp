@@ -53,6 +53,8 @@ print(f"READY http://127.0.0.1:10199 {moon.url} review={b_review} queued={b_star
 try:
     while True:
         time.sleep(1)
+        while worker.run_once(con, log=lambda x: None):   # the harness is also the worker (fake likhan, fake slicer)
+            pass
         Path(tmp / "starts.json").write_text(json.dumps(moon.starts))
         print(f"STARTS {json.dumps(moon.starts)}", flush=True) if moon.starts else None
 except KeyboardInterrupt:

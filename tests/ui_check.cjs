@@ -38,6 +38,29 @@ const [base, reviewId, queuedId, shots] = process.argv.slice(2);
   await p.click("text=Save inventory"); await p.waitForTimeout(1200);
   console.log("inventory after save:", await p.textContent("#invmsg"),
               JSON.stringify(await p.evaluate(async () => (await (await fetch("/api/overview")).json()).inventory.spools.map((s) => [s.id, s.remaining_g, s.version]))));
+  // New job: likhan (the harness's fake), two plates on one bed -> generated, sliced -> in Review
+  await p.click("text=+ New job");
+  await p.waitForFunction(() => document.getElementById("nj-maker").options.length > 0, null, { timeout: 15000 });
+  await p.selectOption("#nj-maker", "likhan");
+  await p.fill("#nj-title", "UI new job");
+  await p.fill("#nj-items", "Z01\nZ02");
+  await p.check("#nj-samebed");
+  await p.locator("#newjob").screenshot({ path: `${shots}/newjob.png` });
+  await p.click("text=Create — generate & slice for review");
+  await p.waitForFunction(() => /order \d+/.test(document.getElementById("nj-msg").textContent) || /not created/.test(document.getElementById("nj-msg").textContent), null, { timeout: 15000 });
+  console.log("new job:", await p.textContent("#nj-msg"));
+  await p.locator("#newjob button", { hasText: "Close" }).click();
+  let state = null;
+  for (let i = 0; i < 20 && state !== "review"; i++) {
+    await p.waitForTimeout(1000);
+    const ov = await p.evaluate(async () => (await (await fetch("/api/overview")).json()).builds);
+    const b = ov.find((x) => x.order === "UI new job");
+    state = b ? b.state : null;
+    if (b) console.log(`  build ${b.id}: ${b.labels} ${b.state}`);
+  }
+  console.log("new job reached review:", state === "review");
+  await p.evaluate(() => refresh()); await p.waitForTimeout(800);
+  await p.locator("#builds").screenshot({ path: `${shots}/builds2.png` });
   console.log("page errors:", errs.length ? errs : "none");
   await b.close();
 })();

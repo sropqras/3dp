@@ -10,6 +10,9 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /api/builds[?state=]   builds from the farm DB
   POST /api/builds/<id>/<act> approve | reject | cancel | retry | move {printer} | start-dialog | start
                               (start needs the dialog's nonce + checklist + spool + operator: farm/gate.py)
+  GET  /api/makers            the maker plugins (spec, health), print profiles, printers, licensed font NAMES
+  POST /api/uploads?name=     a file for a new job (raw body) -> {"ref"}; kept under data/uploads/ (gitignored)
+  POST /api/orders            a new order from the New-job page -> jobs queued for the worker
   POST /api/spools[/<id>]     add a spool / edit one ({"version": n, ...fields, "remaining_g"}); 409 if stale
 """
 import json
@@ -20,7 +23,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, db, gate, jobs, model3mf, net, pipeline, printers, profiles, spools, watch, worker
+from . import audit, config, db, gate, jobs, makers, model3mf, net, pipeline, printers, profiles, spools, watch, worker
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -242,6 +245,88 @@ def batch_view(runs, live, hist_by_file) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- new jobs (makers, uploads, orders)
+
+UPLOADS = DATA / "uploads"
+MAX_UPLOAD = 200 * 1024 * 1024
+
+
+def makers_view() -> dict:
+    ms = []
+    for m in makers.all_makers().values():
+        s = m.spec
+        ms.append({**m.manifest(), "healthy": cached(f"health:{s.id}", 30, m.health),
+                   "defaults": makers.Maker.defaults(m)})
+    profs = [{"id": p.id, "name": p.name, "printers": [x for x in p.printers if not printers.PRINTERS[x].readonly],
+              "layer_heights": list(p.layer_heights), "material": p.material, "confirmed": p.confirmed,
+              "supports": p.supports, "note": p.note} for p in profiles.PROFILES.values()]
+    fonts = sorted(f.name for f in config.FONTS_DIR.glob("*.[ot]tf")) if config.FONTS_DIR.is_dir() else []
+    return {"makers": ms, "profiles": profs, "fonts": fonts,
+            "printers": [n for n, p in printers.PRINTERS.items() if not p.readonly]}
+
+
+def save_upload(name: str, body: bytes) -> dict:
+    import re as _re
+    import uuid as _uuid
+    safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", Path(name or "file").name).strip("._") or "file"
+    d = UPLOADS / _uuid.uuid4().hex
+    d.mkdir(parents=True)
+    (d / safe).write_bytes(body)
+    return {"ref": f"{d.name}/{safe}", "bytes": len(body)}
+
+
+def _resolve_input(value: str) -> str:
+    """'upload:<ref>' -> a file under data/uploads; 'font:<name>' -> a licensed font by NAME from FONTS_DIR.
+    Nothing else: a page can't point the farm at an arbitrary path on this machine."""
+    kind, _, ref = str(value).partition(":")
+    if kind == "upload":
+        path = (UPLOADS / ref).resolve()
+        if UPLOADS.resolve() not in path.parents or not path.is_file():
+            raise ValueError(f"unknown upload {ref}")
+        return str(path)
+    if kind == "font":
+        path = (config.FONTS_DIR / Path(ref).name)
+        if not path.is_file():
+            raise ValueError(f"font {ref} is not installed on this server")
+        return str(path)
+    raise ValueError(f"bad file reference {value!r}")
+
+
+def create_order(body: dict) -> dict:
+    items = []
+    for it in body.get("items") or []:
+        inputs = {k: _resolve_input(v) for k, v in (it.get("files") or {}).items() if v}
+        items.append({"label": str(it.get("label") or "")[:80], "qty": int(it.get("qty") or 1),
+                      "params": it.get("params") or {}, "inputs": inputs})
+    con = db.connect()
+    try:
+        oid, run = pipeline.submit_order(
+            con, source="ui", title=str(body.get("title") or body.get("maker") or "order")[:120],
+            maker=str(body.get("maker")), items=items, profile=str(body.get("profile")),
+            layer_height=float(body.get("layer_height") or 0), printer=str(body.get("printer")),
+            colours=body.get("colours") or [], colour_hex=body.get("colour_hex") or [],
+            colour_changes=body.get("colour_changes") or [], same_bed=bool(body.get("same_bed")),
+            notes=str(body.get("notes") or "")[:500])
+        ids = [r[0] for r in con.execute("SELECT id FROM jobs WHERE order_id=? ORDER BY id", (oid,))]
+        for jid in ids:
+            worker.enqueue(con, "generate", jid)
+        return {"order": oid, "jobs": ids, "run": run.dir.name}
+    finally:
+        con.close()
+
+
+def jobs_in_progress() -> list[dict]:
+    """Jobs not yet on a bed (being generated, or failed) - the Review table shows builds, this shows the rest."""
+    con = db.connect()
+    try:
+        rows = con.execute("SELECT j.id, j.label, j.maker, j.state, j.error, j.printer, o.title FROM jobs j "
+                           "JOIN orders o ON o.id = j.order_id WHERE j.state IN ('received','generating','generated',"
+                           "'failed') ORDER BY j.id DESC LIMIT 40").fetchall()
+    finally:
+        con.close()
+    return [dict(r) for r in rows]
+
+
 # ---------------------------------------------------------------- builds (review, queue, start)
 
 ACTIVE = ("slicing", "review", "approved", "uploading", "queued", "starting", "printing", "failed")
@@ -353,7 +438,7 @@ def overview() -> dict:
     finally:
         con.close()
     return {"time": time.time(), "printers": live, "runs": shown[:25], "batches": batch_view(runs, live, hist),
-            "builds": builds_view(),
+            "builds": builds_view(), "jobs_in_progress": jobs_in_progress(),
             "inventory": inv, "petg_used_g": round(sum(r["grams"] for r in shown if r["status"] == "completed"), 1)}
 
 
@@ -380,6 +465,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(jobs.builds(con, state), default=str).encode())
             finally:
                 con.close()
+        if path == "/api/makers":
+            return self._send(200, json.dumps(makers_view(), default=str).encode())
         if path == "/api/overview":
             return self._send(200, json.dumps(overview()).encode())
         if path.startswith("/api/cam/"):
@@ -416,6 +503,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, json.dumps({"error": str(e)}).encode())
             except (gate.GateRefused, pipeline.StepFailed, jobs.StateConflict, ValueError, SystemExit) as e:
                 return self._send(409, json.dumps({"error": str(e)}).encode())
+        if path == "/api/uploads":
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            if not 0 < n <= MAX_UPLOAD:
+                return self._send(413, json.dumps({"error": f"upload must be 1 byte..{MAX_UPLOAD // 2**20} MB"}).encode())
+            name = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("name", ["file"])[0]
+            return self._send(200, json.dumps(save_upload(name, self.rfile.read(n))).encode())
+        if path == "/api/orders":
+            try:
+                return self._send(200, json.dumps(create_order(self._json_body())).encode())
+            except (pipeline.StepFailed, ValueError, SystemExit, KeyError, TypeError) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
         if len(parts) in (2, 3) and parts[:2] == ["api", "spools"]:
             con = db.connect()
             try:

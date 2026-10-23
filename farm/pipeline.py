@@ -88,6 +88,58 @@ def submit_job_file(con, job: dict, job_path: Path | None = None, source: str = 
     return oid, run
 
 
+def submit_order(con, *, source: str, title: str, maker: str, items: list[dict], profile: str,
+                 layer_height: float, printer: str, colours=(), colour_hex=(), colour_changes=(),
+                 external_ref: str | None = None, same_bed: bool = False, upload_folder: str | None = None,
+                 notes: str = "") -> tuple[int, Run]:
+    """An order from the New-job page or invtool: one job per item ({label, params, inputs: {name: path}}),
+    all for one maker/profile/printer. Refuses what can't be printed before anything is generated."""
+    m = makers.get(maker)
+    prof = profiles.get(profile)
+    pr = printers.get(printer)
+    problems = []
+    if pr.readonly:
+        problems.append(f"{printer} is watch-only")
+    if not prof.allows(printer):
+        problems.append(f"profile {prof.id} is for {', '.join(prof.printers)}, not {printer}")
+    if layer_height not in prof.layer_heights:
+        problems.append(f"layer {layer_height} mm is not one of {prof.id}'s {prof.layer_heights}")
+    if m.spec.supports and not prof.supports:
+        problems.append(f"{m.spec.name} needs supports; profile {prof.id} has none")
+    for z in colour_changes:
+        if isinstance(z, str) and not _is_number(z) and z not in m.spec.colour_heights:
+            problems.append(f"colour change {z!r}: {maker} only knows {list(m.spec.colour_heights) or 'heights in mm'}")
+    ctx = makers.GenContext(params={}, files={}, nozzle=prof.nozzle, layer_height=layer_height, out_dir=Path("."),
+                            bed_mm=(pr.bed_max[0] - pr.bed_min[0], pr.bed_max[1] - pr.bed_min[1], pr.max_z))
+    for it in items:
+        files = {k: Path(v) for k, v in (it.get("inputs") or {}).items() if v}
+        problems += [f"{it.get('label', '?')}: {x}" for x in m.validate(it.get("params") or {}, files, ctx)]
+        problems += [f"{it.get('label', '?')}: {k} not found" for k, v in files.items() if not v.is_file()]
+    if not items:
+        problems.append("no items")
+    if problems:
+        raise StepFailed("; ".join(problems))
+    run = Run(title)
+    run.path("job.json").write_text(json.dumps({"name": title, "maker": maker, "items": items, "profile": profile,
+                                                "layer_height": layer_height, "printer": printer,
+                                                "colours": list(colours), "colour_hex": list(colour_hex),
+                                                "colour_changes": list(colour_changes)}, indent=2, default=str))
+    run.manifest["colours"] = list(colours)
+    run.save()
+    with db.tx(con):
+        oid = jobs.create_order(con, source, title, external_ref=external_ref or run.dir.name, notes=notes)
+        con.execute("UPDATE orders SET run_dir=?, upload_folder=? WHERE id=?",
+                    (str(run.dir), upload_folder or f"farm/{source}", oid))
+        for it in items:
+            jid = jobs.create_job(con, oid, maker, it.get("label") or title, params=it.get("params") or {},
+                                  inputs=it.get("inputs") or {}, qty=int(it.get("qty", 1)), profile=prof.id,
+                                  layer_height=layer_height, printer=printer, colours=colours, colour_hex=colour_hex,
+                                  colour_changes=colour_changes, actor=source)
+            con.execute("UPDATE jobs SET bed_group=? WHERE id=?", ("bed1" if same_bed else None, jid))
+    run.log(f"order: {title} ({len(items)} item(s), {maker}) on {printer} with {prof.id} -> {run.dir}")
+    return oid, run
+
+
 def run_for(con, order_id: int) -> Run:
     order = jobs.get(con, "order", order_id)
     return Run.resume(Path(order["run_dir"]))

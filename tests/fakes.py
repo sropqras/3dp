@@ -113,3 +113,54 @@ class FakeMoonraker:
 
     def close(self):
         self.server.shutdown()
+
+
+class FakeMakers:
+    """Every maker app's routes on one server: STL for any build call, ids/jobs for the two-step makers.
+    .status forces an HTTP error code on the build calls (4xx vs 5xx handling)."""
+
+    def __init__(self, tmp):
+        import json as _json
+        self.tmp, self.calls, self.status = tmp, [], None
+        outer = self
+        stl = box_stl(tmp / "any.stl", 0, 0, 0, 50, 40, 10).read_bytes()
+
+        class H(BaseHTTPRequestHandler):
+            def _send(self, code, body, ctype="application/json", headers=()):
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                for k, v in headers:
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(body if isinstance(body, bytes) else _json.dumps(body).encode())
+
+            def do_GET(self):
+                outer.calls.append(("GET", self.path))
+                if self.path.endswith("defaults"):
+                    return self._send(200, {"defaults": {"lithophane": {"topDiameter": 100, "bottomDiameter": 120}}})
+                if self.path.startswith("/api/holders/") and "/files/" in self.path:
+                    return self._send(200, stl, "model/stl")
+                if self.path.startswith("/api/holders/"):
+                    return self._send(200, {"id": "h1", "state": "done", "report": {"watertight": True}})
+                return self._send(200, {"ok": True})
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                outer.calls.append(("POST", self.path))
+                if self.path in ("/api/upload", "/api/images"):
+                    return self._send(201, {"id": "u1", "kind": "stl"})
+                if outer.status:
+                    return self._send(outer.status, {"error": "forced"})
+                if self.path == "/api/holders":
+                    return self._send(202, {"id": "h1", "state": "queued"})
+                return self._send(200, stl, "model/stl", [("X-Namakdani-Stats", "%7B%22watertight%22%3Atrue%7D")])
+
+            def log_message(self, *a):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
