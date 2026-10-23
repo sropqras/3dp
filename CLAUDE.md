@@ -53,6 +53,17 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - **`farm/audit.py`** encodes every lesson learned on any printer as a rule run against the **live** config (`/printer/objects/query?configfile=settings`). Each rule states why it exists. When a new printer problem is found, add a rule here so it's checked farm-wide.
 - **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and the spool inventory lives in `data/inventory.json` (gitignored, seeded from `inventory.example.json`). The 3D viewer is hand-written WebGL2 in the page, with no libraries. It fetches `/api/model/<run>/<file>`, which `farm/model3mf.py` builds from the run's project `.3mf` (bed-space meshes plus the file's own colour changes, layer heights and bed shape). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
 - **`farm/monitor.py`** is the serious-error watch. It alerts on Klipper error/shutdown, a print in the error state, Moonraker down two polls running, and new console `!!`/`Unknown command` lines. It's stateful, so it reports only new problems (loud) and recoveries (silent). On aali-cli the jobctl job `farm-monitor` runs it every 2 min and sends alerts through the ops Telegram bot. Each `Printer` carries its `fluidd` URL. Fluidd can't choose an instance from the URL, so a shared Fluidd gets a `fluidd_note`.
+- **The Printers tab** (`/printers`; `farm/hosts.py`, `farm/fleet.py`, `farm/configs.py`, `farm/cfgchange.py`, `farm/baseline.py`, `farm/ops.py`) is how printers are maintained without an AI session:
+  - fleet health per host (`printers/hosts.json`);
+  - config snapshots and drift against a reviewed reference (nightly jobctl `farm-backup`);
+  - staged config changes with a gated Apply, verify and rollback;
+  - **Stage fix** for every audit rule with a generated fix (`baseline.fixable`);
+  - the Telegram pack (never stores the token);
+  - service restarts gated by what they disturb;
+  - USB devices over read-only SSH;
+  - root-only host steps as scripts for a person to run with sudo.
+
+  Plan: `docs/PRINTERS_TAB.md`.
 - **`farm/net.py`** holds the stdlib HTTP helpers. Use it rather than adding `requests`.
 
 ## Rules

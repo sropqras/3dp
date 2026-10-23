@@ -17,10 +17,65 @@ async function post(url, body) {
   return out;
 }
 
-function serviceChips(svcs) {
-  const bad = Object.entries(svcs || {}).filter(([n, s]) => !s.startsWith("active/running") && !/backup-on-boot|backup-filewatch/.test(n));
-  if (!bad.length) return `<span class="chip ok">all services running</span>`;
-  return bad.map(([n, s]) => `<span class="chip ${/auto-restart|failed/.test(s) ? "bad" : "warn"}" title="${esc(s)}">${esc(n)}: ${esc(s.split("/")[1])}</span>`).join(" ");
+function serviceChips(svcs, hostName) {
+  const any = (data.instances || []).find((v) => v.host === hostName && v.reachable);
+  const entries = Object.entries(svcs || {}).filter(([n]) => !/backup-on-boot|backup-filewatch/.test(n));
+  const bad = entries.filter(([, s]) => !s.startsWith("active/running"));
+  const chip = ([n, s]) => `<span class="chip ${s.startsWith("active/running") ? "ok" : /auto-restart|failed/.test(s) ? "bad" : "warn"}" title="${esc(s)}">${esc(n)}${s.startsWith("active/running") ? "" : ": " + esc(s.split("/")[1])}
+      ${any ? `<a href="#" class="lnk" title="restart ${esc(n)}" onclick='restartSvc(${JSON.stringify(any.key)}, ${JSON.stringify(n)});return false'>↻</a>` : ""}</span>`;
+  return (bad.length ? bad.map(chip).join(" ") : `<span class="chip ok">all services running</span>`) +
+    ` <details style="display:inline-block"><summary>all ${entries.length}</summary>${entries.map(chip).join(" ")}</details>`;
+}
+
+async function stageFix(key, rule) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/fix`, { rule });
+  if (!r) return;
+  alert(`Staged ${r.length} change(s): ${r.map((c) => c.id + " " + c.path + " (" + c.summary + ")").join(", ")}. Review the diff on the card, then Apply when ${key} is idle.`);
+  refresh();
+}
+async function telegramPack(key) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  if (!confirm(`Apply the farm Telegram pack to ${key}'s bot? [bot] (token, chat) is kept; a copy of the old telegram.conf stays on the printer; only the bot restarts.`)) return;
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/telegram-pack`);
+  if (r) alert(`${r.service}: ${r.state}${r.rolled_back ? " - did not start, old telegram.conf restored" : ""}. Replaced: ${r.replaced.join(", ")}. Backup: ${r.backup}`);
+  refresh();
+}
+async function restartSvc(key, service) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  if (!confirm(`Restart ${service}? (Refused if it would disturb a print.)`)) return;
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/restart`, { service });
+  if (r) alert(`${r.service}: ${r.state}`);
+  refresh();
+}
+async function loadUsb(host, el) {
+  el.innerHTML = "reading…";
+  const r = await (await fetch(`/api/hosts/${encodeURIComponent(host)}/usb`)).json();
+  if (r.error) { el.innerHTML = `<span class="warn">${esc(r.error)}</span>`; return; }
+  const row = (d) => `<tr><td>${esc(d.path.replace("/dev/serial/by-path/", "").replace("/dev/v4l/by-id/", ""))}</td><td class="dim">${esc(d.target)}</td>
+      <td class="${d.used_by ? "" : "warn"}">${esc(d.used_by || "not used by any printer config")}</td></tr>`;
+  el.innerHTML = `<table><tr><th colspan=3>Serial (printer boards)</th></tr>${r.serial.map(row).join("")}<tr><th colspan=3>Cameras</th></tr>${r.cameras.map(row).join("")}</table>`;
+}
+async function makeScript(form) {
+  const f = Object.fromEntries(new FormData(form).entries());
+  if (f.klipper_commit === "") delete f.klipper_commit;
+  const r = await fetch("/api/scripts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+  const t = await r.text();
+  form.querySelector("pre").textContent = r.ok ? t : (JSON.parse(t).error || t);
+}
+function hostTools(h) {
+  if (!h.ssh) return "";
+  return `<details><summary>USB devices &amp; host scripts</summary>
+    <div class="row" style="margin:6px 0"><button class="ghost" onclick="loadUsb('${esc(h.name)}', this.parentNode.nextElementSibling)">Read USB devices (ssh, read-only)</button></div><div></div>
+    <form onsubmit="makeScript(this);return false" class="row" style="margin-top:8px"><b>Camera service</b>
+      <input type="hidden" name="kind" value="camera"><input name="name" placeholder="printer name" style="width:110px">
+      <input name="device" placeholder="by-id ...-video-index0" style="width:300px"><input name="port" placeholder="8083" style="width:70px">
+      <button class="ghost">Make script</button><pre style="width:100%;max-height:30vh;overflow:auto"></pre></form>
+    <form onsubmit="makeScript(this);return false" class="row"><b>New Klipper instance</b>
+      <input type="hidden" name="kind" value="instance"><input name="name" placeholder="name" style="width:110px">
+      <input name="port" placeholder="7130" style="width:70px"><input name="klipper_commit" placeholder="own Klipper commit (optional)" style="width:200px">
+      <button class="ghost">Make script</button><pre style="width:100%;max-height:30vh;overflow:auto"></pre></form>
+    <div class="dim">Scripts are for a person to run on the host with sudo; Farm Control never runs root steps.</div></details>`;
 }
 
 function auditBlock(v) {
@@ -29,7 +84,8 @@ function auditBlock(v) {
   const fails = v.audit.filter((a) => a.status === "FAIL"), warns = v.audit.filter((a) => a.status === "WARN");
   const head = fails.length ? `<span class="bad">✗ ${fails.length} baseline gap${fails.length > 1 ? "s" : ""}</span>` : `<span class="ok">✓ farm baseline</span>`;
   return `<details><summary>${head}${warns.length ? ` <span class="warn">· ${warns.length} warning</span>` : ""} — ${v.audit.length} rules</summary>
-    <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td></tr>`).join("")}</table></details>`;
+    <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td>
+      <td>${a.status === "FAIL" && !v.readonly && !a.fixable ? `<span class="dim" title="needs judgement: use + Stage change">edit manually</span>` : ""}${a.status === "FAIL" && !v.readonly && a.fixable ? `<button class="ghost" onclick='stageFix(${JSON.stringify(v.key)}, ${JSON.stringify(a.rule)})'>Stage fix</button>` : ""}</td></tr>`).join("")}</table></details>`;
 }
 
 function configBlock(v) {
@@ -41,6 +97,7 @@ function configBlock(v) {
   return `<div class="row">Config: <b>${s.files} files</b> · snapshot ${s.latest.id} ${ago(s.latest.taken_at)} · ${state}
       ${s.reference ? `<span class="dim">reviewed #${s.reference.id} by ${esc(s.reference.reviewed_by)} ${ago(s.reference.reviewed_at)}</span>` : ""}</div>
     <div class="row"><button class="ghost" onclick="openFiles('${esc(v.key)}')">Files &amp; diff</button>
+      ${v.registry && !v.readonly && Object.keys(data.host_services[v.host] || {}).some((n) => n.includes("telegram")) ? `<button class="ghost" onclick="telegramPack('${esc(v.key)}')">Telegram pack</button>` : ""}
       <button class="ghost" onclick="snap('${esc(v.key)}')">Snapshot now</button>
       ${s.reference && s.reference.id === s.latest.id ? "" : `<button class="ghost" onclick="review('${esc(v.key)}', ${s.latest.id})">Mark snapshot ${s.latest.id} reviewed</button>`}</div>`;
 }
@@ -156,7 +213,7 @@ function render() {
     const stats = any ? `CPU <b>${any.cpu_temp != null ? Math.round(any.cpu_temp) + "°C" : "–"}</b> RAM <b>${any.mem_used_pct ?? "–"}%</b> Disk <b class="${any.disk_used_pct > 90 ? "bad" : ""}">${any.disk_used_pct ?? "–"}%</b> (${any.disk_free_gb ?? "–"} GB free)${(any.throttled || []).length ? ` <span class="bad">throttled: ${esc(any.throttled.join(","))}</span>` : ""}` : "";
     return `<section class="host"><h2>${esc(h.name)} <span class="dim" style="text-transform:none;letter-spacing:0">${esc(h.address)}${h.note ? " · " + esc(h.note) : ""}</span>
         ${any ? `<span class="row" style="text-transform:none;letter-spacing:0">${stats}</span>` : ""}</h2>
-      ${any ? `<div class="row" style="margin-bottom:8px">${serviceChips(data.host_services[h.name])}</div>` : ""}
+      ${any ? `<div class="row" style="margin-bottom:8px">${serviceChips(data.host_services[h.name], h.name)}</div><div style="margin-bottom:8px">${hostTools(h)}</div>` : ""}
       <div class="grid">${mine.map(card).join("")}</div></section>`;
   }).join("");
 }

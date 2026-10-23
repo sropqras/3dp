@@ -48,7 +48,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Printer | Staged in repo | Apply when |
 |---|---|---|
-| enders1plus | max_velocity 300 -> 200 (KAMP move); Telegram tgalarm/tgnotify on colour change, 30 min, 12 h; then `farm/telegram_pack.conf` via Moonraker file API | after the R50+Q52 print (~02:20 on 2026-10-23); then `python -m farm audit enders1plus` must pass |
+| enders1plus | max_velocity 300 -> 200 (KAMP move); Telegram tgalarm on colour change; then the Telegram pack. Now from Farm Control → Printers: **Stage fix** on its two failing rules, Apply while idle, then **Telegram pack** | after the R50+Q52 print (~02:20 on 2026-10-23); then `python -m farm audit enders1plus` must pass |
 
 ## Change log
 

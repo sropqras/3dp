@@ -44,6 +44,48 @@ class FakeMaker:
         self.server.shutdown()
 
 
+def parse_klipper(files: dict, main: str = "printer.cfg") -> dict:
+    """Klipper's view of a config (enough for farm/audit.py): [include]s, sections merged, `key: value` or
+    `key = value`, indented continuation lines, SAVE_CONFIG ignored, numbers as floats."""
+    import re as _re
+    out = {}
+
+    def load(name, seen):
+        if name in seen or name not in files:
+            return
+        seen.add(name)
+        text = files[name].decode() if isinstance(files[name], bytes) else files[name]
+        sec, key = None, None
+        for line in text.split("\n"):
+            if line.startswith("#*#"):
+                continue
+            m = _re.match(r"^\[([^\]]+)\]", line)
+            if m:
+                head = m.group(1).strip()
+                if head.lower().startswith("include "):
+                    load(head.split(" ", 1)[1].strip(), seen)
+                    sec = None
+                    continue
+                sec, key = head.lower(), None
+                out.setdefault(sec, {})
+                continue
+            if sec is None or not line.strip() or line.lstrip().startswith(("#", ";")) and not line[:1].isspace():
+                continue
+            if line[:1] in (" ", "\t") and key:
+                out[sec][key] = (out[sec][key] + "\n" + line.strip()).strip()
+                continue
+            m = _re.match(r"^([A-Za-z0-9_]+)[ \t]*[:=][ \t]*(.*)$", line)
+            if m:
+                key = m.group(1).lower()
+                val = _re.sub(r"[ \t]+[#;].*$", "", m.group(2)).strip()
+                try:
+                    out[sec][key] = float(val)
+                except ValueError:
+                    out[sec][key] = val
+    load(main, set())
+    return out
+
+
 class FakeMoonraker:
     """Enough of Moonraker for the gate: status, configfile settings (audit), file metadata, upload, start."""
 
@@ -53,6 +95,10 @@ class FakeMoonraker:
         self.settings, self.state, self.paused, self.klipper = settings, "standby", False, "ready"
         self.files, self.starts = {}, []
         self.config = {}            # path -> bytes: the printer's config root
+        self.settings_from_config = False   # True: configfile settings are parsed from self.config, like Klipper
+        self.services = {"klipper": "active/running"}   # name -> "active/sub" (what /machine/system_info reports)
+        self.service_restarts = []
+        self.service_after = "active/running"   # state a restarted service comes back in
         self.restarts = 0
         self.after_restart = "ready"   # Klipper's state after FIRMWARE_RESTART (tests set "error")
         self.console = []           # gcode_store entries [{"message", "time", "type"}]
@@ -72,7 +118,8 @@ class FakeMoonraker:
                 q = up.parse_qs(u.query)
                 if u.path == "/printer/objects/query":
                     if "configfile" in u.query:
-                        return self._json(200, {"result": {"status": {"configfile": {"settings": outer.settings}}}})
+                        settings = parse_klipper(outer.config) if outer.settings_from_config else outer.settings
+                        return self._json(200, {"result": {"status": {"configfile": {"settings": settings}}}})
                     return self._json(200, {"result": {"status": {
                         "print_stats": {"state": outer.state, "filename": "", "print_duration": 0, "message": ""},
                         "virtual_sdcard": {"progress": 0.0, "file_position": 0},
@@ -105,7 +152,8 @@ class FakeMoonraker:
                     return self._json(200, {"result": {"version_info": {"klipper": {"version": "v0.13.0-fake"}}}})
                 if u.path == "/machine/system_info":
                     return self._json(200, {"result": {"system_info": {"service_state": {
-                        "klipper": {"active_state": "active", "sub_state": "running"}}}}})
+                        n: {"active_state": st.split("/")[0], "sub_state": st.split("/")[1]}
+                        for n, st in outer.services.items()}}}})
                 if u.path == "/machine/proc_stats":
                     return self._json(200, {"result": {"cpu_temp": 40.0, "system_memory": {"total": 100, "available": 60}}})
                 if u.path == "/server/files/directory":
@@ -140,6 +188,11 @@ class FakeMoonraker:
                     else:
                         outer.files[key] = len(data)
                     return self._json(201, {"result": "ok"})
+                if u.path == "/machine/services/restart":
+                    svc = up.parse_qs(u.query)["service"][0]
+                    outer.service_restarts.append(svc)
+                    outer.services[svc] = outer.service_after
+                    return self._json(200, {"result": "ok"})
                 if u.path == "/printer/firmware_restart":
                     outer.restarts += 1
                     if outer.on_restart:

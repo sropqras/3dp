@@ -24,6 +24,13 @@ const [base, shots] = process.argv.slice(2);
   await p.click(".card >> button:text-is('Rollback')"); await p.waitForTimeout(3000);
   await p.evaluate(() => refresh()); await p.waitForTimeout(1200);
   console.log("after rollback:", (await p.textContent(".card details:has-text('Changes')")).replace(/\s+/g, " ").slice(0, 120));
+  // Stage fix from the audit table (the fake's config fails real rules), then apply it
+  let alertText = ""; p.removeAllListeners("dialog"); p.on("dialog", (d) => { alertText = d.message(); d.accept(); });
+  await p.click(".card details summary:has-text('rules')");
+  const rules = await p.$$eval(".card details table tr", (rs) => rs.filter((r) => r.querySelector("button")).map((r) => r.children[1].textContent));
+  console.log("rules with a Stage fix button:", rules.length, rules.slice(0, 4));
+  await p.click(".card details table button:has-text('Stage fix') >> nth=0"); await p.waitForTimeout(1500);
+  console.log("stage fix:", alertText.slice(0, 140));
   console.log("page errors:", errs.length ? errs : "none");
   await b.close();
 })();

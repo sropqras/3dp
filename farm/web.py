@@ -13,6 +13,9 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /printers               the Printers tab (fleet health, audit, config snapshots/drift) - farm/fleet.py
   GET  /api/fleet[/<key>/files|file?path=|diff?path=]   fleet overview / a printer's config files
   POST /api/fleet/<key>/snapshot | review {snapshot, operator} | changes {path, section/option/value | content, reason}
+  POST /api/fleet/<key>/fix {rule} | telegram-pack | restart {service}    (farm/baseline.py, farm/ops.py)
+  GET  /api/hosts/<name>/usb  USB serial ports + cameras on a host and who uses them (read-only, ssh)
+  POST /api/scripts {kind: camera|instance, ...}   root-only host steps as a script to run with sudo
   POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
   GET  /api/makers            the maker plugins (spec, health), print profiles, printers, licensed font NAMES
   POST /api/uploads?name=     a file for a new job (raw body) -> {"ref"}; kept under data/uploads/ (gitignored)
@@ -27,7 +30,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, cfgchange, config, db, fleet, gate, jobs, makers, model3mf, net, pipeline, printers, profiles, spools, watch, worker
+from . import audit, cfgchange, config, db, fleet, gate, ops, jobs, makers, model3mf, net, pipeline, printers, profiles, spools, watch, worker
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -475,6 +478,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, (STATIC / "printers.js").read_bytes(), "text/javascript; charset=utf-8")
         if path == "/api/fleet":
             return self._send(200, json.dumps(fleet.overview(), default=str).encode())
+        if path.startswith("/api/hosts/") and path.endswith("/usb"):
+            try:
+                return self._send(200, json.dumps(fleet.usb(urllib.parse.unquote(path.split("/")[3]))).encode())
+            except LookupError as e:
+                return self._send(404, json.dumps({"error": str(e)}).encode())
         if path.startswith("/api/fleet/"):
             parts = path[len("/api/fleet/"):].split("/")
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -541,9 +549,23 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.review(key, int(body["snapshot"]), who)).encode())
                 if parts[3] == "changes":
                     return self._send(200, json.dumps(fleet.stage_change(key, body, who)).encode())
-            except (LookupError, KeyError, ValueError, cfgchange.Refused) as e:
+                if parts[3] == "fix":
+                    return self._send(200, json.dumps(fleet.stage_fix(key, str(body["rule"]), who)).encode())
+                if parts[3] == "telegram-pack":
+                    return self._send(200, json.dumps(fleet.telegram_pack(key, who)).encode())
+                if parts[3] == "restart":
+                    return self._send(200, json.dumps(fleet.restart_service(key, str(body["service"]), who)).encode())
+            except (LookupError, KeyError, ValueError, cfgchange.Refused, ops.Refused) as e:
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             return self._send(404, b"{}")
+        if path == "/api/scripts":
+            try:
+                body = self._json_body()
+                kind = body.pop("kind", "")
+                body.pop("operator", None)
+                return self._send(200, ops.host_script(kind, **body).encode(), "text/plain; charset=utf-8")
+            except (ops.Refused, KeyError, ValueError, TypeError) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
         if len(parts) == 4 and parts[:2] == ["api", "changes"] and parts[2].isdigit():
             try:
                 body = self._json_body()

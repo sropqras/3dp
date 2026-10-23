@@ -5,7 +5,7 @@ import time
 import urllib.parse
 from types import SimpleNamespace
 
-from . import audit, cfgchange, configs, db, hosts, jobs, printers
+from . import audit, baseline, cfgchange, configs, db, hosts, jobs, ops, printers
 
 _cache, _lock = {}, threading.Lock()
 
@@ -27,7 +27,7 @@ def _audit(v: dict) -> list[dict] | None:
     p = printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(has_m600_prompt=None)
     settings = audit.net.get_json(f"{v['url']}/printer/objects/query?configfile=settings", timeout=8)
     s = settings["result"]["status"]["configfile"]["settings"]
-    return [{"status": st, "rule": r, "detail": d} for st, r, d in audit.rules(s, p)]
+    return [{"status": st, "rule": r, "detail": d, "fixable": baseline.fixable(r)} for st, r, d in audit.rules(s, p)]
 
 
 def overview() -> dict:
@@ -176,6 +176,50 @@ def change_action(cid: int, action: str, actor: str) -> dict:
         return {k: v for k, v in c.items() if k != "new_content"}
     finally:
         con.close()
+
+
+def stage_fix(key: str, rule: str, actor: str) -> list[dict]:
+    v = _instance(key)
+    con = db.connect()
+    try:
+        staged = baseline.stage_fix(con, key, v["url"], rule, cfgchange._settings(v["url"]), actor)
+        return [{"id": c["id"], "path": c["path"], "summary": c["summary"]} for c in staged]
+    finally:
+        con.close()
+
+
+def telegram_pack(key: str, actor: str) -> dict:
+    v = _instance(key)
+    con = db.connect()
+    try:
+        return ops.telegram_pack(con, key, v["url"], v["name"], actor)
+    finally:
+        con.close()
+
+
+def restart_service(key: str, service: str, actor: str) -> dict:
+    v = _instance(key)
+    same_host = [x for x in _cached("fleet", 20, hosts.fleet) if x["host"] == v["host"] and x.get("reachable")]
+    con = db.connect()
+    try:
+        out = ops.restart_service(con, key, v["url"], service, same_host, actor)
+        _cache.pop("fleet", None)
+        return out
+    finally:
+        con.close()
+
+
+def usb(host_name: str) -> dict:
+    host = next((h for h in hosts.load_hosts() if h["name"] == host_name), None)
+    if host is None:
+        raise LookupError(f"no host {host_name}")
+    keys = [v["key"] for v in _cached("fleet", 20, hosts.fleet) if v["host"] == host_name and v.get("key")]
+    con = db.connect()
+    try:
+        serial, cams = ops.used_devices(con, keys)
+    finally:
+        con.close()
+    return ops.usb_devices(host, serial, cams)
 
 
 def unquote_key(part: str) -> str:

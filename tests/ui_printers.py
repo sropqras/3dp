@@ -10,6 +10,7 @@ from tests.test_cfgchange import PRINTER_CFG  # noqa: E402
 tmp = Path(tempfile.mkdtemp())
 m = FakeMoonraker(copy.deepcopy(GOOD))
 m.config = {"printer.cfg": PRINTER_CFG, "macros.cfg": b"[gcode_macro M600]\ngcode:\n  PAUSE\n"}
+m.settings_from_config = True   # the audit reads the config text, so a generated fix really changes it
 port = m.server.server_address[1]
 (tmp / "hosts.json").write_text(json.dumps({"hosts": [{"name": "fakehost", "address": "127.0.0.1", "ports": [port]}]}))
 env = dict(os.environ, FARM_DB=str(tmp / "farm.db"), FARM_RUNS_DIR=str(tmp / "runs"), FARM_HOSTS_FILE=str(tmp / "hosts.json"),
