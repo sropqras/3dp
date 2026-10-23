@@ -1,7 +1,7 @@
 # s1pro: migrating from its own SBC (s1propad, 192.168.1.114) to an instance on enders3dp
 
 Configs in this folder were pulled from s1propad over Moonraker's file API on 2026-10-23 (secrets and Klipper
-auto-backups excluded). Status: **backed up only - nothing changed on either box yet.**
+auto-backups excluded). Status (2026-10-23): **staged on enders3dp; waiting for Amir's sudo step, then the cable cut-over.** The SBC's files are in `from-s1propad/`; this folder is now the enders3dp instance (backup-configs.sh mirrors `~/printer_s1pro_data` here).
 
 Facts from s1propad:
 - Klipper **v0.13.0-770-gce7002bed** on Armbian (bookworm); MCU STM32F401 flashed with the same version.
@@ -30,3 +30,16 @@ Facts from s1propad:
    start the instance, `farm audit s1pro` read-only, then farm-baseline the config (idle timeout, CLEAR_PAUSE,
    guided M600, paused-safe idle).
 7. Copy the G-code files; add s1pro to farm/printers.py + FARM.md; Fluidd link on enders3dp.
+
+## Done so far (2026-10-23)
+- enders3dp: `~/klipper-s1pro` pinned at ce7002bed (upstream mainline, = the SBC's), `~/klippy-env-s1pro` from its
+  klippy-requirements (adds msgspec); chelper compiled. Shared `~/klipper`/`~/klippy-env` untouched.
+- `~/printer_s1pro_data/config`: printer.cfg = the SBC's with the SBC-only sections removed, by-path serial
+  placeholder, gcodes path, farm baseline (idle timeout paused-safe 30 min + 12 h cap, recover_velocity 150,
+  max_velocity 200 / max_accel 3000 instead of 1000 / 4800 - audit limits; raise later per printer if wanted).
+  SAVE_CONFIG block (PID, input shaper mzv 61.2/40.2, mesh, z_offset 3.340) kept verbatim.
+  macros.cfg = enders1plus's farm-baseline macros (guided M600, CLEAR_PAUSE, _PAUSE_HARD_STOP, RESUME reheat);
+  its [screws_tilt_adjust] dropped (S1 Plus positions). KAMP + fluidd.cfg symlinked like the other instances.
+  moonraker.conf from the MaxNeo template on port 7129.
+- `~/s1pro-install.sh` (sudo, Amir): drop-in so klipper-s1pro runs the new checkout/venv, moonraker-s1pro unit,
+  enable + start. Touches only s1pro.
