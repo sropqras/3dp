@@ -78,7 +78,8 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 3. **PrintGuard** (3dpnas:11111) is installed and set up (2026-10-23), alert-only; alerts reach you via farm-monitor.
    Left for you (`~/agent_workspace/infrastructure/printguard/PROJECT.md`):
    - camera crops, from a lit frame (the garage was dark at setup);
-   - Ender3Pro's camera: `/webcam2/` is shared with the MaxNeo, so which printer does it look at?
+   - Ender3Pro has no camera (`/webcam2/` faces the MaxNeo): delete its Fluidd camera entry "XWF Ender 3 Pro", and
+     give it a camera of its own before it gets a monitor;
    - optionally a dedicated Telegram bot inside PrintGuard for photo alerts;
    - after 1-2 weeks of alerts, decide on pause per printer.
 4. **Confirm values**:
