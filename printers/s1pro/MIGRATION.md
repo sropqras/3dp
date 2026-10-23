@@ -43,3 +43,20 @@ Facts from s1propad:
   moonraker.conf from the MaxNeo template on port 7129.
 - `~/s1pro-install.sh` (sudo, Amir): drop-in so klipper-s1pro runs the new checkout/venv, moonraker-s1pro unit,
   enable + start. Touches only s1pro.
+
+## Migrated 2026-10-23 (SBC cooled, Klipper stopped on s1propad at Amir's request; Moonraker left up for the copy)
+- Amir ran `~/s1pro-install.sh`: klipper-s1pro runs ~/klipper-s1pro (v0.13.0-770) via its drop-in; moonraker-s1pro on :7129.
+- **G-code: all 135 files (1.92 GB, folder `PETG/`)** copied over Moonraker's API into `~/printer_s1pro_data/gcodes`,
+  modification times kept, every size verified on enders3dp.
+- **Print history: 297 jobs (2024-12-28 .. 2026-09-24) + totals** (295 jobs, 1000 h printing, 3.7 km filament,
+  longest 28.4 h) inserted into s1pro's Moonraker DB (job ids kept). Export kept in `from-s1propad/history.json`.
+- **Fluidd settings** (layout, macros, sensors, charts, console, uiSettings "Ender S1 Pro") and the timelapse config
+  copied through the database API. Webcam entries skipped (they point at the SBC's camera).
+- **Timelapse videos** (44, 1.03 GB) copied to `~/printer_s1pro_data/timelapse`.
+- Lesson: enders3dp's units (KIAUH template) have `RemainAfterExit=yes`, so a stopped Klipper/Moonraker is NOT
+  restarted by systemd despite Restart=always - restart them with `sudo systemctl restart <unit>`, never by killing.
+
+## Left: the cut-over (Amir at the printer)
+USB cable SBC -> enders3dp; set `serial:` to the new /dev/serial/by-path port; restart klipper-s1pro (sudo);
+check no MCU version error; `farm audit s1pro`; add s1pro + profile `s1pro-petg-020` (presets staged in
+prusa/farm_profiles.ini) to the farm; sampling print through review + Start.

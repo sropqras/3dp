@@ -40,7 +40,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 ## Farm-wide features (rolled out per printer, tracked above)
 
-- **Paused-safe idle timeout** - while paused, the nozzle cools after 30 min; bed and motors stay on so the print can resume (overnight is fine). 12 h safety cap turns the bed off too; RESUME reheats nozzle and bed.
+- **Paused-safe idle timeout** - while paused, the nozzle cools after 60 min (idle_timeout 3600 s); bed and motors stay on so the print can resume (overnight is fine). 12 h safety cap turns the bed off too; RESUME reheats nozzle and bed.
 - **Guided colour change** - `M600` parks and shows a Fluidd prompt with UNLOAD / LOAD / PURGE / RESUME buttons. No auto-unload: on printers without a runout sensor an unattended eject lets the filament end tangle on the spool.
 - **CLEAR_PAUSE in START_PRINT** - a stale pause can never make PAUSE answer "Print already paused".
 
