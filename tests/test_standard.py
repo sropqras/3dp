@@ -63,6 +63,8 @@ class FluiddLayout(unittest.TestCase):
             self.assertEqual(store["macros"]["stored"][0]["categoryId"], "farm-utility")
             standard.fluidd_undo(con, r["id"], "ui:Amir")
             self.assertEqual(store["macros"], {"stored": []})
+            with self.assertRaises(PermissionError):     # Klipper not running: nothing to lay out, nothing wiped
+                standard.fluidd_apply(con, "p", "http://x", {"_farm_printer": ""}, "ui:Amir")
 
 
 if __name__ == "__main__":

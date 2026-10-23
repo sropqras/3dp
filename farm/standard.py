@@ -137,11 +137,12 @@ def check(settings: dict) -> tuple[bool, str]:
 
 # the ancestral names every printer shares, for macros whose description doesn't carry a group (yet)
 NAME_GROUPS = [("Print", r"^(start_print|print_end|pause|resume|cancel_print|m600|pause_macro|fc_resume|set_pause_.*|"
-                         r"set_print_stats_info|line_purge|m205|m900)$"),
+                         r"set_print_stats_info|line_purge|m204|m205|m900)$"),
                ("Filament", r"^(load_filament|unload_filament|purge)$"),
                ("Bed", r"^(bed_.*|g29|calibrate_z_ui|ui_bed_tram_check|z_.*calibrate.*|probe_.*)$"),
                ("Tune", r"^(pid.*|press_advance.*|shaper|tune_.*|autotune_.*|inputshaper.*)$"),
-               ("Utility", r"^(cool|heat|nozzle_mid|disable_steppers|farm_info|hello_world)$")]
+               ("Utility", r"^(cool|heat|nozzle_mid|disable_steppers|farm_info|hello_world|.*timelapse.*|hyperlapse|"
+                           r"test_stream_delay|obico_.*)$")]
 
 
 def _group(desc: str, name: str = "") -> str:
@@ -219,6 +220,9 @@ def fluidd_apply(con, printer: str, url: str, macros: dict, actor: str) -> dict:
     panel and the temperature presets change; what was there is kept in the farm DB for Undo."""
     if not actor.startswith(("ui:", "cli:")):
         raise PermissionError("only a person changes a printer's Fluidd layout")
+    if not [m for m in macros if not m.startswith("_")]:
+        # Klipper isn't running its config (a config error): an empty list would wipe the person's macro panel
+        raise PermissionError("no macros readable from Klipper right now - fix Klipper first, then apply the layout")
     cur = _fluidd(url)
     new = fluidd_layout(cur, macros, preset_temps())
     before = {"macros": cur.get("macros"), "uiSettings": cur.get("uiSettings")}

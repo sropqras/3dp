@@ -819,7 +819,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.telegram_pack(key, who)).encode())
                 if parts[3] == "restart":
                     return self._send(200, json.dumps(fleet.restart_service(key, str(body["service"]), who)).encode())
-            except (LookupError, KeyError, ValueError, cfgchange.Refused, ops.Refused) as e:
+            except (LookupError, KeyError, ValueError, PermissionError, cfgchange.Refused, ops.Refused) as e:
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             return self._send(404, b"{}")
         if path == "/api/scripts":

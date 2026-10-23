@@ -48,9 +48,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Printer | Staged in repo | Apply when |
 |---|---|---|
-| enders1plus | Farm Control changes **1** (max_velocity 300 -> 200, KAMP move) and **3** (tgalarm on colour change, one line); then **Telegram pack**, then **Stage all fixes** (cold-nozzle reheat, BEEP, farm macro library) | when it is switched on, Reconnected and idle; then `python -m farm audit enders1plus` must pass |
-| Ender3MaxNeo | changes **9** (new `farm_macros.cfg`, the shared macro library) then **10** (macros.cfg: include it, `_FARM_PRINTER` values 220/70, no sensor; drop the 11 old copies) | when idle, 9 before 10 (the gate refuses 10 first); then `FARM_INFO` in the console |
-| s1pro | changes **11** then **12** (the same; values 210/70, RunoutSensor; also drops its M900/M205 copies) | when idle, 11 before 12 |
+| enders1plus | Farm Control changes **1** (max_velocity 300 -> 200, KAMP move) and **3** (tgalarm on colour change, one line); then **Telegram pack**, then **Stage all fixes** (cold-nozzle reheat, BEEP, farm macro library) | now, even switched off: the gate applies with the board off (Klipper loads the config, the audit runs) since 2026-10-23; read its console after the next Reconnect |
 | EnderCR10SE (not onboarded) | changes **13** then **14** (the same; values 200/60, RunoutSensor; its macros.cfg is CRLF) | when it is switched on and idle |
 | Ender3Pro (not onboarded) | change **8**: printer.cfg comments out `[include moonraker_obico_macros.cfg]` (the file isn't on the host, so Klipper won't start) | any time; Klipper should then reach the board |
 
@@ -58,6 +56,10 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-23 | s1pro | macros.cfg: edited (macros.cfg): farm baseline: farm macro library is current - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 12; audit pass, console clean |
+| 2026-10-23 | s1pro | farm_macros.cfg: new file (farm_macros.cfg): farm baseline: farm macro library is current - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 11; audit pass, console clean |
+| 2026-10-23 | Ender3MaxNeo | macros.cfg: edited (macros.cfg): farm baseline: farm macro library is current - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 10; audit pass, console clean |
+| 2026-10-23 | Ender3MaxNeo | farm_macros.cfg: new file (farm_macros.cfg): farm baseline: farm macro library is current - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 9; audit pass, console clean |
 | 2026-10-23 | s1pro | macros.cfg: edited (macros.cfg): farm baseline: LOAD/UNLOAD/PURGE heat a cold nozzle; no macro calls an undefined BEEP - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 7; audit pass, console clean |
 | 2026-10-23 | Ender3MaxNeo | macros.cfg: edited (macros.cfg): farm baseline: LOAD/UNLOAD/PURGE heat a cold nozzle - applied through the gate by a Claude session on Amir's instruction of 2026-10-23 (actor cli:Amir), change 4; audit pass, console clean |
 | 2026-10-23 | s1pro | Moved from its own SBC (s1propad) to an instance on enders3dp: own Klipper v0.13.0-770 (matches the board), configs + 135 G-codes + 297-job history + Fluidd settings migrated; farm baseline (paused-safe idle, 12 h cap, guided M600, CLEAR_PAUSE, recover 150, 200/3000 motion limits); audit 15/15 |

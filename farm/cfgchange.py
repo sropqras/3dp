@@ -47,6 +47,13 @@ def _state(url) -> dict:
     return st
 
 
+def _board_off(st: dict) -> bool:
+    """Klipper parsed its config but can't reach the board: the printer is switched off at the wall. A config
+    error reads differently ("Option ... not valid", "Unable to open config file"), so this is a real check."""
+    from .monitor import powered_off
+    return powered_off(st.get("klippy"), st.get("message"), st.get("job"))
+
+
 def _fails(url, printer_name) -> set:
     p = printers.PRINTERS.get(printer_name) or SimpleNamespace(has_m600_prompt=None)
     return {r for st, r, _ in audit.rules(_settings(url), p) if st == "FAIL"}
@@ -238,14 +245,19 @@ def apply(con, cid: int, actor: str) -> dict:
 def _apply(con, c: dict, cid: int, st: dict, live, actor: str) -> dict:
     snap = configs.snapshot(con, c["printer"], c["url"], actor=f"before change {cid}")
     con.execute("UPDATE config_changes SET before_snapshot=? WHERE id=?", (snap["id"], cid))
-    before_fails = _fails(c["url"], c["printer"]) if st["klippy"] == "ready" else set()
+    # switched off at the wall: the host is up, Klipper loads the config and only the board is missing - the
+    # change is verified as far as it can be (config loads, audit) and the console is read when it's next on
+    off = _board_off(st)
+    comparable = st["klippy"] == "ready" or off
+    before_fails = _fails(c["url"], c["printer"]) if comparable else set()
     t0 = time.time() - 1
     try:
         _upload(c["url"], c["path"], c["new_content"].encode())
         after = _restart_and_wait(c["url"])
     except Exception as e:
         after = {"klippy": "unreachable", "message": str(e)[:300]}
-    if after.get("klippy") != "ready":
+    loaded = after.get("klippy") == "ready" or (off and _board_off(after))
+    if not loaded:
         # Klipper didn't come back with the new config: put the old file back straight away
         result = {"klipper": after, "auto_rollback": True}
         try:
@@ -263,9 +275,11 @@ def _apply(con, c: dict, cid: int, st: dict, live, actor: str) -> dict:
     after_fails = _fails(c["url"], c["printer"])
     # a printer that wasn't ready before (being onboarded, a broken config) has no "before" to compare with:
     # only its console counts then
-    new_fails = sorted(after_fails - before_fails) if st["klippy"] == "ready" else []
+    new_fails = sorted(after_fails - before_fails) if comparable else []
     console = _console_since(c["url"], t0)
     result = {"klipper": after, "new_audit_fails": new_fails, "console_errors": console,
+              **({"board_off": True, "note": "applied with the printer switched off: the config loads and the audit "
+                  "ran; macros first run when it is on - read its console after Reconnect"} if off else {}),
               "fixed_audit_fails": sorted(before_fails - after_fails), "audit_fails_now": sorted(after_fails)}
     con.execute("UPDATE config_changes SET result=? WHERE id=?", (json.dumps(result), cid))
     if new_fails or console:

@@ -1,5 +1,6 @@
 import copy
 import dataclasses
+import json
 import tempfile
 import threading
 import unittest
@@ -113,6 +114,21 @@ class Changes(unittest.TestCase):
         self.assertEqual(out["state"], "rolled_back")
         self.assertEqual(self.m.config["printer.cfg"], PRINTER_CFG)
         self.assertEqual(self.m.restarts, 2)
+
+    def test_switched_off_printer_applies_when_the_config_loads(self):
+        off = "mcu 'mcu': Unable to connect\nOnce the underlying issue is corrected, use FIRMWARE_RESTART"
+        c = self.stage()
+        self.m.klipper, self.m.after_restart, self.m.klipper_msg = "error", "error", off
+        out = cfgchange.apply(self.con, c["id"], "ui:Amir")
+        self.assertEqual(out["state"], "applied", out["error"])
+        self.assertTrue(json.loads(out["result"])["board_off"])
+        self.assertIn(b"max_velocity: 180", self.m.config["printer.cfg"])
+        # a config error while off is not "switched off": rolled back like any other
+        c2 = self.stage(value="170")
+        self.m.on_restart = lambda m: setattr(m, "klipper_msg", "Option 'max_velocit' is not valid in section 'printer'")
+        out = cfgchange.apply(self.con, c2["id"], "ui:Amir")
+        self.assertEqual(out["state"], "rolled_back")
+        self.assertIn(b"max_velocity: 180", self.m.config["printer.cfg"])
 
     def test_manual_rollback(self):
         c = self.stage()

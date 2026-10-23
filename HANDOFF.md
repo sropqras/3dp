@@ -54,14 +54,19 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
    didn't go on the first time.
    - 4 (MaxNeo) and 7 (s1pro) were applied 2026-10-23 by a Claude session on Amir's explicit instruction
      (actor `cli:Amir`). Both verified: no audit FAIL, console clean.
-   - **Ender3MaxNeo 9 → 10**, **s1pro 11 → 12**: the farm macro library, in that order (the gate refuses the
-     second first). Then type `FARM_INFO` in each console.
-   - **enders1plus**: switch on, **Reconnect**, apply **1** and **3**, then **Telegram pack**, then **Stage all
-     fixes** (cold-nozzle reheat, BEEP, macro library) and apply those.
+   - 9-12 (the macro library on MaxNeo and s1pro) were applied 2026-10-23 on Amir's instruction: `FARM_INFO`
+     answers on both and both audits pass.
+   - **enders1plus**: no need to switch it on. The gate now applies with the board off: Klipper on 3dpnas loads the
+     config, the audit runs, and a config error still rolls back. Apply **1** and **3**, then **Stage all fixes**
+     (cold-nozzle reheat, BEEP, macro library) and apply those, then the **Telegram pack**.
    - **Ender3Pro 8**: comments out the missing `moonraker_obico_macros.cfg` include, so Klipper can start. Then the
      onboarding checklist.
    - **EnderCR10SE 13 → 14** once it is switched on. Then onboarding.
-2. **Fluidd layout**: on each printer card, *Fluidd layout (farm standard)* → Apply (Undo is there).
+2. **Fluidd layout**: pushed 2026-10-23 to MaxNeo, s1pro, enders1plus and EnderCR10SE (Undo on each card).
+   Not pushed: EnderV3SE (watch-only) and Ender3Pro (Klipper not running; a push now refuses when it can't read
+   any macros).
+   - **Power plugs**: Meross research and design in `docs/POWER.md`. It needs your plug models, IPs and the
+     account key first.
 3. **3dpnas SSH** for the USB device listing: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@3dpnas.local`.
 4. **Confirm values**:
    - the Hyper PLA volumetric cap (15 proposed; `neo-hyperpla-028-litho` and `neo-pla-020-supports` stay unconfirmed until then);
