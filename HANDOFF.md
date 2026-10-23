@@ -50,6 +50,10 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
    - s1pro 7 (cold-nozzle heating + the undefined BEEP).
 
    Each Apply verifies itself and rolls back if Klipper doesn't come back.
+
+   enders1plus also logged `Unknown command: "BEEP"`, and its audit can't run while it is switched off. Once it is
+   on and Reconnected, apply 1 and 3, then **Stage all fixes** for the cold-nozzle and BEEP rules. The MaxNeo's
+   `Extrude below minimum temp` in the console is the problem change 4 fixes.
 2. **3dpnas SSH** for the USB device listing: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@3dpnas.local`.
 3. **Confirm values**:
    - the Hyper PLA volumetric cap (15 proposed; `neo-hyperpla-028-litho` and `neo-pla-020-supports` stay unconfirmed until then);
