@@ -19,6 +19,8 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
   GET  /api/makers            the maker plugins (spec, health), print profiles, printers, licensed font NAMES
   POST /api/uploads?name=     a file for a new job (raw body) -> {"ref"}; kept under data/uploads/ (gitignored)
+  GET  /api/projects          orders -> generated jobs/models -> builds (the Projects tab's library)
+  POST /api/jobs/send {job_ids, printer, profile, layer_height, same_bed}   re-use generated models on new builds
   POST /api/orders            a new order from the New-job page -> jobs queued for the worker
   POST /api/spools[/<id>]     add a spool / edit one ({"version": n, ...fields, "remaining_g"}); 409 if stale
 """
@@ -339,6 +341,20 @@ def jobs_in_progress() -> list[dict]:
 ACTIVE = ("slicing", "review", "approved", "uploading", "queued", "starting", "printing", "failed")
 
 
+def workable_layers(prof, change_zs) -> list[float]:
+    """The profile's layer heights that can put every colour change exactly on a layer top (slicer.align_first_layer):
+    the picker never offers one that would fail."""
+    from . import slicer
+    out = []
+    for lh in prof.layer_heights:
+        try:
+            slicer.align_first_layer(lh, list(change_zs or []), *prof.first_layer)
+            out.append(lh)
+        except SystemExit:
+            pass
+    return out
+
+
 def builds_view() -> list[dict]:
     con = db.connect()
     try:
@@ -354,6 +370,7 @@ def builds_view() -> list[dict]:
             "id": b["id"], "state": b["state"], "printer": b["printer"], "labels": b["labels"] or "",
             "order": b["order_title"], "profile": b["profile"], "profile_name": prof.name if prof else b["profile"],
             "profile_confirmed": bool(prof and prof.confirmed),
+            "layer_height": b["layer_height"], "layer_heights": workable_layers(prof, b["change_zs"]) if prof else [],
             "printers": list(prof.printers) if prof else [b["printer"]],
             "estimate_s": b["estimate_s"], "grams": b["grams"], "error": b["error"], "remote": b["remote_path"],
             "colours": b["colours"], "viewed": b["id"] in viewed,
@@ -383,6 +400,9 @@ def build_action(build_id: int, action: str, body: dict) -> dict:
                         jobs.transition(con, "job", jid, "planned", "generated", "ui", rejected_build=build_id)
         elif action == "cancel":
             jobs.transition(con, "build", build_id, b["state"], "cancelled", "ui")
+        elif action == "reslice":
+            pipeline.reslice(con, build_id, float(body["layer_height"]), "ui")
+            worker.enqueue(con, "slice", build_id)
         elif action == "retry":
             jobs.transition(con, "build", build_id, "failed", "slicing", "ui")
             worker.enqueue(con, "slice", build_id)
@@ -503,6 +523,12 @@ class Handler(BaseHTTPRequestHandler):
             except PermissionError as e:
                 return self._send(403, json.dumps({"error": str(e)}).encode())
             return self._send(404, b"{}")
+        if path == "/api/projects":
+            con = db.connect()
+            try:
+                return self._send(200, json.dumps(pipeline.library(con), default=str).encode())
+            finally:
+                con.close()
         if path == "/api/makers":
             return self._send(200, json.dumps(makers_view(), default=str).encode())
         if path == "/api/overview":
@@ -583,6 +609,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(413, json.dumps({"error": f"upload must be 1 byte..{MAX_UPLOAD // 2**20} MB"}).encode())
             name = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("name", ["file"])[0]
             return self._send(200, json.dumps(save_upload(name, self.rfile.read(n))).encode())
+        if path == "/api/jobs/send":
+            try:
+                body = self._json_body()
+                con = db.connect()
+                try:
+                    ids = pipeline.send_jobs(con, [int(j) for j in body["job_ids"]], str(body["printer"]),
+                                             str(body["profile"]), float(body["layer_height"]), "ui",
+                                             same_bed=bool(body.get("same_bed", True)))
+                    for bid in ids:
+                        worker.enqueue(con, "slice", bid)
+                finally:
+                    con.close()
+                return self._send(200, json.dumps({"builds": ids}).encode())
+            except (pipeline.StepFailed, KeyError, ValueError, SystemExit) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
         if path == "/api/orders":
             try:
                 return self._send(200, json.dumps(create_order(self._json_body())).encode())

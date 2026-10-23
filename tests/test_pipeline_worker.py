@@ -121,6 +121,43 @@ class Pipeline(unittest.TestCase):
         self.assertIn("production needs 2.9.6", str(e.exception))
         os.environ["FARM_ALLOW_ANY_SLICER"] = "1"
 
+    def test_reslice_needs_a_new_view_and_approval(self):
+        self.submit()
+        self.drain()
+        b = jobs.builds(self.con)[0]
+        self.con.execute("INSERT INTO approvals (build_id, kind, actor, at) VALUES (?,?,?,?)", (b["id"], "viewed", "ui", 0))
+        pipeline.approve(self.con, b["id"], "ui")
+        with self.assertRaises(pipeline.StepFailed):
+            pipeline.reslice(self.con, b["id"], 0.3, "ui")                 # not one of the profile's heights
+        pipeline.reslice(self.con, b["id"], 0.36, "ui")
+        self.assertEqual(self.con.execute("SELECT COUNT(*) FROM approvals WHERE build_id=?", (b["id"],)).fetchone()[0], 0)
+        worker.enqueue(self.con, "slice", b["id"])
+        self.drain()
+        b2 = jobs.get(self.con, "build", b["id"])
+        self.assertEqual((b2["state"], b2["layer_height"]), ("review", 0.36))
+        self.assertIn("0.36mm", b2["gcode"])
+        self.assertEqual(len(self.fake.requests), 2)                       # nothing regenerated
+
+    def test_send_generated_jobs_to_another_printer(self):
+        self.submit()
+        self.drain()
+        jids = [r[0] for r in self.con.execute("SELECT id FROM jobs")]
+        new = pipeline.send_jobs(self.con, jids, "enders1plus", "neo-petg-036", 0.4, "ui")
+        for bid in new:
+            worker.enqueue(self.con, "slice", bid)
+        self.drain()
+        b = jobs.get(self.con, "build", new[0])
+        self.assertEqual((b["state"], b["printer"]), ("review", "enders1plus"))
+        self.assertEqual(len(self.fake.requests), 2)                       # models re-used, no maker call
+        self.assertEqual(len(pipeline.build_models(self.con, new[0])), 2)  # both plates on one bed
+        with self.assertRaises(pipeline.StepFailed):
+            pipeline.send_jobs(self.con, jids, "EnderV3SE", "neo-petg-036", 0.4, "ui")      # watch-only
+        with self.assertRaises(pipeline.StepFailed):
+            pipeline.send_jobs(self.con, jids, "s1pro", "neo-petg-036", 0.4, "ui")          # profile not for it
+        lib = pipeline.library(self.con)
+        self.assertEqual(len(lib[0]["builds"]), 2)
+        self.assertTrue(all(m["exists"] for j in lib[0]["jobs"] for m in j["models"]))
+
     def test_expired_lease_is_reclaimed(self):
         self.submit(dict(JOB, plates=["T11"]))
         t = worker.claim(self.con)

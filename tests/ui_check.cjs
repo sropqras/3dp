@@ -34,10 +34,12 @@ const [base, reviewId, queuedId, shots] = process.argv.slice(2);
               "reasons:", JSON.stringify(await p.$$eval("#sd-reasons li", (l) => l.map((x) => x.textContent))));
   // inventory edit round trip: change remaining on the first spool, save, see it persisted
   await p.evaluate(() => refresh()); await p.waitForTimeout(800);
+  await p.click("nav.tabs >> text=Inventory"); await p.waitForTimeout(300);
   await p.fill("#spools .sp:first-child input[type=number]", "777");
   await p.click("text=Save inventory"); await p.waitForTimeout(1200);
   console.log("inventory after save:", await p.textContent("#invmsg"),
               JSON.stringify(await p.evaluate(async () => (await (await fetch("/api/overview")).json()).inventory.spools.map((s) => [s.id, s.remaining_g, s.version]))));
+  await p.click("nav.tabs >> text=Dashboard"); await p.waitForTimeout(300);
   // New job: likhan (the harness's fake), two plates on one bed -> generated, sliced -> in Review
   await p.click("text=+ New job");
   await p.waitForFunction(() => document.getElementById("nj-maker").options.length > 0, null, { timeout: 15000 });
@@ -61,6 +63,36 @@ const [base, reviewId, queuedId, shots] = process.argv.slice(2);
   console.log("new job reached review:", state === "review");
   await p.evaluate(() => refresh()); await p.waitForTimeout(800);
   await p.locator("#builds").screenshot({ path: `${shots}/builds2.png` });
+  // tabs: Projects holds the batch grid + generated content; send an order's plates to another printer
+  await p.click("nav.tabs >> text=Projects"); await p.waitForSelector("#library .card", { timeout: 15000 });
+  console.log("tabs: dashboard hidden", await p.evaluate(() => document.querySelector('.tab[data-tab=dashboard]').hidden),
+              "| batches in projects", await p.evaluate(() => !!document.querySelector('.tab[data-tab=projects] #batches')));
+  await p.click("#library .card:has-text('UI new job') >> text=Send to printer…"); await p.waitForTimeout(500);
+  await p.selectOption("#sd2-printer", "enders1plus"); await p.dispatchEvent("#sd2-printer", "change"); await p.waitForTimeout(300);
+  await p.click("#senddlg >> text=Slice for review"); await p.waitForTimeout(1200);
+  console.log("send:", await p.textContent("#sd2-msg"));
+  await p.locator("#senddlg").screenshot({ path: `${shots}/send.png` });
+  await p.click("#senddlg >> text=Close");
+  let sent = null;
+  for (let i = 0; i < 20 && !(sent && sent.state === "review"); i++) {
+    await p.waitForTimeout(1000);
+    sent = (await p.evaluate(async () => (await (await fetch("/api/overview")).json()).builds)).find((x) => x.printer === "enders1plus");
+  }
+  console.log("sent build:", sent && `${sent.id} ${sent.printer} ${sent.state} ${sent.layer_height} mm`);
+  // re-slice it at another layer height from the review row
+  await p.click("nav.tabs >> text=Dashboard"); await p.evaluate(() => refresh()); await p.waitForTimeout(800);
+  const sentRow = p.locator("#builds tr", { has: p.locator(`td:first-child:text-is("${sent.id}")`) });
+  const offered = await sentRow.locator("select[title^='layer height'] option").allTextContents();
+  console.log("layer heights offered for a 2 mm base:", offered.join(", "));
+  const pick = offered.map((t) => t.replace(" mm", "")).find((v) => v !== String(sent.layer_height));
+  await sentRow.locator("select[title^='layer height']").selectOption(pick); await p.waitForTimeout(1500);
+  let again = null;
+  for (let i = 0; i < 20 && !(again && again.state === "review" && String(again.layer_height) === pick); i++) {
+    await p.waitForTimeout(1000);
+    again = (await p.evaluate(async () => (await (await fetch("/api/overview")).json()).builds)).find((x) => x.id === sent.id);
+  }
+  console.log("re-sliced:", again && `${again.state} ${again.layer_height} mm, viewed=${again.viewed}`);
+  await p.screenshot({ path: `${shots}/dash_tabs.png` });
   console.log("page errors:", errs.length ? errs : "none");
   await b.close();
 })();

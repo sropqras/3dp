@@ -257,6 +257,87 @@ def plan_builds(con, order_id: int, actor: str = "worker") -> list[int]:
     return built
 
 
+def reslice(con, build_id: int, layer_height: float, actor: str) -> dict:
+    """Same generated models, another layer height (one the build's profile offers): back to slicing, and the
+    previous view and approval no longer count - the new G-code is reviewed like any other."""
+    b = jobs.get(con, "build", build_id)
+    prof = profiles.get(b["profile"])
+    if layer_height not in prof.layer_heights:
+        raise StepFailed(f"{layer_height} mm is not one of {prof.id}'s layer heights {prof.layer_heights}")
+    if b["state"] == "queued":
+        jobs.transition(con, "build", build_id, "queued", "approved", actor, reason="re-slice")
+        b["state"] = "approved"
+    if b["state"] not in ("review", "approved", "failed"):
+        raise StepFailed(f"build {build_id} is {b['state']}: only builds not yet printing can be re-sliced")
+    with db.tx(con):
+        con.execute("DELETE FROM approvals WHERE build_id=? AND kind IN ('viewed','review')", (build_id,))
+        jobs.update_build(con, build_id, layer_height=layer_height, remote_path=None, error=None)
+        for (jid,) in con.execute("SELECT job_id FROM build_jobs WHERE build_id=?", (build_id,)).fetchall():
+            con.execute("UPDATE jobs SET layer_height=? WHERE id=?", (layer_height, jid))
+        jobs.transition(con, "build", build_id, b["state"], "slicing", actor, layer_height=layer_height)
+    return jobs.get(con, "build", build_id)
+
+
+def send_jobs(con, job_ids: list[int], printer: str, profile: str, layer_height: float, actor: str,
+              same_bed: bool = True) -> list[int]:
+    """Already-generated jobs (any order, any state) onto new builds for another printer/profile/layer: their
+    models are re-used, nothing is regenerated. Jobs sharing a bed when same_bed, else each piece its own bed."""
+    pr = printers.get(printer)
+    prof = profiles.get(profile)
+    if pr.readonly:
+        raise StepFailed(f"{printer} is watch-only")
+    if not prof.allows(printer):
+        raise StepFailed(f"profile {prof.id} is for {', '.join(prof.printers)}, not {printer}")
+    if layer_height not in prof.layer_heights:
+        raise StepFailed(f"{layer_height} mm is not one of {prof.id}'s layer heights {prof.layer_heights}")
+    rows = [jobs.get(con, "job", j) for j in job_ids]
+    if not rows or any(r is None for r in rows):
+        raise StepFailed("unknown job")
+    models = {r["id"]: [db.row(m) for m in con.execute("SELECT * FROM models WHERE job_id=? ORDER BY id", (r["id"],))]
+              for r in rows}
+    if any(not m for m in models.values()):
+        raise StepFailed("only generated jobs (with models) can be sent: " +
+                         ", ".join(r["label"] for r in rows if not models[r["id"]]))
+    zs = {tuple(_change_zs(r)) for r in rows}
+    if same_bed and len(zs) > 1:
+        raise StepFailed("these jobs have different colour changes - they can't share a bed")
+    order_id = rows[0]["order_id"]
+    beds = [(rows, [m for r in rows for m in models[r["id"]]])] if same_bed else \
+        [([r], [m]) for r in rows for m in models[r["id"]]]
+    built = []
+    for bed_jobs, bed_models in beds:
+        with db.tx(con):
+            bid = jobs.create_build(
+                con, order_id, printer, [j["id"] for j in bed_jobs], profile=prof.id,
+                run_dir=jobs.get(con, "order", order_id)["run_dir"], layer_height=layer_height,
+                change_zs=_change_zs(bed_jobs[0]), colours=bed_jobs[0]["colours"],
+                colour_hex=bed_jobs[0]["colour_hex"], state="slicing", actor=actor)
+            for pos, m in enumerate(bed_models):
+                con.execute("INSERT INTO build_models (build_id, model_id, pos) VALUES (?,?,?)", (bid, m["id"], pos))
+            jobs.event(con, "build", bid, "slicing", "slicing", actor, sent_from_jobs=[j["id"] for j in bed_jobs])
+        built.append(bid)
+    return built
+
+
+def library(con, limit: int = 60) -> list[dict]:
+    """Every order with its generated jobs (models on disk) and every build made from them - the Projects tab."""
+    out = []
+    for o in con.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,)).fetchall():
+        o = db.row(o)
+        js = [db.row(j) for j in con.execute("SELECT * FROM jobs WHERE order_id=? ORDER BY id", (o["id"],))]
+        for j in js:
+            j["models"] = [{"id": m["id"], "label": m["label"], "triangles": m["triangles"],
+                            "exists": Path(m["path"]).is_file()}
+                           for m in con.execute("SELECT * FROM models WHERE job_id=? ORDER BY id", (j["id"],))]
+            j.pop("params", None), j.pop("inputs", None)
+        bs = [{"id": b["id"], "state": b["state"], "printer": b["printer"], "profile": b["profile"],
+               "layer_height": b["layer_height"], "grams": b["grams"], "estimate_s": b["estimate_s"],
+               "labels": b["labels"]} for b in jobs.builds(con) if b["order_id"] == o["id"]]
+        out.append({**{k: o[k] for k in ("id", "source", "external_ref", "title", "created_at", "run_dir")},
+                    "jobs": js, "builds": bs})
+    return out
+
+
 def build_models(con, build_id: int) -> list[dict]:
     return [db.row(r) for r in con.execute(
         "SELECT m.* FROM build_models bm JOIN models m ON m.id = bm.model_id WHERE bm.build_id=? ORDER BY bm.pos",

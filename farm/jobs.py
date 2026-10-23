@@ -57,6 +57,8 @@ TRANSITIONS = {
         ("printing", "failed"): {"tracker"},
         ("printing", "cancelled"): {"tracker"},
         ("failed", "slicing"): HUMAN,                           # retry
+        ("review", "slicing"): HUMAN,                           # re-slice (another layer height): review again
+        ("approved", "slicing"): HUMAN,
         **{(s, "cancelled"): HUMAN for s in ("slicing", "review", "approved", "queued", "failed")},
     },
 }

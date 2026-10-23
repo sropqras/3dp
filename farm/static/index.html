@@ -99,6 +99,10 @@ dialog#newjob::backdrop { background: rgba(3,6,12,.72); }
 .nj label.f > span:not(.stamp) { display: flex; align-items: center; color: var(--text); font-size: 13px; }
 .nj textarea { background: #0b1220; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 12px; min-height: 64px; }
 .nj details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; } .nj summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+nav.tabs { display: flex; gap: 4px; } nav.tabs a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 10px; border: 1px solid transparent; }
+nav.tabs a.on { color: var(--text); border-color: var(--line); background: var(--panel); }
+.tab { display: grid; gap: 22px; } .tab > * { min-width: 0; } .tab[hidden] { display: none; }
+.lib { display: grid; gap: 12px; } .lib table td { vertical-align: top; }
 .nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
@@ -123,27 +127,44 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
 <body>
 <header>
   <div class="brand">sropqras <span>Farm Control</span></div>
-  <a href="/printers" style="color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:10px;padding:6px 12px">Printers →</a>
+  <nav class="tabs"><a href="#dashboard" data-tab="dashboard">Dashboard</a><a href="#projects" data-tab="projects">Projects</a>
+    <a href="#inventory" data-tab="inventory">Inventory</a><a href="/printers">Printers →</a></nav>
   <button onclick="openNewJob()">+ New job</button>
   <div class="kpis" id="kpis"></div>
 </header>
 <main>
-  <section><h2>Printers</h2><div class="grid" id="printers"></div></section>
-  <section class="split">
-    <div>
-      <h2>Review &amp; queue</h2><div class="card" style="overflow-x:auto"><table id="builds"></table></div>
-      <h2 style="margin-top:22px">Batches</h2><div id="batches"></div>
-      <h2 style="margin-top:22px">Jobs</h2><div class="card"><table id="jobs"></table></div>
-    </div>
-    <div>
-      <h2>Spool inventory</h2>
+  <div class="tab" data-tab="dashboard">
+    <section><h2>Printers</h2><div class="grid" id="printers"></div></section>
+    <section><h2>Review &amp; queue</h2><div class="card" style="overflow-x:auto"><table id="builds"></table></div></section>
+    <section><h2>Jobs</h2><div class="card" style="overflow-x:auto"><table id="jobs"></table></div></section>
+  </div>
+  <div class="tab" data-tab="projects" hidden>
+    <section><h2>Batches</h2><div id="batches"></div></section>
+    <section><h2>Generated content <span class="stamp" style="text-transform:none;letter-spacing:0">every order's models are kept: tick items and send them to any printer, profile and layer height without generating them again</span></h2>
+      <div id="library"></div></section>
+  </div>
+  <div class="tab" data-tab="inventory" hidden>
+    <section><h2>Spool inventory</h2>
       <div class="card pad"><div class="spools" id="spools"></div>
         <div class="ctl" style="margin-top:12px; display:flex; gap:8px"><button onclick="saveInv()">Save inventory</button>
         <button class="ghost" onclick="addSpool()">+ Spool</button><span class="stamp" id="invmsg"></span></div>
-      </div>
-    </div>
-  </section>
+      </div></section>
+  </div>
 </main>
+<dialog id="senddlg">
+  <div class="vh"><span class="name" id="sd2-title">Send to printer</span><button class="ghost x" onclick="$('senddlg').close()">Close</button></div>
+  <div class="pad nj">
+    <div class="stamp" id="sd2-items"></div>
+    <div class="grid2">
+      <label class="f">Printer <select id="sd2-printer" onchange="sendProfiles()"></select></label>
+      <label class="f">Profile <select id="sd2-profile" onchange="sendLayers()"></select></label>
+      <label class="f">Layer height <select id="sd2-layer"></select></label>
+    </div>
+    <label class="f"><span><input type="checkbox" id="sd2-samebed" checked> put them on one bed</span></label>
+    <div class="acts"><button onclick="doSend()">Slice for review</button><span class="stamp" id="sd2-msg"></span></div>
+    <div class="stamp">Nothing prints from here: new builds are sliced and wait in Review &amp; queue for the 3D check and approval.</div>
+  </div>
+</dialog>
 <dialog id="newjob">
   <div class="vh"><span class="name">New job</span><span class="stamp" id="nj-health"></span><button class="ghost x" onclick="$('newjob').close()">Close</button></div>
   <div class="pad nj">
@@ -179,6 +200,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
 </dialog>
 <dialog id="viewer">
   <div class="vh"><span class="name" id="v-title">Model</span><select id="v-file" onchange="loadModel(viewerRun, this.value)"></select>
+    <span id="v-layerpick" class="stamp"></span>
     <span class="stamp" id="v-file-note"></span><button class="ghost x" onclick="$('viewer').close()">Close</button></div>
   <div class="vbody">
     <div class="vcanvas"><canvas id="v-canvas"></canvas><div class="msg" id="v-msg">loading…</div>
@@ -266,7 +288,7 @@ function batchCard(b) {
 }
 
 function buildActions(b) {
-  const view = b.model ? `<button class="mini ghost" onclick="openModel('${esc(b.run)}', ['${esc(b.model)}'])">3D</button>` : "";
+  const view = b.model ? `<button class="mini ghost" onclick="openModel('${esc(b.run)}', ['${esc(b.model)}'], ${b.id})">3D</button>` : "";
   const cancel = ["review", "approved", "queued", "failed", "slicing"].includes(b.state) ? `<button class="mini ghost" onclick="act(${b.id},'cancel',{},'Cancel build ${b.id}?')">Cancel</button>` : "";
   if (b.state === "review") {
     const approve = !b.profile_confirmed ? `<span class="warn">profile unconfirmed</span>`
@@ -289,7 +311,7 @@ function buildsTable(bs) {
   if (!bs.length && !(data.jobs_in_progress || []).length) return `<tr><td class="stamp">Nothing to review or queued. <b>+ New job</b> (top) or <code>python3 -m farm submit job.json</code> adds work.</td></tr>`;
   return `<tr><th>#</th><th>Order / items</th><th>Printer</th><th>Profile</th><th>Time · filament</th><th>State</th><th></th></tr>` +
     bs.map((b) => `<tr><td>${b.id}</td><td>${esc(b.order)}<div class="labels">${(b.labels || "").split(" ").filter(Boolean).map((l) => `<span class="chip">${esc(l)}</span>`).join("")}</div></td>
-      <td>${printerSelect(b)}</td><td>${esc(b.profile_name)}${b.profile_confirmed ? "" : ` <span class="warn">unconfirmed</span>`}</td>
+      <td>${printerSelect(b)}</td><td>${esc(b.profile_name)}${b.profile_confirmed ? "" : ` <span class="warn">unconfirmed</span>`}<div>${layerPicker(b, "row")}</div></td>
       <td>${b.estimate_s ? hm(b.estimate_s) : "–"} · ${b.grams ? b.grams.toFixed(0) + " g" : "–"}</td>
       <td><span class="chip s-${esc(b.state)}">${esc(b.state)}</span></td><td><div class="acts">${buildActions(b)}</div></td></tr>`).join("");
 }
@@ -451,6 +473,63 @@ async function doStart() {
 }
 function openStartNonceHint() { $("sd-msg").textContent = "Refused. Fix the reasons, then close and open Start again."; }
 
+// ---------------------------------------------------------------- tabs
+function showTab(name) {
+  const t = ["dashboard", "projects", "inventory"].includes(name) ? name : "dashboard";
+  document.querySelectorAll(".tab").forEach((el) => (el.hidden = el.dataset.tab !== t));
+  document.querySelectorAll("nav.tabs a[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
+  if (t === "projects") loadLibrary();
+}
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+
+// ---------------------------------------------------------------- Projects: generated content, send to a printer
+let LIB = [], sendIds = [], sendDefaults = {};
+async function loadLibrary() {
+  LIB = await (await fetch("/api/projects")).json();
+  $("library").innerHTML = LIB.length ? `<div class="lib">${LIB.map((o) => {
+    const gen = o.jobs.filter((j) => j.models.length);
+    return `<div class="card pad"><div class="bh"><b>${esc(o.title)}</b><span class="stamp">#${o.id} · ${esc(o.source)} · ${new Date(o.created_at * 1000).toLocaleString()}</span>
+        ${gen.length ? `<button class="mini" style="margin-left:auto" onclick="openSend(${o.id})">Send to printer…</button>` : ""}</div>
+      <table><tr><th></th><th>Item</th><th>Maker</th><th>State</th><th>Models</th></tr>${o.jobs.map((j) => `<tr>
+        <td>${j.models.length ? `<input type="checkbox" class="libsel" data-order="${o.id}" value="${j.id}" checked>` : ""}</td>
+        <td>${esc(j.label)}</td><td>${esc(j.maker)}</td><td><span class="chip">${esc(j.state)}</span></td>
+        <td>${j.models.length ? j.models.map((m) => `<span class="chip" title="${m.triangles} triangles">${esc(m.label)}${m.exists ? "" : " (file missing)"}</span>`).join(" ") : `<span class="stamp">${esc(j.error || "not generated")}</span>`}</td></tr>`).join("")}</table>
+      ${o.builds.length ? `<div class="stamp" style="margin-top:6px">Builds: ${o.builds.map((b) => `#${b.id} ${esc(b.printer)} ${b.layer_height || ""} mm <b>${esc(b.state)}</b>`).join(" · ")}</div>` : ""}
+    </div>`; }).join("")}</div>` : `<div class="stamp">No orders yet.</div>`;
+}
+async function openSend(orderId) {
+  sendIds = [...document.querySelectorAll(`.libsel[data-order="${orderId}"]:checked`)].map((c) => +c.value);
+  if (!sendIds.length) { alert("Tick at least one generated item."); return; }
+  const o = LIB.find((x) => x.id === orderId);
+  $("sd2-title").textContent = `Send ${sendIds.length} item(s) of "${o.title}"`;
+  $("sd2-items").textContent = o.jobs.filter((j) => sendIds.includes(j.id)).map((j) => j.label).join(", ");
+  if (!MK) MK = await (await fetch("/api/makers")).json();
+  const first = o.jobs.find((j) => sendIds.includes(j.id));
+  sendDefaults = { profile: first && first.profile, layer: first && first.layer_height };
+  $("sd2-printer").innerHTML = MK.printers.map((p) => `<option>${esc(p)}</option>`).join("");
+  $("sd2-msg").textContent = ""; sendProfiles(); $("senddlg").showModal();
+}
+function sendProfiles() {
+  const pr = $("sd2-printer").value;
+  $("sd2-profile").innerHTML = MK.profiles.filter((p) => p.printers.includes(pr))
+    .map((p) => `<option value="${esc(p.id)}" ${p.id === sendDefaults.profile ? "selected" : ""}>${esc(p.name)}${p.confirmed ? "" : " (unconfirmed)"}</option>`).join("") || `<option value="">no profile for this printer</option>`;
+  sendLayers();
+}
+function sendLayers() {
+  const p = MK.profiles.find((x) => x.id === $("sd2-profile").value);
+  $("sd2-layer").innerHTML = p ? p.layer_heights.map((l) => `<option ${l === sendDefaults.layer ? "selected" : ""}>${l}</option>`).join("") : "";
+}
+async function doSend() {
+  $("sd2-msg").textContent = "sending…";
+  const r = await fetch("/api/jobs/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    job_ids: sendIds, printer: $("sd2-printer").value, profile: $("sd2-profile").value, layer_height: +$("sd2-layer").value,
+    same_bed: $("sd2-samebed").checked }) });
+  const out = await r.json();
+  if (!r.ok) { $("sd2-msg").textContent = "not sent: " + (out.error || r.status); return; }
+  $("sd2-msg").textContent = `build(s) ${out.builds.join(", ")} slicing — they'll appear in Review & queue`;
+  refresh(); loadLibrary();
+}
+
 function jobsTable(runs) {
   return `<tr><th>Job</th><th>Printer</th><th>Plates</th><th>Estimate</th><th>PETG</th><th>Status</th><th></th></tr>` +
     runs.map((r) => `<tr><td>${esc(r.job)}<div class="stamp">${esc(r.started)}</div></td><td>${esc(r.printer)}</td>
@@ -533,8 +612,29 @@ function modelButton(dir, models) {
     onclick="openModel(this.dataset.run, JSON.parse(this.dataset.models))" title="view the run's .3mf">3D</button>` : "";
 }
 
-function openModel(run, files) {
-  viewerRun = run;
+let viewerBuild = null;
+function layerPicker(b, where) {
+  if (!b || !["review", "approved", "queued", "failed"].includes(b.state) || (b.layer_heights || []).length < 2) return b && b.layer_height ? `${b.layer_height} mm` : "";
+  return `<select title="layer height: choosing another re-slices the same models (review again)" onchange="reslice(${b.id}, +this.value, '${where}')">
+    ${b.layer_heights.map((l) => `<option value="${l}" ${l === b.layer_height ? "selected" : ""}>${l} mm</option>`).join("")}</select>`;
+}
+async function reslice(id, layer, where) {
+  if (!confirm(`Re-slice build ${id} at ${layer} mm? The same models are sliced again; it comes back to review (3D check and approval again).`)) { refresh(); return; }
+  const r = await act(id, "reslice", { layer_height: layer });
+  if (!r || where !== "viewer") return;
+  $("v-msg").style.display = ""; $("v-msg").textContent = `re-slicing at ${layer} mm…`;
+  for (let i = 0; i < 90; i++) {           // follow it in the viewer until the new G-code is back in review
+    await new Promise((res) => setTimeout(res, 2000));
+    const b = ((await (await fetch("/api/overview")).json()).builds || []).find((x) => x.id === id);
+    if (b && b.state === "review" && b.model) { openModel(b.run, [b.model], id); return; }
+    if (b && b.state === "failed") { $("v-msg").textContent = `re-slice failed: ${b.error || ""}`; return; }
+  }
+}
+
+function openModel(run, files, buildId) {
+  viewerRun = run; viewerBuild = buildId || null;
+  const b = buildId && data ? (data.builds || []).find((x) => x.id === buildId) : null;
+  $("v-layerpick").innerHTML = b ? `Layer ${layerPicker(b, "viewer")}` : "";
   $("v-title").textContent = run;
   $("v-file").innerHTML = files.map((f) => `<option>${esc(f)}</option>`).join("");
   $("v-file").style.display = files.length > 1 ? "" : "none";
@@ -760,6 +860,7 @@ function bindControls(c) {
   c.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
+showTab(location.hash.slice(1));
 refresh(); setInterval(refresh, 5000);
 </script>
 </body>
