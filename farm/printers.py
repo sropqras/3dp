@@ -56,6 +56,22 @@ PRINTERS = {
         print_preset="0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
         filament_presets={"petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"},
     ),
+    # Ender 3 S1 Pro, moved off its own SBC onto enders3dp (printers/s1pro/MIGRATION.md, 2026-10-23): its own
+    # Klipper v0.13.0-770 (matches the board), 0.4 nozzle, CR Touch, RunoutSensor, farm baseline (audit 15/15).
+    "s1pro": Printer(
+        name="s1pro",
+        moonraker="http://192.168.1.184:7129",
+        fluidd="http://192.168.1.184/",
+        fluidd_note="shared Fluidd: choose s1pro (:7129) in its printer menu",
+        bed_min=(5.0, 5.0),
+        bed_max=(215.0, 215.0),
+        max_z=270.0,
+        has_m600_prompt=True,
+        bundle=PRUSA_DIR / "farm_profiles.ini",
+        printer_preset="Farm S1 Pro 0.4",
+        print_preset="Farm 0.20 PETG 0.4 (S1 Pro)",
+        filament_presets={"petg": "Farm PETG 0.4 (S1 Pro)"},
+    ),
     # Ender 3 V3 SE on enders3dp: the user's own production printer - WATCH ONLY (no jobs, no config changes)
     # until they hand it over. Hardware mostly unconfirmed (FARM.md); filament sensor + Meross plug confirmed.
     "EnderV3SE": Printer(

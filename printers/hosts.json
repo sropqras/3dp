@@ -1,0 +1,12 @@
+{
+  "_note": "Printer hosts Farm Control watches (farm/hosts.py). Every Moonraker port listed is probed; an instance not in farm/printers.py shows as not onboarded. ssh: the account farm tools may use read-only (aali-cli key ~/.ssh/enders3dp).",
+  "hosts": [
+    {"name": "enders3dp", "address": "192.168.1.184", "ssh": "aali@enders3dp.local", "ports": [7125, 7126, 7127, 7128, 7129]},
+    {"name": "3dpnas", "address": "192.168.1.68", "ssh": "aali@3dpnas.local", "ports": [7125]},
+    {"name": "s1propad", "address": "s1propad.local", "ports": [7125], "note": "S1 Pro's old SBC, being retired (printers/s1pro/MIGRATION.md)"},
+    {"name": "e3propad", "address": "e3propad.local", "ports": [7125]},
+    {"name": "powerpad", "address": "powerpad.local", "ports": [7125]},
+    {"name": "printer-39", "address": "192.168.1.39", "ports": [7125]},
+    {"name": "printer-200", "address": "192.168.1.200", "ports": [7125]}
+  ]
+}

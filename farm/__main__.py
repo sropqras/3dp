@@ -11,6 +11,7 @@
   worker [--once | --alive]   run queued pipeline tasks (generate, plan, slice, upload); --alive: heartbeat check
   db init | import-runs       create/migrate data/farm.db; backfill runs/ made before it existed
   presets check               static check of every print profile's PrusaSlicer presets (farm/profiles.py)
+  backup [printer] [--to-repo] snapshot printer configs over Moonraker (secrets excluded); --to-repo mirrors to printers/
   doctor                      is this host ready to produce: slicer version, maker apps, fonts (read-only)
   monitor [--state FILE]      one pass of the serious-error monitor; prints new alerts as '<loud|silent>\t<text>'
   serve [--port 10111]        farm control room: live printers, cameras, spools, jobs, batch progress
@@ -190,6 +191,32 @@ def cmd_presets(args):
     sys.exit(1 if bad else 0)
 
 
+def cmd_backup(args):
+    from . import configs, hosts
+    con = db.connect()
+    bad = 0
+    for v in hosts.fleet(cameras=False):
+        if not v["reachable"] or (args.printer and args.printer not in (v.get("key"), v.get("registry"), v.get("name"))):
+            continue
+        try:
+            snap = configs.snapshot(con, v["key"], v["url"], actor="backup")
+        except Exception as e:
+            bad += 1
+            print(f"FAIL {v['key']}: {str(e)[:120]}")
+            continue
+        d = configs.drift(con, v["key"], snap["files"])
+        what = "unchanged" if snap.get("unchanged") else f"snapshot {snap['id']}"
+        drift = ("no reviewed reference yet" if d["reference"] is None else
+                 "no drift" if not (d["changed"] or d["added"] or d["removed"]) else
+                 f"DRIFT changed={d['changed']} added={d['added']} removed={d['removed']}")
+        print(f"OK   {v['key']}: {len(snap['files'])} files, {what}; {drift}")
+        if args.to_repo:
+            dest = Path(__file__).resolve().parent.parent / "printers" / (v.get("registry") or v["name"])
+            written = configs.to_repo(con, v["key"], dest)
+            print(f"     -> {dest.relative_to(dest.parent.parent)}: {len(written)} file(s) updated")
+    sys.exit(1 if bad else 0)
+
+
 def cmd_doctor(args):
     from . import doctor
     n = doctor.report()
@@ -225,6 +252,9 @@ def main():
     a = sub.add_parser("audit")
     a.add_argument("printer", nargs="?")
     sub.add_parser("doctor")
+    bk = sub.add_parser("backup")
+    bk.add_argument("printer", nargs="?")
+    bk.add_argument("--to-repo", action="store_true")
     pc = sub.add_parser("presets")
     pc.add_argument("action", choices=["check"])
     wk = sub.add_parser("worker")
@@ -241,7 +271,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup}[args.cmd](args)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,135 @@
+"use strict";
+// Printers tab: fleet health, farm-baseline audit, config snapshots and drift. Read-only towards the printers;
+// the only actions are "snapshot now" and "mark reviewed" (farm DB). Staged changes come in phase 2.
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+const ago = (t) => { if (!t) return "never"; const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
+let data = null, fd = { key: null, files: [], path: null, mode: "diff" };
+
+function setOperator(v) { ls("operator", v.trim()); }
+function operator() { return ls("operator") || ""; }
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operator: operator(), ...(body || {}) }) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(out.error || `HTTP ${r.status}`); return null; }
+  return out;
+}
+
+function serviceChips(svcs) {
+  const bad = Object.entries(svcs || {}).filter(([n, s]) => !s.startsWith("active/running") && !/backup-on-boot|backup-filewatch/.test(n));
+  if (!bad.length) return `<span class="chip ok">all services running</span>`;
+  return bad.map(([n, s]) => `<span class="chip ${/auto-restart|failed/.test(s) ? "bad" : "warn"}" title="${esc(s)}">${esc(n)}: ${esc(s.split("/")[1])}</span>`).join(" ");
+}
+
+function auditBlock(v) {
+  if (v.audit_error) return `<div class="warn">audit: ${esc(v.audit_error)}</div>`;
+  if (!v.audit) return `<div class="dim">audit needs Klipper ready (now ${esc(v.klippy_state)})</div>`;
+  const fails = v.audit.filter((a) => a.status === "FAIL"), warns = v.audit.filter((a) => a.status === "WARN");
+  const head = fails.length ? `<span class="bad">✗ ${fails.length} baseline gap${fails.length > 1 ? "s" : ""}</span>` : `<span class="ok">✓ farm baseline</span>`;
+  return `<details><summary>${head}${warns.length ? ` <span class="warn">· ${warns.length} warning</span>` : ""} — ${v.audit.length} rules</summary>
+    <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td></tr>`).join("")}</table></details>`;
+}
+
+function configBlock(v) {
+  const s = v.snapshot;
+  if (!s || !s.latest) return `<div class="row">Config: <b>no snapshot yet</b> <button class="ghost" onclick="snap('${esc(v.key)}')">Snapshot now</button></div>`;
+  const d = s.drift || {}, n = (d.changed || []).length + (d.added || []).length + (d.removed || []).length;
+  const state = !s.reference ? `<span class="warn">not reviewed yet</span>`
+    : n ? `<span class="${d.loud ? "bad" : "warn"}">drift: ${n} file${n > 1 ? "s" : ""} differ from reviewed</span>` : `<span class="ok">matches reviewed</span>`;
+  return `<div class="row">Config: <b>${s.files} files</b> · snapshot ${s.latest.id} ${ago(s.latest.taken_at)} · ${state}
+      ${s.reference ? `<span class="dim">reviewed #${s.reference.id} by ${esc(s.reference.reviewed_by)} ${ago(s.reference.reviewed_at)}</span>` : ""}</div>
+    <div class="row"><button class="ghost" onclick="openFiles('${esc(v.key)}')">Files &amp; diff</button>
+      <button class="ghost" onclick="snap('${esc(v.key)}')">Snapshot now</button>
+      ${s.reference && s.reference.id === s.latest.id ? "" : `<button class="ghost" onclick="review('${esc(v.key)}', ${s.latest.id})">Mark snapshot ${s.latest.id} reviewed</button>`}</div>`;
+}
+
+function onboardBlock(v) {
+  if (v.registry) return "";
+  const items = [
+    ["reachable", v.reachable], ["Klipper ready (board connected)", v.klippy_state === "ready"],
+    ["farm baseline audit passes", v.audit && !v.audit.some((a) => a.status === "FAIL")],
+    ["camera works", (v.cameras || []).some((c) => c.ok)], ["config reviewed", v.snapshot && v.snapshot.reference],
+    ["in the farm registry (farm/printers.py)", false]];
+  return `<details><summary class="warn">Not onboarded — ${items.filter((i) => !i[1]).length} step(s) left</summary>
+    <table>${items.map(([t, ok]) => `<tr><td class="${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"}</td><td>${esc(t)}</td></tr>`).join("")}</table></details>`;
+}
+
+function card(v) {
+  if (!v.reachable) return `<div class="card"><div class="ph"><span class="name">${esc(v.host)}</span><span class="dim">:${v.port}</span><span class="chip bad">unreachable</span></div><div class="dim">${esc(v.error || "")}</div></div>`;
+  const badge = v.readonly ? `<span class="chip warn">watch-only</span>` : v.registry ? `<span class="chip ok">onboarded</span>` : `<span class="chip warn">not onboarded</span>`;
+  const st = v.klippy_state !== "ready" ? `<span class="chip bad">${esc(v.klippy_state || "?")}</span>` : `<span class="chip ${v.paused ? "warn" : v.job === "printing" ? "ok" : ""}">${esc(v.paused ? "paused" : v.job || "?")}</span>`;
+  const vers = Object.entries(v.versions || {}).map(([k, ver]) => `<span class="chip ${(v.updates || []).includes(k) ? "warn" : ""}" title="${(v.updates || []).includes(k) ? "update available" : ""}">${esc(k.replace("Klipper-Adaptive-Meshing-Purging", "KAMP").replace("moonraker-telegram-bot", "telegram-bot"))} ${esc(ver)}</span>`).join(" ");
+  const cams = (v.cameras || []).map((c) => `<span class="chip ${c.ok ? "ok" : "bad"}">📷 ${esc(c.name)} ${c.ok ? "ok" : "no snapshot"}</span>`).join(" ") || `<span class="dim">no camera registered</span>`;
+  return `<div class="card">
+    <div class="ph"><span class="name">${esc(v.registry || v.name)}</span><span class="dim">${esc(v.host)}:${v.port}</span>${badge}${st}
+      <a class="lnk" href="${esc(v.fluidd)}" target="_blank" rel="noopener">Fluidd ↗</a></div>
+    ${v.klippy_state !== "ready" && v.state_message ? `<div class="warn" style="font-size:12px">${esc(v.state_message)}</div>` : ""}
+    <div class="row">Print hours <b>${v.print_hours ?? "–"}</b> Jobs <b>${v.total_jobs ?? "–"}</b> ${v.file ? `File <b>${esc(v.file.split("/").pop())}</b>` : ""}</div>
+    <div class="row">${cams}</div>
+    ${(v.failed_components || []).length ? `<div class="bad">failed components: ${esc(v.failed_components.join(", "))}</div>` : ""}
+    ${(v.warnings || []).length ? `<div class="warn" style="font-size:12px">${v.warnings.map(esc).join("<br>")}</div>` : ""}
+    ${auditBlock(v)}
+    ${configBlock(v)}
+    ${onboardBlock(v)}
+    <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div style="margin-top:6px">${vers}</div></details>
+  </div>`;
+}
+
+function render() {
+  const inst = data.instances, up = inst.filter((v) => v.reachable);
+  const fails = up.reduce((a, v) => a + (v.audit ? v.audit.filter((x) => x.status === "FAIL").length : 0), 0);
+  const drift = up.filter((v) => v.snapshot && v.snapshot.drift && v.snapshot.reference && ((v.snapshot.drift.changed || []).length + (v.snapshot.drift.added || []).length + (v.snapshot.drift.removed || []).length)).length;
+  const badSvc = Object.values(data.host_services).reduce((a, s) => a + Object.entries(s).filter(([n, x]) => /auto-restart|failed/.test(x)).length, 0);
+  $("kpis").innerHTML = [[`${up.length}/${inst.length}`, "instances up"], [up.filter((v) => v.registry).length, "onboarded"],
+    [fails, "baseline gaps"], [drift, "with drift"], [badSvc, "services failing"], [new Date(data.time * 1000).toLocaleTimeString(), "updated"]]
+    .map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><small>${esc(l)}</small></div>`).join("");
+  $("hosts").innerHTML = data.hosts.map((h) => {
+    const mine = inst.filter((v) => v.host === h.name), any = mine.find((v) => v.reachable);
+    const stats = any ? `CPU <b>${any.cpu_temp != null ? Math.round(any.cpu_temp) + "°C" : "–"}</b> RAM <b>${any.mem_used_pct ?? "–"}%</b> Disk <b class="${any.disk_used_pct > 90 ? "bad" : ""}">${any.disk_used_pct ?? "–"}%</b> (${any.disk_free_gb ?? "–"} GB free)${(any.throttled || []).length ? ` <span class="bad">throttled: ${esc(any.throttled.join(","))}</span>` : ""}` : "";
+    return `<section class="host"><h2>${esc(h.name)} <span class="dim" style="text-transform:none;letter-spacing:0">${esc(h.address)}${h.note ? " · " + esc(h.note) : ""}</span>
+        ${any ? `<span class="row" style="text-transform:none;letter-spacing:0">${stats}</span>` : ""}</h2>
+      ${any ? `<div class="row" style="margin-bottom:8px">${serviceChips(data.host_services[h.name])}</div>` : ""}
+      <div class="grid">${mine.map(card).join("")}</div></section>`;
+  }).join("");
+}
+
+async function refresh() {
+  try { data = await (await fetch("/api/fleet")).json(); render(); }
+  catch (e) { $("kpis").innerHTML = `<div class="kpi"><b class="bad">offline</b><small>farm server</small></div>`; }
+}
+
+async function snap(key) { const r = await post(`/api/fleet/${encodeURIComponent(key)}/snapshot`); if (r) { alert(r.unchanged ? "No change since the last snapshot." : `Snapshot ${r.id}: ${r.files} files.`); refresh(); } }
+async function review(key, id) {
+  if (!operator()) { alert("Put your name in the 'You' box first (it's recorded as the reviewer)."); return; }
+  if (!confirm(`Mark snapshot ${id} of ${key} as the reviewed, known-good config? Drift is measured against it from now on.`)) return;
+  if (await post(`/api/fleet/${encodeURIComponent(key)}/review`, { snapshot: id })) refresh();
+}
+
+async function openFiles(key) {
+  fd = { key, files: [], path: null, mode: "diff" };
+  $("fd-title").textContent = key; $("fd-body").textContent = "loading…"; $("filesdlg").showModal();
+  const r = await (await fetch(`/api/fleet/${encodeURIComponent(key)}/files`)).json();
+  fd.files = r.files || [];
+  $("fd-sub").textContent = `snapshot ${r.latest ?? "–"} · reviewed ${r.reference ?? "none"}`;
+  const cls = { changed: "warn", added: "warn", removed: "bad", same: "ok", unreviewed: "dim" };
+  $("fd-files").innerHTML = fd.files.map((f, i) => `<button id="fdf-${i}" onclick="showFile(${i})"><span>${esc(f.path)}</span><span class="${cls[f.state]}">${esc(f.state)}</span></button>`).join("");
+  const first = fd.files.findIndex((f) => f.state !== "same");
+  showFile(first >= 0 ? first : 0);
+}
+function toggleMode() { fd.mode = fd.mode === "diff" ? "file" : "diff"; $("fd-mode").textContent = fd.mode === "diff" ? "show file" : "show diff"; if (fd.path != null) showFile(fd.path); }
+async function showFile(i) {
+  fd.path = i;
+  document.querySelectorAll(".files button").forEach((b) => b.classList.remove("sel"));
+  const btn = $(`fdf-${i}`); if (btn) btn.classList.add("sel");
+  const f = fd.files[i]; if (!f) { $("fd-body").textContent = "no files"; return; }
+  const url = `/api/fleet/${encodeURIComponent(fd.key)}/${fd.mode === "diff" ? "diff" : "file"}?path=${encodeURIComponent(f.path)}`;
+  const t = await (await fetch(url)).text();
+  $("fd-body").innerHTML = fd.mode === "diff"
+    ? t.split("\n").map((l) => `<span class="${l.startsWith("+") && !l.startsWith("+++") ? "add" : l.startsWith("-") && !l.startsWith("---") ? "del" : l.startsWith("@@") ? "hunk" : ""}">${esc(l)}</span>`).join("\n")
+    : esc(t);
+}
+
+$("operator").value = operator();
+refresh(); setInterval(refresh, 20000);

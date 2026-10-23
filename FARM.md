@@ -12,7 +12,7 @@ Slicer profiles (PrusaSlicer 2.9.6) live in `prusa/`.
 | EnderV3SE | :7128 | connected | in production - read-only until scheduled |
 | Ender3Pro | :7126 | not connected | idle instance |
 | EnderCR10SE | :7127 | not connected | idle instance |
-| s1pro | none | - | orphan Klipper service, no config |
+| **s1pro** (Ender 3 S1 Pro) | :7129 | connected (USB 3.3) | ready; moved off its SBC 2026-10-23, own Klipper v0.13.0-770, 0.4 nozzle, RunoutSensor, profile `s1pro-petg-020` |
 | **enders1plus** (host 3dpnas.local) | :7125 | connected | ready; Ender 3 S1 Plus, same bed + Sprite Pro 0.6 as MaxNeo, filament sensor |
 
 Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.local, s1propad.local,
@@ -40,7 +40,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 ## Farm-wide features (rolled out per printer, tracked above)
 
-- **Paused-safe idle timeout** - while paused, the nozzle cools after 60 min (idle_timeout 3600 s); bed and motors stay on so the print can resume (overnight is fine). 12 h safety cap turns the bed off too; RESUME reheats nozzle and bed.
+- **Paused-safe idle timeout** - while paused, the nozzle cools after 30 min (the pause sets SET_IDLE_TIMEOUT 1800; otherwise idle_timeout is 3600 s); bed and motors stay on so the print can resume (overnight is fine). 12 h safety cap turns the bed off too; RESUME reheats nozzle and bed.
 - **Guided colour change** - `M600` parks and shows a Fluidd prompt with UNLOAD / LOAD / PURGE / RESUME buttons. No auto-unload: on printers without a runout sensor an unattended eject lets the filament end tangle on the spool.
 - **CLEAR_PAUSE in START_PRINT** - a stale pause can never make PAUSE answer "Print already paused".
 
@@ -54,6 +54,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-23 | s1pro | Moved from its own SBC (s1propad) to an instance on enders3dp: own Klipper v0.13.0-770 (matches the board), configs + 135 G-codes + 297-job history + Fluidd settings migrated; farm baseline (paused-safe idle, 12 h cap, guided M600, CLEAR_PAUSE, recover 150, 200/3000 motion limits); audit 15/15 |
 | 2026-10-22 | Ender3MaxNeo | Removed phantom filament sensors (btt_sfs include), CLEAR_PAUSE in START_PRINT, fixed FC_RESUME, removed duplicate screws_tilt_adjust |
 | 2026-10-22 | Ender3MaxNeo | Paused-safe idle timeout, guided M600 colour change |
 | 2026-10-22 | Ender3MaxNeo | 12 h pause safety cap (_PAUSE_HARD_STOP), RESUME reheats the bed if it was hit |

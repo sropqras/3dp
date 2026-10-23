@@ -83,6 +83,13 @@ MIGRATIONS = [
         build_id INTEGER NOT NULL REFERENCES builds(id), model_id INTEGER NOT NULL REFERENCES models(id),
         pos INTEGER NOT NULL, PRIMARY KEY (build_id, model_id))
     """,
+    # 4: printer config snapshots (Printers tab): files {path: sha} per snapshot, content-addressed on disk
+    """
+    CREATE TABLE config_snapshots (
+        id INTEGER PRIMARY KEY, printer TEXT NOT NULL, url TEXT NOT NULL, taken_at REAL NOT NULL,
+        actor TEXT NOT NULL, files TEXT NOT NULL, reviewed_by TEXT, reviewed_at REAL, note TEXT);
+    CREATE INDEX config_snapshots_printer ON config_snapshots(printer, id)
+    """,
 ]
 
 
@@ -149,7 +156,7 @@ def row(r: sqlite3.Row | None) -> dict | None:
         return None
     d = dict(r)
     for k in ("params", "inputs", "colours", "colour_hex", "colour_changes", "colour_zs", "change_zs", "bbox",
-              "segments", "detail", "checklist", "payload"):
+              "segments", "detail", "checklist", "payload", "files"):
         if isinstance(d.get(k), str):
             try:
                 d[k] = json.loads(d[k])

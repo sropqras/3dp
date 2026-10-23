@@ -52,6 +52,8 @@ class FakeMoonraker:
         import urllib.parse as up
         self.settings, self.state, self.paused, self.klipper = settings, "standby", False, "ready"
         self.files, self.starts = {}, []
+        self.config = {}            # path -> bytes: the printer's config root
+        self.restarts = 0
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -77,6 +79,17 @@ class FakeMoonraker:
                         "display_status": {"message": None},
                         "extruder": {"temperature": 25.0, "target": 0.0},
                         "heater_bed": {"temperature": 24.0, "target": 0.0}}}})
+                if u.path == "/server/files/list" and q.get("root") == ["config"]:
+                    return self._json(200, {"result": [{"path": p, "size": len(b), "modified": 0}
+                                                       for p, b in outer.config.items()]})
+                if u.path.startswith("/server/files/config/"):
+                    p = up.unquote(u.path[len("/server/files/config/"):])
+                    if p not in outer.config:
+                        return self._json(404, {"error": "no file"})
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(outer.config[p])
+                    return
                 if u.path == "/server/webcams/list":
                     return self._json(200, {"result": {"webcams": []}})
                 if u.path == "/server/history/list":

@@ -48,6 +48,14 @@ PROFILES = {p.id: p for p in (
         nozzle=0.6, bundle=_NEO.bundle, printer_preset=_NEO.printer_preset, print_preset=_NEO.print_preset,
         filament_preset=_NEO.filament_presets["petg"], material="petg",
         layer_heights=(0.28, 0.32, 0.36, 0.4, 0.44), max_volumetric=13, tags=("plates", "parts")),
+    # S1 Pro (0.4 nozzle): the user's own S1 Pro 0.4 preset with START_PRINT placeholders + autoemit off, the farm's
+    # proven Sprite PETG (13 mm³/s), the user's 0.20 NORMAL SPEEDY GON print preset.
+    Profile(
+        id="s1pro-petg-020", name="PETG 0.4 (S1 Pro)", printers=("s1pro",), nozzle=0.4,
+        bundle=FARM_BUNDLE, printer_preset="Farm S1 Pro 0.4", print_preset="Farm 0.20 PETG 0.4 (S1 Pro)",
+        filament_preset="Farm PETG 0.4 (S1 Pro)", material="petg",
+        layer_heights=(0.16, 0.2, 0.24, 0.28), max_volumetric=13, first_layer=(0.15, 0.3),
+        tags=("plates", "parts")),
     # Large lithophanes / lamp shades in Hyper PLA on the 0.6 Sprites (the user has printed these).
     Profile(
         id="neo-hyperpla-028-litho", name="Hyper PLA 0.6 lithophane", printers=("Ender3MaxNeo", "enders1plus"),

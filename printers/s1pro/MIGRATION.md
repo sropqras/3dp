@@ -60,3 +60,11 @@ Facts from s1propad:
 USB cable SBC -> enders3dp; set `serial:` to the new /dev/serial/by-path port; restart klipper-s1pro (sudo);
 check no MCU version error; `farm audit s1pro`; add s1pro + profile `s1pro-petg-020` (presets staged in
 prusa/farm_profiles.ini) to the farm; sampling print through review + Start.
+
+## Cut-over done 2026-10-23 02:50
+USB cable on enders3dp hub port 3.3 (`/dev/serial/by-path/pci-0000:00:14.0-usb-0:3.3:1.0-port0`). First
+FIRMWARE_RESTART: "Failed automated reset" (the board was still configured from the SBC session); the second one
+connected: MCU v0.13.0-770-gce7002bed = host. Ready, no config warnings, no console errors, farm audit 15/15,
+RunoutSensor sees filament. Added to farm/printers.py + profile `s1pro-petg-020`; a sample plate dry-sliced and
+validated. The MaxNeo (hub port 3.2, paused) and V3SE were checked before and after: undisturbed.
+Camera: not detected on enders3dp yet; `~/s1pro-camera.sh <by-id>` (sudo) is staged for it.
