@@ -180,7 +180,8 @@ def insert_colour_changes(gcode: Path, change_zs: list[float]) -> list[tuple]:
         if pending and line.startswith(";LAYER_CHANGE") and i + 1 < len(lines) and lines[i + 1].startswith(";Z:"):
             z = float(lines[i + 1][3:])
             if z > pending[0] + EPS:
-                out.append(f";COLOR_CHANGE after z={pending[0]} (farm pipeline)\nM600\n")
+                # :g so 4 and 4.0 print the same (heights arrive as int from a job file, float from a maker)
+                out.append(f";COLOR_CHANGE after z={pending[0]:g} (farm pipeline)\nM600\n")
                 inserted.append((pending.pop(0), z))
         out.append(line)
         i += 1

@@ -87,34 +87,6 @@ class Shadow(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         db.DB_PATH = self.tmp / "farm.db"   # Recorder connects to the default path
 
-    def test_recorder_mirrors_a_cli_run(self):
-        run = FakeRun(self.tmp / "run")
-        run.dir.mkdir()
-        job = {"name": "two plates", "plates": ["A01", "A02"], "layer_height": 0.4, "likhan": {"text": "x"}}
-        rec = pipeline.Recorder(run, job, printers.PRINTERS["Ender3MaxNeo"])
-        rec.generated()
-        g = run.path("A01+A02.gcode")
-        g.write_text("G1\n")
-        rec.build_sliced(g, {"estimated printing time (normal mode)": "2h 44m 7s", "filament used [g]": "117.5"},
-                         run.path("A01+A02.3mf"))
-        rec.uploaded(["farm/A01+A02.gcode"])
-        con = db.connect()
-        b = jobs.builds(con)[0]
-        self.assertEqual((b["state"], b["labels"], b["estimate_s"], b["grams"]), ("queued", "A01 A02", 9847.0, 117.5))
-        self.assertEqual(b["gcode_sha256"], pipeline.sha256(g))
-        self.assertEqual({j["state"] for j in map(dict, con.execute("SELECT state FROM jobs"))}, {"planned"})
-        notes = [e["detail"].get("note") for e in jobs.history(con, "build", b["id"])]
-        self.assertIn("legacy run --upload", notes)
-        self.assertFalse([l for l in run.lines if l.startswith("db:")], run.lines)
-
-    def test_db_failure_never_stops_production(self):
-        db.DB_PATH = Path("/proc/forbidden/farm.db")
-        run = FakeRun(self.tmp / "run2")
-        rec = pipeline.Recorder(run, {"name": "x", "likhan": {}}, printers.PRINTERS["Ender3MaxNeo"])
-        rec.generated()
-        rec.failed("whatever")
-        self.assertTrue(any(l.startswith("db: _open skipped") for l in run.lines))
-
     def test_import_runs_is_idempotent(self):
         runs = self.tmp / "runs"
         d = runs / "20261022-230600_Qabrastaan_CH02_A11"

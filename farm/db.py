@@ -65,6 +65,24 @@ MIGRATIONS = [
         attempts INTEGER NOT NULL DEFAULT 0, next_at REAL NOT NULL DEFAULT 0, sent_at REAL, last_error TEXT);
     CREATE TABLE heartbeat (name TEXT PRIMARY KEY, at REAL NOT NULL, detail TEXT);
     """,
+    # 2: what the pipeline needs to run from rows alone (worker), not from a job.json in memory
+    """
+    ALTER TABLE orders ADD COLUMN run_dir TEXT;
+    ALTER TABLE orders ADD COLUMN upload_folder TEXT;
+    ALTER TABLE jobs ADD COLUMN bed_group TEXT;
+    ALTER TABLE jobs ADD COLUMN colour_zs TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE builds ADD COLUMN layer_height REAL;
+    ALTER TABLE builds ADD COLUMN change_zs TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE builds ADD COLUMN colours TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE builds ADD COLUMN colour_hex TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE tasks ADD COLUMN finished_at REAL
+    """,
+    # 3: which models (pieces) are on which bed, in bed order
+    """
+    CREATE TABLE build_models (
+        build_id INTEGER NOT NULL REFERENCES builds(id), model_id INTEGER NOT NULL REFERENCES models(id),
+        pos INTEGER NOT NULL, PRIMARY KEY (build_id, model_id))
+    """,
 ]
 
 
@@ -130,8 +148,8 @@ def row(r: sqlite3.Row | None) -> dict | None:
     if r is None:
         return None
     d = dict(r)
-    for k in ("params", "inputs", "colours", "colour_hex", "colour_changes", "bbox", "segments", "detail",
-              "checklist", "payload"):
+    for k in ("params", "inputs", "colours", "colour_hex", "colour_changes", "colour_zs", "change_zs", "bbox",
+              "segments", "detail", "checklist", "payload"):
         if isinstance(d.get(k), str):
             try:
                 d[k] = json.loads(d[k])

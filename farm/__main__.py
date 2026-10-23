@@ -1,10 +1,12 @@
 """python -m farm <command>
 
   run <job.json> [--upload]   generate (likhan) -> slice -> validate [-> upload]; writes runs/<stamp>_<job>/
+  submit <job.json>           queue a job for the worker (generate -> plan -> slice -> review); returns at once
   start <run-dir>             start an uploaded run on its printer (visual gate: bed clear, base colour loaded)
   watch <run-dir>             follow a started run; stops at first layer / colour change / finish / error
   status [printer]            show printer state
   audit [printer]             check live Klipper configs against the farm baseline (read-only)
+  worker [--once | --alive]   run queued pipeline tasks (generate, plan, slice, upload); --alive: heartbeat check
   db init | import-runs       create/migrate data/farm.db; backfill runs/ made before it existed
   presets check               static check of every print profile's PrusaSlicer presets (farm/profiles.py)
   doctor                      is this host ready to produce: slicer version, maker apps, fonts (read-only)
@@ -13,77 +15,54 @@
 """
 import argparse
 import json
-import shutil
 import sys
 from pathlib import Path
 
-from . import audit, config, gcode, likhan, monitor, moonraker, pipeline, printers, profiles, project, slicer, watch
+from . import audit, db, monitor, moonraker, pipeline, printers, profiles, watch
 from .runlog import Run
 
 
 def cmd_run(args):
+    """The whole pipeline inline (no worker): submit -> generate -> plan -> slice [-> approve + upload]."""
     job_path = Path(args.job)
     job = json.loads(job_path.read_text(encoding="utf-8"))
     printer = printers.get(job["printer"])
     if printer.readonly:
         sys.exit(f"{printer.name} is watch-only (readonly in farm/printers.py); no jobs are sent to it")
-    run = Run(job["name"])
+    con = db.connect()
+    order_id, run = pipeline.submit_job_file(con, job, job_path)
     with run.guard():
-        rec = pipeline.Recorder(run, job, printer)   # shadow: mirror the run into the farm DB
         try:
-            _run_stages(args, job, job_path, printer, run, rec)
-        except BaseException as e:
-            rec.failed(str(e) or type(e).__name__)
-            raise
+            for (job_id,) in con.execute("SELECT id FROM jobs WHERE order_id=? ORDER BY id", (order_id,)).fetchall():
+                pipeline.generate_job(con, job_id, actor="cli")
+            builds = pipeline.plan_builds(con, order_id, actor="cli")
+            for build_id in builds:
+                pipeline.slice_build(con, build_id, actor="cli")
+            if args.upload:
+                for build_id in builds:
+                    # the legacy CLI has no review step of its own: the visual gate is the human at `farm start`
+                    pipeline.approve(con, build_id, "cli", note="legacy run --upload (visual gate at start)")
+                    pipeline.upload_build(con, build_id, actor="cli")
+        except pipeline.StepFailed as e:
+            run.fail(str(e))
+        run.manifest["result"] = "ok"
+        run.save()
+        run.log(f"run: done (order {order_id}, builds {builds}). Next gate: load "
+                f"'{(job.get('colours') or ['?'])[0]}', clear the bed, then python -m farm start {run.dir}")
 
 
-def _run_stages(args, job, job_path, printer, run, rec):
-    shutil.copy(job_path, run.path("job.json"))
-    profile = profiles.get(job["profile"]) if job.get("profile") else profiles.legacy(printer, job["material"])
-    run.log(f"run: {job['name']} on {printer.name} with profile {profile.id} -> {run.dir}")
-    if not profile.confirmed:
-        run.log(f"run: profile {profile.id} is UNCONFIRMED ({profile.note}): review only, not for production")
-
-    params = dict(job["likhan"])
-    # size pieces for the printer it will actually print on, not the form default
-    params["bed_width_mm"] = printer.bed_max[0] - printer.bed_min[0]
-    params["bed_depth_mm"] = printer.bed_max[1] - printer.bed_min[1]
-    font = config.FONTS_DIR / job["font"] if job.get("font") else None
-    change_zs = [params["base_thickness_mm"] if z == "base_top" else float(z) for z in job.get("colour_changes", [])]
-
-    # "plates": several labels on ONE bed (one STL each, arranged together); else one design, one or more
-    # auto-split pieces, each its own bed
-    if job.get("plates"):
-        # a plate is a label, or {"text": ..., <likhan overrides>} e.g. a smaller font_size_mm for the CH row
-        plates = [pl if isinstance(pl, dict) else {"text": pl} for pl in job["plates"]]
-        stls = [s for pl in plates
-                for s in likhan.generate(run, config.LIKHAN_URL, {**params, **pl}, str(font) if font else None)]
-        beds = [stls]
-    else:
-        beds = [[s] for s in likhan.generate(run, config.LIKHAN_URL, params, str(font) if font else None)]
-    rec.generated()
-
-    outputs = []
-    for bed in beds:
-        out, cmd, colour_layers = slicer.slice_model(run, printer, bed, profile.material, job["layer_height"],
-                                                     change_zs, profile=profile)
-        facts = gcode.validate(run, out, printer, change_zs,
-                               max_flow=job.get("max_volumetric_speed", profile.max_volumetric))
-        proj = project.export_project(run, cmd, out, colour_layers, job.get("colour_hex", []))
-        rec.build_sliced(out, facts, proj)
-        outputs.append(out)
-
-    if args.upload:
-        if not profile.confirmed:
-            run.fail(f"profile {profile.id} is unconfirmed ({profile.note}); not uploading")
-        remotes = [moonraker.upload(run, printer, out, job.get("upload_folder", "farm")) for out in outputs]
-        run.manifest["uploaded"] = remotes
-        rec.uploaded(remotes)
-    run.manifest["result"] = "ok"
-    run.manifest["colours"] = job.get("colours", [])
-    run.save()
-    run.log(f"run: done. Next gate: load '{(job.get('colours') or ['?'])[0]}', clear the bed, then "
-            f"python -m farm start {run.dir}")
+def cmd_submit(args):
+    from . import worker
+    job_path = Path(args.job)
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    if printers.get(job["printer"]).readonly:
+        sys.exit(f"{job['printer']} is watch-only; no jobs are sent to it")
+    con = db.connect()
+    order_id, run = pipeline.submit_job_file(con, job, job_path)
+    ids = [r[0] for r in con.execute("SELECT id FROM jobs WHERE order_id=? ORDER BY id", (order_id,))]
+    for job_id in ids:
+        worker.enqueue(con, "generate", job_id)
+    print(f"order {order_id}: {len(ids)} job(s) queued for the worker; run folder {run.dir}")
 
 
 def cmd_start(args):
@@ -128,6 +107,15 @@ def cmd_monitor(args):
         print(f"{level}\t{text.replace(chr(10), chr(92) + 'n')}")
 
 
+def cmd_worker(args):
+    from . import worker
+    if args.alive:
+        ok = worker.alive(db.connect())
+        print("worker alive" if ok else "worker heartbeat stale or missing")
+        sys.exit(0 if ok else 1)
+    worker.loop(once=args.once)
+
+
 def cmd_db(args):
     from . import db
     from .runlog import RUNS_DIR
@@ -168,6 +156,8 @@ def main():
     r = sub.add_parser("run")
     r.add_argument("job")
     r.add_argument("--upload", action="store_true")
+    sb = sub.add_parser("submit")
+    sb.add_argument("job")
     s = sub.add_parser("start")
     s.add_argument("run_dir")
     t = sub.add_parser("status")
@@ -181,6 +171,9 @@ def main():
     sub.add_parser("doctor")
     pc = sub.add_parser("presets")
     pc.add_argument("action", choices=["check"])
+    wk = sub.add_parser("worker")
+    wk.add_argument("--once", action="store_true", help="run pending tasks, then exit")
+    wk.add_argument("--alive", action="store_true", help="exit 0 if the worker's heartbeat is fresh")
     d = sub.add_parser("db")
     d.add_argument("action", choices=["init", "import-runs"])
     m = sub.add_parser("monitor")
@@ -192,7 +185,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit}[args.cmd](args)
 
 
 if __name__ == "__main__":
