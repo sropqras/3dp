@@ -158,6 +158,26 @@ MIGRATIONS = [
         actor TEXT NOT NULL, at REAL NOT NULL, undone_by TEXT, undone_at REAL);
     ALTER TABLE nas_files ADD COLUMN first_seen REAL
     """,
+    # 10: NAS catalogue 2.0 (farm/nasview.py): farm-side categories + rules, tags, preview cache, saved views, status
+    """
+    CREATE TABLE IF NOT EXISTS nas_categories (
+        id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, colour TEXT NOT NULL DEFAULT '', pos INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS nas_rules (
+        id INTEGER PRIMARY KEY, category_id INTEGER NOT NULL REFERENCES nas_categories(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('folder', 'file', 'match')), pattern TEXT NOT NULL,
+        pos INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL DEFAULT '', UNIQUE (kind, pattern));
+    CREATE TABLE IF NOT EXISTS nas_tags (
+        path TEXT NOT NULL, tag TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'auto', PRIMARY KEY (path, tag));
+    CREATE INDEX IF NOT EXISTS nas_tags_tag ON nas_tags(tag);
+    CREATE TABLE IF NOT EXISTS nas_meta (
+        path TEXT PRIMARY KEY, size INTEGER, mtime REAL, thumb TEXT, preview TEXT, triangles INTEGER, bbox TEXT,
+        thumb_from TEXT, warmed_at REAL, error TEXT, wanted REAL);
+    CREATE TABLE IF NOT EXISTS nas_views (
+        id INTEGER PRIMARY KEY, name TEXT NOT NULL, spec TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 1,
+        pos INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL);
+    CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT, at REAL);
+    ALTER TABLE nas_files ADD COLUMN category_id INTEGER
+    """,
 ]
 
 

@@ -76,6 +76,18 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
   - **`farm/nas.py`**:
     - Catalogues `\\OMV\3dprinting\3dprinting\Project Files` (and `ProductImages`) with `rsync --list-only` over the OMV rsync daemon.
     - Never copies in bulk; Import fetches one file.
+    - A failed or partial listing (rsync 23/24) never marks files gone. An unchanged listing (same hash) writes
+      nothing. `nas.status()` says online/offline, and offline the catalogue and previews come from the cache.
+    - **Catalogue 2.0** (Inventory → NAS catalogue): folder tree / farm categories, facet chips, Grid / Table /
+      Matrix, saved views, pack drawer.
+      - `farm/nasindex.py`: categories as rules (folder subtree < file override; filename `match`), seeded once,
+        and tags from names.
+      - `farm/nasview.py`: query, facets, tree, packs and edits (person only).
+      - `farm/meshprev.py`: stdlib STL/3MF previews and a PNG rasteriser.
+      - Previews live in `data/nas/_thumbs` and `_preview`, valid while size and mtime match; full meshes go in
+        the bounded `_cache` (10 GB).
+      - jobctl `farm-nas-thumbs` (01:30, 50 min) warms them. The web server's builder thread does what people
+        are looking at, two builds at once at most.
   - **`farm/projects.py`**:
     - A large order is groups → parts × qty.
     - A part is made from a New-job template (its label personalises it), re-prints an artefact, or is a bought item.

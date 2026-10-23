@@ -291,6 +291,25 @@ def cmd_inventory(args):
         print(nas.import_file(con, args.path, "cli:" + os.environ.get("USER", "?")))
 
 
+def cmd_nas(args):
+    """The OMV catalogue: scan (list, ~1 s), status, warm (previews within a time budget)."""
+    from . import nas
+    con = db.connect()
+    if args.action == "scan":
+        nas.scan(con, log=lambda m: print("OK   " + m))
+    elif args.action == "status":
+        print(json.dumps(nas.status(con), indent=2))
+        print(json.dumps({"previews": con.execute("SELECT COUNT(*) FROM nas_meta WHERE thumb IS NOT NULL").fetchone()[0],
+                          "errors": con.execute("SELECT COUNT(*) FROM nas_meta WHERE error IS NOT NULL").fetchone()[0]}))
+    elif args.action == "warm":
+        try:
+            nas.scan(con, log=lambda m: print("OK   " + m))
+        except Exception as e:            # offline: nothing to warm from, the catalogue stays as it was
+            print(f"WARN nas offline: {str(e)[:120]}")
+            return
+        nas.warm(con, minutes=args.minutes, max_bytes=int(args.max_mb * 1024 * 1024), log=lambda m: print("OK   " + m))
+
+
 def cmd_doctor(args):
     from . import doctor
     n = doctor.report()
@@ -350,6 +369,10 @@ def main():
     iv = sub.add_parser("inventory", help="refresh the Inventory from the printers (read-only) and the NAS list")
     iv.add_argument("action", choices=["import", "sync", "nas-import"])
     iv.add_argument("path", nargs="?", help="nas-import: the NAS path as the catalogue shows it")
+    nv = sub.add_parser("nas", help="OMV catalogue: scan | status | warm (thumbnails + previews)")
+    nv.add_argument("action", choices=["scan", "status", "warm"])
+    nv.add_argument("--minutes", type=float, default=30)
+    nv.add_argument("--max-mb", type=float, default=80)
     m = sub.add_parser("monitor")
     m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))
     v = sub.add_parser("serve")
@@ -359,7 +382,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup, "config": cmd_config, "inventory": cmd_inventory}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup, "config": cmd_config, "inventory": cmd_inventory, "nas": cmd_nas}[args.cmd](args)
 
 
 if __name__ == "__main__":

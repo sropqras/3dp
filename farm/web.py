@@ -28,6 +28,9 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /api/inventory?by=printer|project|maker&q=&printed=1&products=1   artefacts folded into designs (farm/inventory.py)
   GET  /api/inventory/design?d=   a design's prints     GET /api/artefacts/<id>/thumb   G-code thumbnail from its printer
   GET  /api/nas?q=&matched=1&folder=&new=1   the OMV project-files catalogue vs the printers (farm/nas.py)
+  GET  /api/nas/query?spec=<json> | tree | status | views | pack?folder= | thumb?path= | model?path=[&full=1]
+  POST /api/nas/categories {action..} | assign {category, folders[], paths[]} | tags {paths[], add[], remove[]}
+       | views {action..}       (farm/nasview.py; catalogue edits are a person's, OMV is never written)
   POST /api/inventory/refresh | /api/nas/scan | /api/nas/import {path} | /api/prints/<id>/mark {quality, note}
   POST /api/artefacts/<id>/send {printer, profile, layer_height}   onto a printer via Review & queue
   POST /api/artefacts/<id>/product {name, description, printer, profile, layer_height, photo}   the portfolio (a person)
@@ -52,7 +55,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import (audit, cfgchange, config, db, fleet, gate, inventory, jobs, makers, model3mf, monitor, moonraker, nas, net, ops,
-               pipeline, printers, profiles, projects, spools, tracker, watch, worker)
+               nasview, pipeline, printers, profiles, projects, spools, tracker, watch, worker)
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -657,6 +660,42 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"{}")
         if path == "/api/templates":
             return self._send(200, json.dumps(templates()).encode())
+        if path in ("/api/nas/query", "/api/nas/tree", "/api/nas/status", "/api/nas/views", "/api/nas/pack",
+                    "/api/nas/thumb", "/api/nas/model"):
+            q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).items()}
+            con = db.connect()
+            try:
+                if path == "/api/nas/query":
+                    out = nasview.query(con, json.loads(q.get("spec") or "{}"))
+                elif path == "/api/nas/tree":
+                    out = nasview.tree(con)
+                elif path == "/api/nas/status":
+                    out = nas.status(con)
+                elif path == "/api/nas/views":
+                    out = nasview.views(con)
+                elif path == "/api/nas/pack":
+                    out = nasview.pack(con, q.get("folder", ""))
+                elif path == "/api/nas/thumb":
+                    t = nas.thumb(con, q.get("path", ""))
+                    if t is None:
+                        return self._send(404, b"{}")
+                    self.send_response(200)
+                    self.send_header("Content-Type", t[1])
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Cache-Control", "max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(t[0])
+                    return None
+                else:
+                    return self._send(200, nas.preview_blob(con, q.get("path", ""), q.get("full") == "1"),
+                                      "application/octet-stream")
+                return self._send(200, json.dumps(out, default=str).encode())
+            except (LookupError, ValueError, KeyError) as e:
+                return self._send(404 if isinstance(e, LookupError) else 400, json.dumps({"error": str(e)}).encode())
+            except RuntimeError as e:
+                return self._send(503, json.dumps({"error": str(e)}).encode())
+            finally:
+                con.close()
         if path in ("/api/inventory", "/api/inventory/design", "/api/nas"):
             q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).items()}
             con = db.connect()
@@ -883,6 +922,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             finally:
                 con.close()
+        if path in ("/api/nas/categories", "/api/nas/assign", "/api/nas/tags", "/api/nas/views"):
+            con = db.connect()
+            try:
+                body = self._json_body()
+                who = "ui:" + (str(body.get("operator") or "").strip()[:40] or "unknown")
+                fn = {"/api/nas/categories": nasview.category_edit, "/api/nas/assign": nasview.assign,
+                      "/api/nas/tags": nasview.tag, "/api/nas/views": nasview.view_edit}[path]
+                return self._send(200, json.dumps(fn(con, body, who), default=str).encode())
+            except PermissionError as e:
+                return self._send(403, json.dumps({"error": str(e)}).encode())
+            except (LookupError, ValueError, KeyError, TypeError) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
+            finally:
+                con.close()
         if path in ("/api/inventory/refresh", "/api/nas/scan", "/api/nas/import") or (
                 len(parts) == 4 and parts[:2] in (["api", "prints"], ["api", "artefacts"], ["api", "products"]) and parts[2].isdigit()):
             con = db.connect()
@@ -945,4 +998,20 @@ def serve(host: str, port: int):
         print(f"moved {n} spool(s) from {INVENTORY.name} into the farm DB")
     con.close()
     print(f"farm control room on http://{host}:{port}  (Ctrl+C to stop)")
+    threading.Thread(target=_preview_builder, daemon=True, name="nas-previews").start()
     ThreadingHTTPServer((host, port), Handler).serve_forever()
+
+
+def _preview_builder():
+    """Thumbnails people are looking at, one at a time (nas.build_wanted); idle-polls every few seconds."""
+    while True:
+        try:
+            con = db.connect()
+            try:
+                while nas.build_wanted(con):
+                    pass
+            finally:
+                con.close()
+        except Exception:
+            pass
+        time.sleep(4)

@@ -12,6 +12,7 @@ Current as of 2026-10-23. aali-cli is the only place work happens: the Windows w
 | Serious-error + health monitor (ops Telegram bot) | jobctl `farm-monitor`, every 2 min |
 | Nightly config snapshots + Inventory refresh + NAS catalogue | jobctl `farm-backup`, 03:10 |
 | Hourly Inventory + NAS sync (new NAS models → one silent Telegram note) | jobctl `farm-inventory`, :25 |
+| NAS previews (thumbnail + light 3D per model, originals not kept) | jobctl `farm-nas-thumbs`, 01:30, 50 min |
 | Maker apps | likhan :4111, lithophane :5111, namakdani :6111, lamp/plaque :8111, holder :9111 |
 | Slicer | Flathub PrusaSlicer 2.9.6 (the default on Linux; `python3 -m farm doctor` says "ready to produce") |
 
@@ -27,7 +28,9 @@ After a `git pull`: `~/agent_workspace/infrastructure/farm_control/stop.sh && wo
   - Select parts, then **Generate** (from a template) or **Send to printer**. Both only prepare: every bed waits in Review & queue.
 - **Inventory**: every design the farm has made or holds, grouped by printer, project or maker.
   - Shows each design's prints (with Good/Bad marks) and its portfolio product.
-  - The **NAS catalogue** matrix lists `\\OMV\3dprinting\3dprinting\Project Files` against the printers, with a one-file **Import**.
+  - The **NAS catalogue** (2.0, 2026-10-23): folder tree / farm categories, facet chips, Grid with thumbnails /
+    Table / Matrix, saved views, a pack drawer with 3D preview, Import / Send / Add to project. Previews warm nightly
+    (jobctl `farm-nas-thumbs`); works from the cache when OMV is off.
 - **Spools**: spool stock. Prints deduct from it automatically.
 - **Printers** (`/printers`): fleet health, audit with **Stage fix / Stage all fixes**, gated Apply and rollback.
   - Also: Telegram pack, service restarts, maintenance, onboarding (`docs/PRINTERS_TAB.md`).

@@ -196,3 +196,35 @@ Amir's answers (2026-10-23):
   - run `farm inventory import` against the real printers, and check the S1 Pro shows about 135 files and its history counts match Fluidd;
   - the Qabrastaan project grid matches the current batch grid before `batch_view` is removed.
 - **Also:** full unittest, `tests/golden.py check`, then a farm-web/worker restart and the CLAUDE.md, SERVER.md and PROJECT.md notes.
+
+
+## NAS catalogue 2.0 (2026-10-23)
+
+Plan: `~/.claude/plans/graceful-mapping-flute.md`. Built:
+
+- **The view:**
+  - a Folders / Categories sidebar with counts and "new" dots;
+  - a breadcrumb and an OMV online/offline pill;
+  - facet chips with counts: type, printed OK / never / failed, printer, new, imported, has pictures, duplicates,
+    category, tags;
+  - sort, and Grid (thumbnails) / Table / Matrix (the per-printer table);
+  - saved views as pinned tabs.
+- **Pack drawer** (click a card):
+  - 3D preview (the viewer, a lighter mesh, plus "Full resolution");
+  - the folder's pictures, its files and the prints of its designs;
+  - category and tags;
+  - Import / Send / Add to project (group "From NAS").
+- **Categories:** seeded from the 86 top folders into 13 categories.
+  - Drag folders or ticked cards onto a category.
+  - A per-file move is an override.
+  - Deleting a category sends its files to Uncategorised.
+  - OMV is never written.
+- **Tags from names:** Thingiverse id (with a link), printer prefix (`CE3PRO_`), size, version, copy, material,
+  calibration, CAD source. A person's own tags survive rescans.
+- **Previews:** a 3MF's own slicer thumbnail, or a stdlib flat-shaded raster (top-down for flat pieces); the light
+  mesh is ≤ 120k triangles.
+  - Warmed nightly. The first 2-minute run built 252.
+  - Files over 80 MB are on demand only.
+- **Offline:** everything shown comes from the DB and the preview cache. Import and full-resolution 3D wait for OMV.
+- **Tests:** `tests/test_nas_catalogue.py` (offline). The browser check is `tests/ui_nas.cjs`, read-only against a
+  running server.

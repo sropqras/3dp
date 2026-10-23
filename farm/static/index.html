@@ -123,6 +123,51 @@ nav.tabs a.on { color: var(--text); border-color: var(--line); background: var(-
 .photos label:has(input:checked) { border-color: var(--teal); } .photos input { position: absolute; top: 4px; left: 4px; }
 .photos img { width: 100%; height: 100%; object-fit: cover; } .pc { font-size: 11px; } .pc b { color: var(--green); } .pc i { color: var(--red); font-style: normal; } .pc u { color: var(--amber); text-decoration: none; }
 .nas td, .nas th { white-space: nowrap; } .nas td.p { overflow-wrap: anywhere; white-space: normal; min-width: 260px; }
+/* NAS catalogue 2.0: folder/category sidebar + facets + grid/table */
+.nasx { display: grid; grid-template-columns: 270px 1fr; gap: 14px; align-items: start; }
+.nas-side { padding: 10px; position: sticky; top: 8px; max-height: calc(100vh - 24px); overflow: auto; }
+.nas-side .row { display: flex; gap: 6px; align-items: center; }
+.nt { list-style: none; margin: 0; padding-left: 12px; } .nt.root { padding-left: 0; }
+.nt summary, .nt .leaf { cursor: pointer; padding: 2px 4px; border-radius: 6px; display: flex; gap: 6px; align-items: baseline; }
+.nt summary:hover, .nt .leaf:hover, .ncat:hover { background: rgba(255,255,255,.05); }
+.nt .on, .ncat.on { background: rgba(45,212,191,.15); color: var(--teal); }
+.nt .cnt, .ncat .cnt { margin-left: auto; color: var(--dim); font-size: 12px; }
+.nt .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); display: inline-block; }
+.ncat { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.ncat i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.ncat.drop, .nt .drop { outline: 2px dashed var(--teal); }
+.nas-views { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.nas-views .vt { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: 12px; background: var(--panel); }
+.nas-views .vt.on { border-color: var(--teal); color: var(--teal); }
+.nas-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.crumb a { color: var(--blue); cursor: pointer; } .crumb { font-size: 13px; }
+.pill { border-radius: 999px; padding: 2px 10px; font-size: 12px; border: 1px solid var(--line); }
+.pill.ok { color: var(--green); } .pill.off { color: var(--amber); border-color: var(--amber); }
+.facets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip.f { cursor: pointer; user-select: none; } .chip.f.on { background: rgba(45,212,191,.18); color: var(--teal); border-color: var(--teal); }
+.chip.f small { color: var(--dim); margin-left: 4px; }
+.ngrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.ncard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; cursor: pointer; }
+.ncard:hover { border-color: var(--teal); }
+.ncard .th { aspect-ratio: 1; background: #eeeeec; display: grid; place-items: center; }
+.ncard .th img { width: 100%; height: 100%; object-fit: contain; }
+.ncard .th .ty { color: #667; font: 700 22px system-ui; }
+.ncard .meta { padding: 8px 10px; font-size: 12px; } .ncard .nm { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.ncard .tick { position: absolute; top: 8px; left: 8px; width: 18px; height: 18px; }
+.ncard .badges { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; }
+.ncard .badges span { background: rgba(10,14,22,.8); color: #fff; border-radius: 6px; padding: 1px 6px; font-size: 11px; }
+.ntable { width: 100%; border-collapse: collapse; } .ntable th { position: sticky; top: 0; background: var(--panel2); cursor: pointer; text-align: left; }
+.ntable td, .ntable th { padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.ntable tr:hover td { background: rgba(255,255,255,.03); }
+.nbulk { position: sticky; bottom: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin-top: 10px; }
+#nas-pack .gal { display: flex; gap: 8px; flex-wrap: wrap; } #nas-pack .gal img { height: 110px; border-radius: 8px; }
+#nas-pack ul { margin: 4px 0; padding-left: 18px; }
+.nbulk[hidden] { display: none; }
+dialog#nas-pack { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
+dialog#nas-pack::backdrop { background: rgba(3,6,12,.72); }
+dialog#nas-pack .vh { padding: 12px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
+dialog#nas-pack h3 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+@media (max-width: 860px) { .nasx { grid-template-columns: 1fr; } .nas-side { position: static; max-height: 40vh; } }
 .nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
@@ -269,6 +314,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     <div class="stamp">The server checks everything again (approval, file on the printer, audit, printer idle) before it starts.</div>
   </div>
 </dialog>
+<dialog id="nas-pack"><div class="vh" style="display:flex;gap:10px;align-items:center"><b id="np-title"></b><button class="ghost" style="margin-left:auto" onclick="$('nas-pack').close()">Close</button></div><div id="np-body" class="pad"></div></dialog>
 <dialog id="viewer">
   <div class="vh"><span class="name" id="v-title">Model</span><select id="v-file" onchange="loadModel(viewerRun, this.value)"></select>
     <span id="v-layerpick" class="stamp"></span>
@@ -638,11 +684,11 @@ const opName = () => { try { return localStorage.getItem("operator") || ""; } ca
 function ivView(m) {
   ivMode = m;
   $("iv-v-designs").classList.toggle("ghost", m !== "designs"); $("iv-v-nas").classList.toggle("ghost", m !== "nas");
-  $("iv-designs-ctl").hidden = m !== "designs"; $("iv-nas-ctl").hidden = m !== "nas";
+  $("iv-designs-ctl").hidden = m !== "designs"; $("iv-nas-ctl").hidden = true;
   $("iv-refresh").textContent = m === "nas" ? "Scan the NAS" : "Refresh from printers";
   ivReload();
 }
-function ivReload() { return ivMode === "nas" ? loadNas() : loadInventory(); }
+function ivReload() { return ivMode === "nas" ? nasLoad() : loadInventory(); }
 async function ivRefresh() {
   $("iv-msg").textContent = ivMode === "nas" ? "listing the NAS (names only)…" : "reading every printer's files and history…";
   const r = await fetch(ivMode === "nas" ? "/api/nas/scan" : "/api/inventory/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -677,7 +723,9 @@ function artCard(d) {
 async function loadInventory() {
   const qs = new URLSearchParams({ by: $("iv-by").value, q: $("iv-q").value, printed: $("iv-printed").checked ? "1" : "",
     products: $("iv-products").checked ? "1" : "" });
-  IV = await (await fetch("/api/inventory?" + qs)).json();
+  const iv = await (await fetch("/api/inventory?" + qs)).json();
+  if (ivMode !== "designs") return;            // switched to the NAS catalogue meanwhile: don't paint over it
+  IV = iv;
   REF = [];
   $("iv-msg").textContent = `${IV.total} designs`;
   $("inventory").innerHTML = IV.groups.map((g) => {
@@ -762,12 +810,11 @@ async function saveProduct(del) {
 async function loadNas() {
   const qs = new URLSearchParams({ q: $("iv-q").value, matched: $("nas-matched").checked ? "1" : "", folder: $("nas-folder").value,
                                    new: $("nas-new").checked ? "1" : "" });
-  NAS = await (await fetch("/api/nas?" + qs)).json();
-  REF = [];
+  NAS = await (await fetch("/api/nas?" + qs)).json();   // REF kept: the catalogue sidebar's handlers use it too
   const sel = $("nas-folder").value;
   $("nas-folder").innerHTML = `<option value="">all</option>` + NAS.folders.filter((f) => f).map((f) => `<option ${f === sel ? "selected" : ""}>${esc(f)}</option>`).join("");
   $("iv-msg").textContent = NAS.scanned_at ? `${NAS.total} files on the NAS · ${NAS.matched} shown sent · ${NAS.new} new in ${NAS.new_days} days · scanned ${new Date(NAS.scanned_at * 1000).toLocaleString()}` : "not scanned yet - Scan the NAS";
-  $("inventory").innerHTML = `<div class="card" style="overflow-x:auto"><table class="nas"><tr><th>NAS file</th><th></th>${NAS.printers.map((p) => `<th>${esc(p)}</th>`).join("")}<th></th></tr>
+  ($("nas-results") || $("inventory")).innerHTML = `<div class="card" style="overflow-x:auto"><table class="nas"><tr><th>NAS file</th><th></th>${NAS.printers.map((p) => `<th>${esc(p)}</th>`).join("")}<th></th></tr>
     ${NAS.rows.map((r) => `<tr><td class="p">${r.printable && !r.artefact_id ? `<input type="checkbox" class="nas-tick" data-ref="${ref(r.path)}"> ` : ""}${r.new ? `<span class="chip warn">new</span> ` : ""}${esc(r.path)}</td><td class="stamp">${esc(r.ext)} · ${(r.size / 1e6).toFixed(1)} MB</td>
       ${NAS.printers.map((p) => `<td class="pc">${r.printers[p] ? pcounts(r.printers[p]) : ""}</td>`).join("")}
       <td>${r.artefact_id ? `<span class="stamp">imported ✓</span> <button class="mini" onclick="openSendArtefact(${r.artefact_id}, ${ref(r.path.split("/").pop())})">Send…</button>` : r.printable ? `<button class="mini ghost" onclick="nasImport(${ref(r.path)}, this)">Import</button>` : `<span class="stamp" title="export an STL or 3MF to print it">catalogue only</span>`}</td></tr>`).join("")}
@@ -794,6 +841,248 @@ async function nasImport(i, btn) {
   const out = await r.json().catch(() => ({}));
   if (!r.ok) { alert(out.error || r.status); btn.disabled = false; btn.textContent = "Import"; return; }
   btn.outerHTML = `<span class="stamp">imported ✓</span> <button class="mini" onclick="openSendArtefact(${out.artefact}, ${ref(out.title)})">Send to printer…</button>`;
+}
+
+// ---------------------------------------------------------------- NAS catalogue 2.0 (farm/nasview.py)
+// OMV keeps its folders; the farm adds categories, tags and saved views on top. Grid (thumbnails), Table, Matrix
+// (the per-printer table above). Edits are a person's (the 'You' box); nothing is written to the NAS.
+const NS = { spec: { sort: "name" }, side: "folders", view: "grid", sel: new Set(), rows: [], total: 0, data: null, tree: null, views: [] };
+try { Object.assign(NS, JSON.parse(localStorage.getItem("nasState") || "{}"), { sel: new Set(), rows: [] }); } catch (e) {}
+function nasSave() { try { localStorage.setItem("nasState", JSON.stringify({ spec: NS.spec, side: NS.side, view: NS.view })); } catch (e) {} }
+const TYPE_ICON = (ext) => `<span class="ty">${esc(ext.toUpperCase())}</span>`;
+const fmtMB = (b) => b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB";
+
+async function nasLoad(more) {
+  if (!more) { NS.spec.offset = 0; NS.rows = []; }
+  NS.spec.q = $("iv-q").value;
+  const qs = encodeURIComponent(JSON.stringify(NS.spec));
+  const [data, tree, views] = await Promise.all([
+    (await fetch(`/api/nas/query?spec=${qs}`)).json(),
+    more || NS.tree ? NS.tree : (await fetch("/api/nas/tree")).json(),
+    more ? NS.views : (await fetch("/api/nas/views")).json()]);
+  if (ivMode !== "nas") return;                // switched away meanwhile
+  NS.data = data; NS.tree = tree; NS.views = views; NS.total = data.total;
+  NS.rows = NS.rows.concat(data.rows || []);
+  nasSave();
+  if (!more || !$("nas-results")) nasRender(); else nasRenderResults();
+}
+function nasRender() {
+  const d = NS.data, st = d.status || {};
+  REF = [];                                    // every handler below is rebuilt
+  $("iv-msg").textContent = "";
+  $("inventory").innerHTML = `<div class="nasx">
+    <aside class="card nas-side">
+      <div class="row" style="margin-bottom:8px"><span class="seg"><button class="mini ${NS.side === "folders" ? "" : "ghost"}" onclick="NS.side='folders';nasRender()">Folders</button><button class="mini ${NS.side === "cats" ? "" : "ghost"}" onclick="NS.side='cats';nasRender()">Categories</button></span>
+        ${NS.side === "cats" ? `<button class="mini ghost" title="new category" onclick="nasCatNew()">+</button>` : ""}</div>
+      <div id="nas-side-body">${NS.side === "folders" ? nasTreeHtml() : nasCatsHtml()}</div>
+      <div class="stamp" style="margin-top:8px">${NS.side === "cats" ? "drag folders or ticked cards onto a category" : "OMV's own folders (never changed)"}</div>
+    </aside>
+    <div>
+      <div class="nas-views">${NS.views.filter((v) => v.pinned).map((v) => `<span class="vt ${NS.viewId === v.id ? "on" : ""}" onclick="nasUseView(${v.id})" title="right-click to delete" oncontextmenu="event.preventDefault();nasViewDel(${v.id})">${esc(v.name)}</span>`).join("")}
+        <span class="vt" onclick="nasViewSave()">+ Save view</span>${NS.viewId ? `<span class="vt" onclick="nasClear()">clear</span>` : ""}</div>
+      <div class="nas-bar">
+        <span class="crumb">${nasCrumb()}</span>
+        <span class="pill ${st.online ? "ok" : "off"}" title="${esc(st.last_error || "")}">${st.online ? "OMV online" : "OMV offline - showing the cache"}${st.last_ok ? " · " + new Date(st.last_ok * 1000).toLocaleTimeString() : ""}</span>
+        <span style="margin-left:auto">${d.total} model${d.total === 1 ? "" : "s"}</span>
+        <select onchange="NS.spec.sort=this.value;nasLoad()">${[["name", "Name"], ["folder", "Folder"], ["size", "Size"], ["modified", "Modified"], ["first_seen", "Newest on NAS"], ["prints", "Most printed"]].map(([k, l]) => `<option value="${k}" ${NS.spec.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <button class="mini ghost" title="reverse" onclick="NS.spec.desc=!NS.spec.desc;nasLoad()">${NS.spec.desc ? "↓" : "↑"}</button>
+        <span class="seg">${["grid", "table", "matrix"].map((v) => `<button class="mini ${NS.view === v ? "" : "ghost"}" onclick="nasSetView('${v}')">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</span>
+      </div>
+      <div class="facets">${nasFacets()}</div>
+      <div id="nas-results"></div>
+      <div class="card nbulk" id="nas-bulk" hidden></div>
+    </div></div>`;
+  nasRenderResults();
+}
+function nasCrumb() {
+  const f = NS.spec.folder || "", parts = f ? f.split("/") : [];
+  const cat = NS.spec.category ? (NS.data.categories.find((c) => c.id === +NS.spec.category) || {}).name : "";
+  return `<a onclick="NS.spec.folder='';NS.spec.category='';nasLoad()">All</a>` +
+    parts.map((p, i) => ` / <a onclick="NS.spec.folder=${ref(parts.slice(0, i + 1).join("/"))};NS.spec.folder=REF[NS.spec.folder];nasLoad()">${esc(p)}</a>`).join("") +
+    (cat ? ` · <b>${esc(cat)}</b> <a onclick="NS.spec.category='';nasLoad()">×</a>` : "");
+}
+function nasTreeHtml() {
+  const t = NS.tree, cur = NS.spec.folder || "";
+  const node = (n) => {
+    const open = cur === n.path || cur.startsWith(n.path + "/");
+    const label = `<span class="${cur === n.path ? "on" : ""}" draggable="true" ondragstart="nasDrag(event,'folder',${ref(n.path)})" onclick="event.preventDefault();nasFolder(${ref(n.path)})">${esc(n.name)}</span>${n.new ? `<span class="dot" title="${n.new} new"></span>` : ""}<span class="cnt">${n.count}</span>`;
+    return n.children.length ? `<li><details ${open ? "open" : ""}><summary>${label}</summary><ul class="nt">${n.children.map(node).join("")}</ul></details></li>`
+      : `<li><div class="leaf">${label}</div></li>`;
+  };
+  return `<div class="leaf ${cur ? "" : "on"}" onclick="nasFolder(null)">All folders <span class="cnt">${t.count}</span></div><ul class="nt root">${t.children.map(node).join("")}</ul>`;
+}
+function nasCatsHtml() {
+  return NS.data.categories.map((c) => `<div class="ncat ${+NS.spec.category === c.id ? "on" : ""}" onclick="nasCat(${c.id})"
+      ondragover="event.preventDefault();this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="nasDrop(event,${c.id})">
+      <i style="background:${esc(c.colour || "#888")}"></i>${esc(c.name)}<span class="cnt">${c.count}</span>
+      <a class="stamp" title="rename / colour / delete" onclick="event.stopPropagation();nasCatEdit(${c.id})">✎</a></div>`).join("");
+}
+function nasFacets() {
+  const f = NS.data.facets, s = NS.spec, catName = (id) => (NS.data.categories.find((c) => c.id === +id) || {}).name || "?";
+  const chip = (on, label, n, act) => `<span class="chip f ${on ? "on" : ""}" onclick="${act}">${esc(label)}${n !== undefined ? `<small>${n}</small>` : ""}</span>`;
+  const out = [];
+  for (const [e, n] of Object.entries(f.ext)) out.push(chip((s.ext || []).includes(e), "." + e, n, `nasToggle('ext',${ref(e)})`));
+  out.push(chip(s.printed === "ok", "printed OK", f.printed.ok || 0, `nasSet('printed','ok')`));
+  out.push(chip(s.printed === "never", "never printed", f.printed.never || 0, `nasSet('printed','never')`));
+  out.push(chip(s.printed === "failed", "had failures", f.printed.failed || 0, `nasSet('printed','failed')`));
+  for (const [p, n] of Object.entries(f.printer)) out.push(chip(s.printer === p, "on " + p, n, `nasSet('printer',${ref(p)})`));
+  for (const [k, l] of [["new", "new"], ["imported", "imported"], ["pictures", "has pictures"], ["dup", "duplicates"]]) out.push(chip(s[k], l, f[k], `nasFlag('${k}')`));
+  if (NS.side !== "cats") for (const [c, n] of Object.entries(f.category).slice(0, 8)) out.push(chip(+s.category === +c, catName(c), n, `nasCat(${+c})`));
+  for (const [t, n] of Object.entries(f.tags).slice(0, 14)) out.push(chip((s.tags || []).includes(t), "#" + t, n, `nasToggle('tags',${ref(t)})`));
+  return out.join("");
+}
+function nasToggle(k, i) { const v = REF[i], a = NS.spec[k] || []; NS.spec[k] = a.includes(v) ? a.filter((x) => x !== v) : a.concat([v]); NS.viewId = null; nasLoad(); }
+function nasSet(k, v) { if (typeof v === "number") v = REF[v]; NS.spec[k] = NS.spec[k] === v ? "" : v; NS.viewId = null; nasLoad(); }
+function nasFlag(k) { NS.spec[k] = !NS.spec[k]; NS.viewId = null; nasLoad(); }
+function nasFolder(i) { NS.spec.folder = i === null ? "" : REF[i]; NS.viewId = null; nasLoad(); }
+function nasCat(id) { NS.spec.category = +NS.spec.category === id ? "" : id; NS.viewId = null; nasLoad(); }
+function nasClear() { NS.spec = { sort: "name" }; NS.viewId = null; $("iv-q").value = ""; nasLoad(); }
+function nasSetView(v) {
+  NS.view = v; nasSave();
+  $("iv-nas-ctl").hidden = v !== "matrix";
+  if (v === "matrix") { nasRender(); loadNas(); } else nasRender();
+}
+function nasRenderResults() {
+  const box = $("nas-results");
+  if (!box) return;
+  $("iv-nas-ctl").hidden = NS.view !== "matrix";
+  if (NS.view === "matrix") return loadNas();
+  const more = NS.rows.length < NS.total ? `<div style="text-align:center;margin:12px"><button class="ghost" id="nas-more" onclick="NS.spec.offset=NS.rows.length;nasLoad(true)">Show more (${NS.total - NS.rows.length})</button></div>` : "";
+  if (!NS.rows.length) { box.innerHTML = `<div class="card pad dim">Nothing matches. ${NS.data.status && !NS.data.status.online ? "OMV is offline: this is the cached catalogue." : "Clear a chip or the search."}</div>`; return nasBulk(); }
+  if (NS.view === "table") {
+    const th = (k, l) => `<th onclick="NS.spec.sort='${k}';NS.spec.desc=NS.spec.sort==='${k}'&&!NS.spec.desc;nasLoad()">${l}${NS.spec.sort === k ? (NS.spec.desc ? " ↓" : " ↑") : ""}</th>`;
+    box.innerHTML = `<div class="card" style="overflow:auto;max-height:75vh"><table class="ntable"><tr><th></th>${th("name", "Name")}${th("folder", "Folder")}<th>Category</th>${th("size", "Size")}${th("modified", "Modified")}${th("prints", "Printed")}<th>Tags</th></tr>
+      ${NS.rows.map((r) => `<tr draggable="true" ondragstart="nasDrag(event,'file',${ref(r.path)})"><td><input type="checkbox" ${NS.sel.has(r.path) ? "checked" : ""} onclick="nasTick(${ref(r.path)}, this.checked)"></td>
+        <td><a onclick="nasOpen(${ref(r.path)})" style="cursor:pointer">${esc(r.name)}</a>${r.new ? ` <span class="chip warn">new</span>` : ""}</td><td class="dim">${esc(r.folder)}</td>
+        <td>${esc(nasCatName(r.category_id))}</td><td>${fmtMB(r.size)}</td><td class="dim">${new Date(r.mtime * 1000).toLocaleDateString()}</td>
+        <td>${Object.entries(r.printers).map(([p, c]) => `<span class="stamp" title="${esc(p)}">${esc(p.slice(0, 8))} ${pcounts(c)}</span>`).join(" ")}</td>
+        <td class="dim">${r.tags.slice(0, 4).map(esc).join(" ")}</td></tr>`).join("")}</table></div>${more}`;
+  } else {
+    box.innerHTML = `<div class="ngrid">${NS.rows.map((r) => `<div class="ncard" draggable="true" ondragstart="nasDrag(event,'file',${ref(r.path)})" onclick="nasOpen(${ref(r.path)})">
+        <input class="tick" type="checkbox" ${NS.sel.has(r.path) ? "checked" : ""} onclick="event.stopPropagation();nasTick(${ref(r.path)}, this.checked)">
+        <div class="badges">${r.new ? "<span>new</span>" : ""}${r.imported ? "<span>imported</span>" : ""}<span>${esc(r.ext)}</span></div>
+        <div class="th">${r.printable ? `<img loading="lazy" alt="" onload="this.style.opacity=1" src="/api/nas/thumb?path=${encodeURIComponent(r.path)}" onerror="nasThumbMiss(this, '${esc(r.ext)}')">` : TYPE_ICON(r.ext)}</div>
+        <div class="meta"><div class="nm">${esc(r.stem)}</div><div class="dim">${esc(r.folder || "(top)")} · ${fmtMB(r.size)}</div>
+          <div>${Object.entries(r.printers).map(([p, c]) => `<span class="stamp" title="${esc(p)}">${esc(p.slice(0, 7))} ${pcounts(c)}</span>`).join(" ")}</div></div></div>`).join("")}</div>${more}`;
+  }
+  nasBulk();
+}
+// a thumbnail not built yet: show the type, and ask again a few times while the server's builder works
+function nasThumbMiss(img, ext) {
+  const n = +(img.dataset.tries || 0);
+  if (n >= 5) { img.outerHTML = TYPE_ICON(ext); return; }
+  img.dataset.tries = n + 1; img.style.opacity = 0.15;
+  setTimeout(() => { if (img.isConnected) img.src = img.src.replace(/&r=\d+$/, "") + "&r=" + Date.now(); }, 12000 + 4000 * n);
+}
+const nasCatName = (id) => ((NS.data && NS.data.categories.find((c) => c.id === id)) || {}).name || "";
+function nasTick(i, on) { const p = REF[i]; on ? NS.sel.add(p) : NS.sel.delete(p); nasBulk(); }
+function nasBulk() {
+  const b = $("nas-bulk"); if (!b) return;
+  b.hidden = !NS.sel.size;
+  if (!NS.sel.size) return;
+  b.innerHTML = `<b>${NS.sel.size} ticked</b>
+    <select id="nas-bulk-cat"><option value="">category…</option>${NS.data.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
+    <button class="mini" onclick="nasAssign([], [...NS.sel], $('nas-bulk-cat').value)">Set category</button>
+    <input id="nas-bulk-tag" placeholder="tag" style="width:110px"><button class="mini ghost" onclick="nasTags([...NS.sel], $('nas-bulk-tag').value)">Add tag</button>
+    <button class="mini ghost" onclick="nasImportPaths([...NS.sel])">Import</button>
+    <button class="mini ghost" onclick="NS.sel.clear();nasRenderResults()">Clear</button>`;
+}
+function nasWho() {
+  let n = opName();
+  if (!n) { n = (prompt("Your name (recorded with catalogue edits):", "") || "").trim(); try { if (n) localStorage.setItem("operator", n); } catch (e) {} }
+  return n;
+}
+async function nasPost(url, body) {
+  const who = nasWho(); if (!who) return null;
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, operator: who }) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(out.error || r.status); return null; }
+  return out;
+}
+async function nasAssign(folders, paths, cat) {
+  if (!cat) { alert("Choose a category."); return; }
+  const r = await nasPost("/api/nas/assign", { category: +cat, folders, paths });
+  if (r) { NS.sel.clear(); NS.tree = null; nasLoad(); }
+}
+async function nasTags(paths, tag) { if (tag.trim() && await nasPost("/api/nas/tags", { paths, add: [tag.trim()] })) nasLoad(); }
+async function nasImportPaths(paths) {
+  const ok = [], bad = [];
+  for (const p of paths.slice(0, 50)) {
+    $("iv-msg").textContent = `importing ${ok.length + bad.length + 1}/${Math.min(50, paths.length)}…`;
+    const r = await fetch("/api/nas/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: p, operator: opName() }) });
+    (r.ok ? ok : bad).push(p.split("/").pop());
+  }
+  $("iv-msg").textContent = ""; alert(`${ok.length} imported${bad.length ? ", failed: " + bad.join(", ") : ""}`);
+  NS.sel.clear(); nasLoad();
+}
+function nasDrag(ev, kind, i) {
+  const paths = kind === "file" && NS.sel.size && NS.sel.has(REF[i]) ? [...NS.sel] : kind === "file" ? [REF[i]] : [];
+  ev.dataTransfer.setData("text/plain", JSON.stringify({ folders: kind === "folder" ? [REF[i]] : [], paths }));
+}
+function nasDrop(ev, cat) {
+  ev.preventDefault(); ev.currentTarget.classList.remove("drop");
+  try { const d = JSON.parse(ev.dataTransfer.getData("text/plain")); nasAssign(d.folders, d.paths, cat); } catch (e) {}
+}
+async function nasCatNew() { const n = prompt("New category name:"); if (n && await nasPost("/api/nas/categories", { action: "create", name: n })) nasLoad(); }
+async function nasCatEdit(id) {
+  const c = NS.data.categories.find((x) => x.id === id);
+  const a = prompt(`"${c.name}": type a new name, a colour like #2e7d32, or DELETE`, c.name);
+  if (!a || a === c.name) return;
+  const body = a === "DELETE" ? { action: "delete", id } : /^#[0-9a-f]{3,6}$/i.test(a) ? { action: "colour", id, colour: a } : { action: "rename", id, name: a };
+  if (await nasPost("/api/nas/categories", body)) nasLoad();
+}
+async function nasViewSave() {
+  const n = prompt("Name this view (the current folder, category, chips, search and sort):"); if (!n) return;
+  const spec = { ...NS.spec, q: $("iv-q").value, view: NS.view };
+  const r = await nasPost("/api/nas/views", { action: "save", name: n, spec });
+  if (r) { NS.viewId = r.id; nasLoad(); }
+}
+async function nasViewDel(id) { if (confirm("Delete this saved view?") && await nasPost("/api/nas/views", { action: "delete", id })) nasLoad(); }
+function nasUseView(id) {
+  const v = NS.views.find((x) => x.id === id); if (!v) return;
+  NS.spec = { sort: "name", ...v.spec }; NS.viewId = id; $("iv-q").value = v.spec.q || "";
+  if (v.spec.view) NS.view = v.spec.view;
+  nasLoad();
+}
+async function nasOpen(i) {
+  const path = REF[i], row = NS.rows.find((r) => r.path === path) || {};
+  const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  const pk = await (await fetch(`/api/nas/pack?folder=${encodeURIComponent(folder)}`)).json();
+  const st = pk.status || {};
+  $("np-title").textContent = path.split("/").pop();
+  $("np-body").innerHTML = `<div class="stamp">${esc(folder || "(top)")} · ${fmtMB(row.size || 0)} · ${esc(nasCatName(row.category_id))}${pk.links.map((l) => ` · <a href="${esc(l)}" target="_blank" rel="noopener">Thingiverse ↗</a>`).join("")}</div>
+    <div class="row" style="margin:8px 0;gap:6px;flex-wrap:wrap">
+      ${row.printable ? `<button onclick="openNasModel(${ref(path)})">3D preview</button>` : ""}
+      ${row.artefact_id ? `<button class="ghost" onclick="openSendArtefact(${row.artefact_id}, ${ref(row.stem)})">Send to printer…</button>` : row.printable ? `<button class="ghost" ${st.online ? "" : "disabled title='OMV offline'"} onclick="nasImportPaths([REF[${ref(path)}]])">Import</button>` : ""}
+      ${row.printable ? `<button class="ghost" onclick="nasToProject(${ref(path)})">Add to project…</button>` : ""}
+      <select onchange="this.value && nasAssign([], [REF[${ref(path)}]], this.value)"><option value="">move to category…</option>${NS.data.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
+      <select onchange="this.value && nasAssign([REF[${ref(folder)}]], [], this.value)"><option value="">whole folder to…</option>${NS.data.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
+    </div>
+    <div class="dim">Tags: ${(row.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join(" ") || "none"} <input id="np-tag" placeholder="add tag" style="width:100px"> <button class="mini ghost" onclick="nasTags([REF[${ref(path)}]], $('np-tag').value)">Add</button></div>
+    ${pk.pictures.length ? `<h3>Pictures in this folder</h3><div class="gal">${pk.pictures.slice(0, 12).map((x) => `<img loading="lazy" src="/api/nas/image?path=${encodeURIComponent(x.path)}" alt="">`).join("")}</div>` : ""}
+    <h3>Files in this folder (${pk.models.length + pk.pictures.length})</h3><ul>${pk.models.map((m) => `<li>${m.path === path ? "<b>" : ""}${esc(m.path.split("/").pop())}${m.path === path ? "</b>" : ""} <span class="stamp">${esc(m.ext)} · ${fmtMB(m.size)}</span></li>`).join("")}</ul>
+    ${pk.prints.length ? `<h3>Prints of these designs</h3><ul>${pk.prints.slice(0, 15).map((x) => `<li>${esc(x.printer)} · ${esc(x.status)}${x.quality ? " · " + esc(x.quality) : ""} · <span class="stamp">${new Date((x.started_at || 0) * 1000).toLocaleDateString()} ${esc(x.file || "")}</span></li>`).join("")}</ul>` : `<div class="dim">Not printed on the farm yet.</div>`}`;
+  $("nas-pack").showModal();
+}
+async function nasToProject(i) {
+  const path = REF[i];
+  const list = await (await fetch("/api/projects")).json();
+  const open = (list.projects || list).filter((p) => p.state !== "archived");
+  if (!open.length) { alert("No open project - create one in Projects first."); return; }
+  const pick = prompt("Add to which project? Type its number:\n" + open.map((p, k) => `${k + 1}. ${p.name}`).join("\n"), "1");
+  const proj = open[+pick - 1]; if (!proj) return;
+  const qty = +(prompt("How many?", "1") || 0); if (!qty) return;
+  let row = NS.rows.find((r) => r.path === path) || {};
+  let aid = row.artefact_id;
+  if (!aid) {
+    const r = await fetch("/api/nas/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, operator: opName() }) });
+    const o = await r.json().catch(() => ({})); if (!r.ok) { alert(o.error || r.status); return; }
+    aid = o.artefact;
+  }
+  const full = await (await fetch(`/api/projects/${proj.id}`)).json();
+  const g = (full.groups || []).find((x) => x.name === "From NAS");
+  const out = await nasPost(`/api/projects/${proj.id}/parts`, { text: `${path.split("/").pop().replace(/\.[^.]+$/, "")}, ${qty}`, source: "artefact", artefact_id: aid, ...(g ? { group_id: g.id } : { group: "From NAS" }) });
+  if (out) alert(`Added to ${proj.name} (group "From NAS").`);
 }
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
@@ -1069,6 +1358,17 @@ async function reslice(id, layer, where) {
   }
 }
 
+// a NAS model: its stored preview (light mesh), or the whole mesh fetched into the bounded cache
+function openNasModel(path, full) {
+  if (typeof path === "number") path = REF[path];
+  viewerRun = null; viewerBuild = null;
+  $("v-layerpick").innerHTML = full ? "" : `<button class="mini ghost" onclick="openNasModel(${ref(path)}, true)">Full resolution</button>`;
+  $("v-title").textContent = path.split("/").pop();
+  $("v-file").style.display = "none";
+  $("v-file-note").textContent = full ? "full mesh (from the NAS)" : "preview (a lighter mesh) - not a slice";
+  if (!$("viewer").open) $("viewer").showModal();
+  loadModel(null, path, `/api/nas/model?path=${encodeURIComponent(path)}${full ? "&full=1" : ""}`);
+}
 function openModel(run, files, buildId) {
   viewerRun = run; viewerBuild = buildId || null;
   const b = buildId && data ? (data.builds || []).find((x) => x.id === buildId) : null;
@@ -1083,11 +1383,12 @@ function openModel(run, files, buildId) {
 
 const hexRgb = (h) => { const m = /^#?([0-9a-f]{6})/i.exec(h || ""); const n = m ? parseInt(m[1], 16) : 0x888888; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 
-async function loadModel(run, file) {
+async function loadModel(run, file, url) {
   $("v-msg").style.display = ""; $("v-msg").textContent = "loading…";
   let buf;
   try {
-    const r = await fetch(`/api/model/${encodeURIComponent(run)}/${encodeURIComponent(file)}`);
+    const r = await fetch(url || `/api/model/${encodeURIComponent(run)}/${encodeURIComponent(file)}`);
+    if (r.status === 503 || r.status === 404) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     buf = await r.arrayBuffer();
   } catch (e) { $("v-msg").textContent = `could not load ${file}: ${e.message}`; return; }
