@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from farm import config, monitor, printers, printguard
+from farm import config, monitor, printers, printguard, web
 
 URL = "http://192.168.1.68:11111"
 NEO = printers.PRINTERS["Ender3MaxNeo"]
@@ -102,6 +102,20 @@ class PrintGuardTest(unittest.TestCase):
             with mock.patch.object(printguard, "_get", fake(status="idle", camera_online=False)), \
                     mock.patch.object(monitor.time, "time", return_value=t):
                 self.assertEqual(monitor.printguard_pass(state), [])
+
+    def test_overview_cards_carry_printguard_only_when_configured(self):
+        with mock.patch.object(printguard, "_get", fake()):
+            st = printguard.status()
+        live = [{"name": "Ender3MaxNeo"}, {"name": "s1pro"}]
+        web._add_printguard(live, st)
+        self.assertEqual((live[0]["printguard"]["score"], live[0]["printguard"]["ui"]), (0.12, URL))
+        self.assertTrue(live[1]["printguard"]["missing"])                                  # no monitor for it
+        live = [{"name": "Ender3MaxNeo"}]
+        web._add_printguard(live, {"error": "timed out", "ui": URL})
+        self.assertEqual(live[0]["printguard"], {"error": "timed out", "ui": URL})
+        live = [{"name": "Ender3MaxNeo"}]
+        web._add_printguard(live, {})                                                      # not configured
+        self.assertNotIn("printguard", live[0])
 
     def test_run_survives_a_broken_printguard_pass(self):
         with tempfile.TemporaryDirectory() as d, \

@@ -559,18 +559,23 @@ def build_action(build_id: int, action: str, body: dict) -> dict:
         con.close()
 
 
+def _add_printguard(live: list[dict], pg: dict) -> None:
+    """Puts PrintGuard's view on each printer card: nothing when it isn't configured, its error when unreadable,
+    {"missing": True} for a printer it has no monitor for."""
+    for v in live:
+        if pg.get("error"):
+            v["printguard"] = {"error": pg["error"], "ui": pg["ui"]}
+        elif pg:
+            v["printguard"] = {**pg["printers"].get(v["name"], {"missing": True}), "ui": pg["ui"]}
+
+
 def overview() -> dict:
     printers.refresh()
     runs = load_runs()
     by_remote = {rem: r for r in reversed(runs) for rem in r["uploaded"]}
     plist = list(printers.PRINTERS.values())
     live = [_safe_view(p, by_remote) for p in plist]
-    pg = cached("printguard", 10, printguard.status)
-    for v in live:
-        if pg.get("error"):
-            v["printguard"] = {"error": pg["error"], "ui": pg["ui"]}
-        elif pg:
-            v["printguard"] = {**pg["printers"].get(v["name"], {"missing": True}), "ui": pg["ui"]}
+    _add_printguard(live, cached("printguard", 10, printguard.status))
     hist = {}
     for p in plist:
         for h in sorted(cached(f"hist:{p.name}", 30, lambda p=p: history(p)), key=lambda h: h.get("start_time", 0)):
