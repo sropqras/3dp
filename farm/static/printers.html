@@ -46,6 +46,7 @@ dialog::backdrop { background: rgba(3,6,12,.72); }
 .files button { text-align: left; background: transparent; color: var(--text); font-weight: 500; border-radius: 6px; padding: 5px 8px; display: flex; justify-content: space-between; gap: 8px; }
 .files button.sel { background: var(--panel2); }
 pre { margin: 0; padding: 12px 14px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+select { background: #0b1220; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 12px; }
 .add { color: var(--green); } .del { color: var(--red); } .hunk { color: var(--violet); }
 @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } }
 </style>
@@ -65,6 +66,19 @@ pre { margin: 0; padding: 12px 14px; font: 12px/1.45 ui-monospace, SFMono-Regula
     <button class="ghost" id="fd-mode" onclick="toggleMode()">show file</button>
     <button class="ghost x" onclick="$('filesdlg').close()">Close</button></div>
   <div class="db"><div class="files" id="fd-files"></div><pre id="fd-body">choose a file</pre></div>
+</dialog>
+<dialog id="chgdlg">
+  <div class="dh"><b id="cd-title">Stage a change</b><button class="ghost x" onclick="$('chgdlg').close()">Close</button></div>
+  <div style="padding:14px 16px;display:grid;gap:10px">
+    <div class="row">File <select id="cd-path" onchange="loadFileForEdit()"></select>
+      <label><input type="radio" name="cdmode" value="key" checked onchange="cdMode()"> one setting</label>
+      <label><input type="radio" name="cdmode" value="file" onchange="cdMode()"> edit the whole file</label></div>
+    <div id="cd-key" class="row">[<input id="cd-section" placeholder="printer" style="width:150px">] <input id="cd-option" placeholder="max_velocity" style="width:150px">: <input id="cd-value" placeholder="200" style="width:120px"></div>
+    <textarea id="cd-content" spellcheck="false" style="display:none;width:100%;min-height:45vh;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,monospace"></textarea>
+    <div class="row">Why <input id="cd-reason" style="flex:1;min-width:240px" placeholder="goes into FARM.md's change log"></div>
+    <div class="row"><button onclick="submitChange()">Stage (nothing reaches the printer yet)</button><span class="dim" id="cd-msg"></span></div>
+    <pre id="cd-preview" style="max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></pre>
+  </div>
 </dialog>
 <script src="/static/printers.js"></script>
 </body>

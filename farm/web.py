@@ -12,7 +12,8 @@ the server is the only thing that talks to the printers, so the browser never ne
                               (start needs the dialog's nonce + checklist + spool + operator: farm/gate.py)
   GET  /printers               the Printers tab (fleet health, audit, config snapshots/drift) - farm/fleet.py
   GET  /api/fleet[/<key>/files|file?path=|diff?path=]   fleet overview / a printer's config files
-  POST /api/fleet/<key>/snapshot | review {snapshot, operator}
+  POST /api/fleet/<key>/snapshot | review {snapshot, operator} | changes {path, section/option/value | content, reason}
+  POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
   GET  /api/makers            the maker plugins (spec, health), print profiles, printers, licensed font NAMES
   POST /api/uploads?name=     a file for a new job (raw body) -> {"ref"}; kept under data/uploads/ (gitignored)
   POST /api/orders            a new order from the New-job page -> jobs queued for the worker
@@ -26,7 +27,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, config, db, fleet, gate, jobs, makers, model3mf, net, pipeline, printers, profiles, spools, watch, worker
+from . import audit, cfgchange, config, db, fleet, gate, jobs, makers, model3mf, net, pipeline, printers, profiles, spools, watch, worker
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -483,6 +484,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.files(key)).encode())
                 if parts[1:] == ["file"]:
                     return self._send(200, fleet.file_text(key, q["path"][0]).encode(), "text/plain; charset=utf-8")
+                if parts[1:] == ["changes"]:
+                    return self._send(200, json.dumps(fleet.changes(key), default=str).encode())
                 if parts[1:] == ["diff"]:
                     return self._send(200, fleet.diff(key, q["path"][0]).encode(), "text/plain; charset=utf-8")
             except (LookupError, KeyError, IndexError) as e:
@@ -536,9 +539,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.snapshot(key, who)).encode())
                 if parts[3] == "review":
                     return self._send(200, json.dumps(fleet.review(key, int(body["snapshot"]), who)).encode())
-            except (LookupError, KeyError, ValueError) as e:
+                if parts[3] == "changes":
+                    return self._send(200, json.dumps(fleet.stage_change(key, body, who)).encode())
+            except (LookupError, KeyError, ValueError, cfgchange.Refused) as e:
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             return self._send(404, b"{}")
+        if len(parts) == 4 and parts[:2] == ["api", "changes"] and parts[2].isdigit():
+            try:
+                body = self._json_body()
+                who = "ui:" + (str(body.get("operator") or "").strip()[:40] or "unknown")
+                return self._send(200, json.dumps(fleet.change_action(int(parts[2]), parts[3], who), default=str).encode())
+            except (cfgchange.Refused, jobs.StateConflict, LookupError) as e:
+                return self._send(409, json.dumps({"error": str(e)}).encode())
         if path == "/api/uploads":
             n = int(self.headers.get("Content-Length", 0) or 0)
             if not 0 < n <= MAX_UPLOAD:

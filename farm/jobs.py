@@ -28,6 +28,19 @@ TRANSITIONS = {
         ("printing", "planned"): {"tracker"},                   # print failed/cancelled: back to re-plan
         **{(s, "cancelled"): HUMAN for s in ("received", "generating", "generated", "planned", "failed")},
     },
+    # printer config changes: anyone may stage; only farm/cfgchange.py's gate ("cfggate"), started by a person,
+    # applies or rolls back
+    "config_change": {
+        ("staged", "applying"): {"cfggate"},
+        ("applying", "verifying"): {"cfggate"},
+        ("verifying", "applied"): {"cfggate"},
+        ("applying", "failed"): {"cfggate"},
+        ("verifying", "failed"): {"cfggate"},
+        ("failed", "rolled_back"): {"cfggate"},
+        ("applied", "rolled_back"): {"cfggate"},
+        ("staged", "cancelled"): HUMAN | {"agent"},
+        ("staged", "rejected"): HUMAN,
+    },
     "build": {
         ("slicing", "review"): PIPELINE,
         ("slicing", "failed"): PIPELINE,
@@ -47,7 +60,7 @@ TRANSITIONS = {
         **{(s, "cancelled"): HUMAN for s in ("slicing", "review", "approved", "queued", "failed")},
     },
 }
-TABLES = {"job": "jobs", "build": "builds", "order": "orders"}
+TABLES = {"job": "jobs", "build": "builds", "order": "orders", "config_change": "config_changes"}
 TERMINAL = {"job": {"done", "cancelled"}, "build": {"done", "rejected", "cancelled"}}
 
 

@@ -5,7 +5,7 @@ import time
 import urllib.parse
 from types import SimpleNamespace
 
-from . import audit, configs, db, hosts, printers
+from . import audit, cfgchange, configs, db, hosts, jobs, printers
 
 _cache, _lock = {}, threading.Lock()
 
@@ -48,6 +48,9 @@ def overview() -> dict:
                                  "reference": ref and {k: ref[k] for k in ("id", "reviewed_by", "reviewed_at")},
                                  "files": len(latest["files"]) if latest else 0,
                                  "drift": configs.drift(con, v["key"], latest["files"]) if latest else None}
+                v["changes"] = [{k: c[k] for k in ("id", "state", "path", "summary", "reason", "author", "error",
+                                                   "applied_by", "created_at")}
+                                for c in cfgchange.listing(con, v["key"], 8)]
             out.append(v)
     finally:
         con.close()
@@ -128,6 +131,49 @@ def review(key: str, snap_id: int, actor: str) -> dict:
             raise LookupError(f"no snapshot {snap_id} for {key}")
         configs.review(con, snap_id, actor)
         return {"reviewed": snap_id}
+    finally:
+        con.close()
+
+
+def changes(key: str | None = None) -> list[dict]:
+    con = db.connect()
+    try:
+        return [{k: v for k, v in c.items() if k != "new_content"} for c in cfgchange.listing(con, key)]
+    finally:
+        con.close()
+
+
+def stage_change(key: str, body: dict, actor: str) -> dict:
+    v = _instance(key)
+    con = db.connect()
+    try:
+        kw = {"new_content": body["content"]} if body.get("content") is not None else \
+             {"section": body.get("section"), "option": body.get("option"), "value": body.get("value")}
+        c = cfgchange.stage(con, key, v["url"], body.get("path") or "printer.cfg", reason=str(body.get("reason") or ""),
+                            author=actor, **kw)
+        return {"id": c["id"], "summary": c["summary"]}
+    finally:
+        con.close()
+
+
+def change_action(cid: int, action: str, actor: str) -> dict:
+    con = db.connect()
+    try:
+        if action == "preview":
+            return {"diff": cfgchange.preview(con, cid)}
+        if action == "apply":
+            c = cfgchange.apply(con, cid, actor)
+        elif action == "rollback":
+            c = cfgchange.rollback(con, cid, actor)
+        elif action in ("cancel", "reject"):
+            c = cfgchange.get(con, cid)
+            jobs.transition(con, "config_change", cid, c["state"], "cancelled" if action == "cancel" else "rejected", "ui")
+            c = cfgchange.get(con, cid)
+        else:
+            raise LookupError(action)
+        _cache.pop(f"audit:{c['printer']}", None)
+        _cache.pop("fleet", None)
+        return {k: v for k, v in c.items() if k != "new_content"}
     finally:
         con.close()
 

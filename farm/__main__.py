@@ -11,6 +11,8 @@
   worker [--once | --alive]   run queued pipeline tasks (generate, plan, slice, upload); --alive: heartbeat check
   db init | import-runs       create/migrate data/farm.db; backfill runs/ made before it existed
   presets check               static check of every print profile's PrusaSlicer presets (farm/profiles.py)
+  config list|show|stage|apply|rollback|cancel   printer config changes (staged by anyone; applied by a person
+                              at a terminal or in Farm Control's Printers tab; see farm/cfgchange.py)
   backup [printer] [--to-repo] snapshot printer configs over Moonraker (secrets excluded); --to-repo mirrors to printers/
   doctor                      is this host ready to produce: slicer version, maker apps, fonts (read-only)
   monitor [--state FILE]      one pass of the serious-error monitor; prints new alerts as '<loud|silent>\t<text>'
@@ -191,6 +193,46 @@ def cmd_presets(args):
     sys.exit(1 if bad else 0)
 
 
+def cmd_config(args):
+    from . import cfgchange, fleet
+    con = db.connect()
+    if args.action == "list":
+        for c in cfgchange.listing(con, args.printer):
+            print(f"{c['id']:>4} {c['state']:<11} {c['printer']:<14} {c['summary'][:50]:<50} {c['author']} - {c['reason'][:60]}")
+        return
+    if args.action == "show":
+        c = cfgchange.get(con, args.id)
+        print(f"change {c['id']} {c['state']} on {c['printer']} {c['path']}: {c['summary']}\nreason: {c['reason']}\n")
+        print(cfgchange.preview(con, args.id) if c["state"] == "staged" else (c["result"] or c["error"] or ""))
+        return
+    if args.action == "stage":
+        v = fleet._instance(args.printer)
+        kw = {"new_content": Path(args.file).read_text(encoding="utf-8")} if args.file else \
+             {"section": args.section, "option": args.option, "value": args.value}
+        who = args.author or "cli"
+        try:
+            c = cfgchange.stage(con, v["key"], v["url"], args.path, reason=args.reason, author=who, **kw)
+        except cfgchange.Refused as e:
+            sys.exit(f"not staged: {e}")
+        print(f"staged change {c['id']}: {c['summary']} - review and apply it in Farm Control -> Printers")
+        return
+    if args.action == "cancel":
+        c = cfgchange.get(con, args.id)
+        jobs.transition(con, "config_change", args.id, c["state"], "cancelled", "agent" if args.author == "agent" else "cli")
+        print(f"change {args.id} cancelled")
+        return
+    _person_at_terminal(args.action)
+    who = "cli:" + input("Your name: ").strip()
+    print(cfgchange.preview(con, args.id) if args.action == "apply" else "")
+    if input(f"{args.action} change {args.id}? [y/N] ").strip().lower() != "y":
+        sys.exit("not done")
+    try:
+        c = (cfgchange.apply if args.action == "apply" else cfgchange.rollback)(con, args.id, who)
+    except cfgchange.Refused as e:
+        sys.exit(f"refused: {e}")
+    print(f"change {c['id']}: {c['state']} {c['error'] or ''}")
+
+
 def cmd_backup(args):
     from . import configs, hosts
     con = db.connect()
@@ -252,6 +294,17 @@ def main():
     a = sub.add_parser("audit")
     a.add_argument("printer", nargs="?")
     sub.add_parser("doctor")
+    cf = sub.add_parser("config")
+    cf.add_argument("action", choices=["list", "show", "stage", "apply", "rollback", "cancel"])
+    cf.add_argument("id", nargs="?", type=int)
+    cf.add_argument("--printer")
+    cf.add_argument("--path", default="printer.cfg")
+    cf.add_argument("--section")
+    cf.add_argument("--option")
+    cf.add_argument("--value")
+    cf.add_argument("--file", help="stage this whole file as the new content")
+    cf.add_argument("--reason", default="")
+    cf.add_argument("--author", help="who stages it (an AI session: --author agent)")
     bk = sub.add_parser("backup")
     bk.add_argument("printer", nargs="?")
     bk.add_argument("--to-repo", action="store_true")
@@ -271,7 +324,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup, "config": cmd_config}[args.cmd](args)
 
 
 if __name__ == "__main__":

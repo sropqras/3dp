@@ -90,6 +90,15 @@ MIGRATIONS = [
         actor TEXT NOT NULL, files TEXT NOT NULL, reviewed_by TEXT, reviewed_at REAL, note TEXT);
     CREATE INDEX config_snapshots_printer ON config_snapshots(printer, id)
     """,
+    # 5: staged printer config changes and their gated apply (farm/cfgchange.py)
+    """
+    CREATE TABLE config_changes (
+        id INTEGER PRIMARY KEY, printer TEXT NOT NULL, url TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL,
+        summary TEXT NOT NULL, reason TEXT NOT NULL, author TEXT NOT NULL, base_sha TEXT, new_content TEXT NOT NULL,
+        state TEXT NOT NULL, error TEXT, result TEXT, before_snapshot INTEGER, applied_by TEXT, applied_at REAL,
+        created_at REAL NOT NULL, updated_at REAL NOT NULL);
+    CREATE INDEX config_changes_printer ON config_changes(printer, state)
+    """,
 ]
 
 

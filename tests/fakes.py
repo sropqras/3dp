@@ -54,6 +54,9 @@ class FakeMoonraker:
         self.files, self.starts = {}, []
         self.config = {}            # path -> bytes: the printer's config root
         self.restarts = 0
+        self.after_restart = "ready"   # Klipper's state after FIRMWARE_RESTART (tests set "error")
+        self.console = []           # gcode_store entries [{"message", "time", "type"}]
+        self.on_restart = None      # callable(fake) run at FIRMWARE_RESTART (e.g. change settings)
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -90,6 +93,27 @@ class FakeMoonraker:
                     self.end_headers()
                     self.wfile.write(outer.config[p])
                     return
+                if u.path == "/printer/info":
+                    return self._json(200, {"result": {"state": outer.klipper, "state_message": "Printer is ready"
+                                                       if outer.klipper == "ready" else "config error",
+                                                       "software_version": "v0.13.0-fake",
+                                                       "config_file": "/home/aali/Ender3MaxNeo_data/config/printer.cfg"}})
+                if u.path == "/server/info":
+                    return self._json(200, {"result": {"klippy_state": outer.klipper, "failed_components": [],
+                                                       "warnings": [], "moonraker_version": "v0.9.3-fake"}})
+                if u.path == "/machine/update/status":
+                    return self._json(200, {"result": {"version_info": {"klipper": {"version": "v0.13.0-fake"}}}})
+                if u.path == "/machine/system_info":
+                    return self._json(200, {"result": {"system_info": {"service_state": {
+                        "klipper": {"active_state": "active", "sub_state": "running"}}}}})
+                if u.path == "/machine/proc_stats":
+                    return self._json(200, {"result": {"cpu_temp": 40.0, "system_memory": {"total": 100, "available": 60}}})
+                if u.path == "/server/files/directory":
+                    return self._json(200, {"result": {"disk_usage": {"total": 100, "used": 40, "free": 60}}})
+                if u.path == "/server/history/totals":
+                    return self._json(200, {"result": {"job_totals": {"total_jobs": 3, "total_print_time": 7200}}})
+                if u.path == "/server/gcode_store":
+                    return self._json(200, {"result": {"gcode_store": outer.console}})
                 if u.path == "/server/webcams/list":
                     return self._json(200, {"result": {"webcams": []}})
                 if u.path == "/server/history/list":
@@ -106,11 +130,22 @@ class FakeMoonraker:
                 body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
                 if u.path == "/server/files/upload":
                     import re as _re
+                    root = _re.search(rb'name="root"\r\n\r\n([^\r]*)', body).group(1).decode()
                     folder = _re.search(rb'name="path"\r\n\r\n([^\r]*)', body).group(1).decode()
                     fname = _re.search(rb'filename="([^"]+)"', body).group(1).decode()
-                    data = body.split(b"\r\n\r\n", 3)[-1].rsplit(b"\r\n--", 1)[0]
-                    outer.files[f"{folder}/{fname}"] = len(data)
+                    data = body.split(b'filename="', 1)[1].split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n--", 1)[0]
+                    key = f"{folder}/{fname}" if folder else fname
+                    if root == "config":
+                        outer.config[key] = data
+                    else:
+                        outer.files[key] = len(data)
                     return self._json(201, {"result": "ok"})
+                if u.path == "/printer/firmware_restart":
+                    outer.restarts += 1
+                    if outer.on_restart:
+                        outer.on_restart(outer)
+                    outer.klipper = outer.after_restart
+                    return self._json(200, {"result": "ok"})
                 if u.path == "/printer/print/start":
                     outer.starts.append(up.parse_qs(u.query)["filename"][0])
                     outer.state = "printing"

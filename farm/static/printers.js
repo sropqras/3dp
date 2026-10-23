@@ -45,6 +45,71 @@ function configBlock(v) {
       ${s.reference && s.reference.id === s.latest.id ? "" : `<button class="ghost" onclick="review('${esc(v.key)}', ${s.latest.id})">Mark snapshot ${s.latest.id} reviewed</button>`}</div>`;
 }
 
+function changesBlock(v) {
+  const cs = v.changes || [], pending = cs.filter((c) => c.state === "staged");
+  const cls = { staged: "warn", applying: "warn", verifying: "warn", applied: "ok", failed: "bad", rolled_back: "dim", cancelled: "dim", rejected: "dim" };
+  const row = (c) => `<tr><td>${c.id}</td><td class="${cls[c.state] || ""}">${esc(c.state)}</td><td>${esc(c.summary)}<div class="dim">${esc(c.reason)} · ${esc(c.author)}${c.applied_by ? " · applied by " + esc(c.applied_by) : ""}</div>
+      ${c.error ? `<div class="bad">${esc(c.error)}</div>` : ""}</td><td style="white-space:nowrap">
+      ${c.state === "staged" ? `<button class="ghost" onclick="previewChange(${c.id})">Diff</button> ${v.readonly ? "" : `<button onclick="changeAct(${c.id},'apply')">Apply</button>`} <button class="ghost" onclick="changeAct(${c.id},'cancel')">Cancel</button>` : ""}
+      ${["applied", "failed"].includes(c.state) && !v.readonly ? `<button class="ghost" onclick="changeAct(${c.id},'rollback')">Rollback</button>` : ""}</td></tr>`;
+  return `<details ${cs.length ? "open" : ""}><summary>Changes${pending.length ? ` · <span class="warn">${pending.length} staged</span>` : ""}${cs.length ? ` · ${cs.length} recent` : ""}</summary>
+    ${cs.length ? `<table>${cs.map(row).join("")}</table>` : `<div class="dim">none yet</div>`}
+    </details>
+    ${v.readonly ? `<div class="dim">watch-only: no config changes</div>` : `<div class="row"><button class="ghost" onclick="openStage('${esc(v.key)}')">+ Stage change</button></div>`}`;
+}
+
+let cd = { key: null };
+async function openStage(key) {
+  cd = { key };
+  $("cd-title").textContent = `Stage a change on ${key}`; $("cd-msg").textContent = ""; $("cd-preview").textContent = "";
+  ["cd-section", "cd-option", "cd-value", "cd-reason"].forEach((i) => ($(i).value = ""));
+  const r = await (await fetch(`/api/fleet/${encodeURIComponent(key)}/files`)).json();
+  $("cd-path").innerHTML = (r.files || []).filter((f) => f.state !== "removed").map((f) => `<option ${f.path === "printer.cfg" ? "selected" : ""}>${esc(f.path)}</option>`).join("");
+  document.querySelector('input[name=cdmode][value=key]').checked = true; cdMode();
+  $("chgdlg").showModal();
+}
+function cdMode() {
+  const file = document.querySelector("input[name=cdmode]:checked").value === "file";
+  $("cd-key").style.display = file ? "none" : ""; $("cd-content").style.display = file ? "" : "none";
+  if (file) loadFileForEdit();
+}
+async function loadFileForEdit() {
+  if (document.querySelector("input[name=cdmode]:checked").value !== "file") return;
+  $("cd-content").value = await (await fetch(`/api/fleet/${encodeURIComponent(cd.key)}/file?path=${encodeURIComponent($("cd-path").value)}`)).text();
+}
+async function submitChange() {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const file = document.querySelector("input[name=cdmode]:checked").value === "file";
+  const body = { path: $("cd-path").value, reason: $("cd-reason").value };
+  if (file) body.content = $("cd-content").value; else Object.assign(body, { section: $("cd-section").value.trim(), option: $("cd-option").value.trim(), value: $("cd-value").value.trim() });
+  const r = await post(`/api/fleet/${encodeURIComponent(cd.key)}/changes`, body);
+  if (!r) return;
+  $("cd-msg").textContent = `staged change ${r.id}: ${r.summary}. Review the diff, then Apply on the card when the printer is idle.`;
+  const p = await post(`/api/changes/${r.id}/preview`);
+  if (p) $("cd-preview").innerHTML = colourDiff(p.diff);
+  refresh();
+}
+function colourDiff(t) {
+  return t.split("\n").map((l) => `<span class="${l.startsWith("+") && !l.startsWith("+++") ? "add" : l.startsWith("-") && !l.startsWith("---") ? "del" : l.startsWith("@@") ? "hunk" : ""}">${esc(l)}</span>`).join("\n");
+}
+async function previewChange(id) {
+  const p = await post(`/api/changes/${id}/preview`);
+  if (!p) return;
+  $("fd-title").textContent = `Change ${id}`; $("fd-sub").textContent = "staged vs live"; $("fd-files").innerHTML = "";
+  $("fd-body").innerHTML = colourDiff(p.diff); $("filesdlg").showModal();
+}
+async function changeAct(id, action) {
+  if (!operator()) { alert("Put your name in the 'You' box first (it's recorded with the change)."); return; }
+  const words = { apply: "Apply change " + id + "? The printer must be idle: the file is uploaded and Klipper does a FIRMWARE_RESTART, then the change is verified (rolled back automatically if Klipper doesn't come back).",
+                  rollback: "Roll back change " + id + "? The file goes back to how it was, then FIRMWARE_RESTART.", cancel: "Cancel staged change " + id + "?" };
+  if (!confirm(words[action])) return;
+  document.body.style.cursor = "progress";
+  const r = await post(`/api/changes/${id}/${action}`);
+  document.body.style.cursor = "";
+  if (r) alert(`Change ${id}: ${r.state}${r.error ? " - " + r.error : ""}`);
+  refresh();
+}
+
 function onboardBlock(v) {
   if (v.registry) return "";
   const items = [
@@ -72,6 +137,7 @@ function card(v) {
     ${(v.warnings || []).length ? `<div class="warn" style="font-size:12px">${v.warnings.map(esc).join("<br>")}</div>` : ""}
     ${auditBlock(v)}
     ${configBlock(v)}
+    ${changesBlock(v)}
     ${onboardBlock(v)}
     <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div style="margin-top:6px">${vers}</div></details>
   </div>`;

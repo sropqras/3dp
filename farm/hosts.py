@@ -12,7 +12,8 @@ from pathlib import Path
 from . import net, printers
 from .printers import REPO
 
-HOSTS_FILE = REPO / "printers" / "hosts.json"
+import os
+HOSTS_FILE = Path(os.environ.get("FARM_HOSTS_FILE", REPO / "printers" / "hosts.json"))   # tests point elsewhere
 VERSION_KEYS = ("klipper", "moonraker", "fluidd", "mainsail", "crowsnest", "moonraker-telegram-bot",
                 "Klipper-Adaptive-Meshing-Purging", "timelapse")
 
