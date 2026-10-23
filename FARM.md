@@ -50,12 +50,13 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 |---|---|---|
 | enders1plus | changes **18** (farm_macros.cfg) → **19** (printer.cfg max_velocity 200) → **20** (macros.cfg: library include + values, tgalarm, cold-nozzle reheat, BEEP commented); 1, 3 and the duplicate 15 folded in | when idle (on or off); then the Telegram pack |
 | EnderV3SE | changes **24** → **25** (printer.cfg: recover_velocity 150, paused-safe idle keeping DELAYED_PRINTER_OFF) → **26** (macros.cfg: CLEAR_PAUSE in START_PRINT, guided M600, reheat, 12 h cap, library) | only while idle; Ironman reviews first (production printer) |
-| Ender3Pro (not onboarded) | change **8**: printer.cfg comments out `[include moonraker_obico_macros.cfg]` (the file isn't on the host, so Klipper won't start) | any time; Klipper should then reach the board |
+| Ender3MaxNeo, Ender3Pro, EnderV3SE | changes **27**, **28**, **29**: moonraker.conf gets back `[include moonraker-obico-update.cfg]` (KIAUH removed it with OctoEverywhere) | any time; takes effect at Moonraker's next restart |
 
 ## Change log
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-23 | Ender3MaxNeo, Ender3Pro, EnderV3SE | OctoEverywhere removed from enders3dp with KIAUH (Ironman: drop the external dependency). KIAUH also deleted `[include moonraker-obico-update.cfg]` from their moonraker.conf (put back by staged 27/28/29) and `[include moonraker_obico_macros.cfg]` + a commented shell_command include from Ender3Pro's printer.cfg (11:49:45), which is what change 8 (applied, then rolled back) had tried. Originals stay in the restore points |
 | 2026-10-23 | EnderCR10SE (enders3dp:7127) | Identified as the S1 Plus's old instance, not a separate printer. Nothing migrated: all its history and G-code were calibration runs (Ironman: noise), the rest was already on 3dpnas. Staged 13/14 cancelled, port dropped from `printers/hosts.json`, configs + history archived. Services removed with KIAUH (Ironman) |
 | 2026-10-23 | all | Restore points: each printer's original config pinned (`farm config origin`), host + KIAUH history archived in git (`printers/_archive/`) |
 | 2026-10-23 | EnderV3SE | Farm settings: no longer watch-only; note (Farm Control, Ironman) |
