@@ -56,6 +56,15 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - **`farm/audit.py`** encodes every lesson learned on any printer as a rule run against the **live** config (`/printer/objects/query?configfile=settings`). Each rule states why it exists. When a new printer problem is found, add a rule here so it's checked farm-wide.
 - **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and spools live in the farm DB (Spools tab; `data/inventory.json` was only the seed). The 3D viewer is hand-written WebGL2 in the page, with no libraries. It fetches `/api/model/<run>/<file>`, which `farm/model3mf.py` builds from the run's project `.3mf` (bed-space meshes plus the file's own colour changes, layer heights and bed shape). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
 - **`farm/monitor.py`** is the serious-error watch. It alerts on Klipper error/shutdown, a print in the error state, Moonraker down two polls running, and new console `!!`/`Unknown command` lines. It's stateful, so it reports only new problems (loud) and recoveries (silent). On aali-cli the jobctl job `farm-monitor` runs it every 2 min and sends alerts through the ops Telegram bot. Each `Printer` carries its `fluidd` URL. Fluidd can't choose an instance from the URL, so a shared Fluidd gets a `fluidd_note`.
+- **PrintGuard** (`farm/printguard.py`; setup in `~/agent_workspace/infrastructure/printguard/`) is failure detection by
+  a local vision model on 3dpnas:11111. The farm only reads its REST API (read scope).
+  - `farm-monitor` relays each new PrintGuard alert loud, once ("Not paused - check the camera"). PrintGuard unreachable,
+    or a printing printer it gets no frames from, is a quiet, debounced note.
+  - Printer cards show a PrintGuard badge (standby / score / ⚠ alert).
+  - Its monitors are alert-only (`on_defect: none`); `configure.py` there sets them. Never switch one to pause or
+    cancel, or point anything at its control API, without Ironman's per-printer decision.
+  - `FARM_PRINTGUARD_URL` lives in `farm.conf`. A token (`FARM_PRINTGUARD_TOKEN`) is needed only once one is issued
+    in PrintGuard.
 - **The Printers tab** (`/printers`; `farm/hosts.py`, `farm/fleet.py`, `farm/configs.py`, `farm/cfgchange.py`, `farm/baseline.py`, `farm/ops.py`) is how printers are maintained without an AI session:
   - fleet health per host (`printers/hosts.json`);
   - config snapshots and drift against a reviewed reference (nightly jobctl `farm-backup`);
@@ -140,7 +149,8 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
   - **Allowed (Ironman, 2026-10-23):** a **local vision model** that costs nothing per use and sends nothing off the
     LAN. The first is PrintGuard for print-failure detection, running in its own container. Farm code may read its
     results only from a LAN/Tailscale address (`FARM_PRINTGUARD_URL`, checked by the test). A detector may alert;
-    pausing a print automatically is a per-printer decision Ironman makes after an alert-only trial.
+    pausing a print automatically is a per-printer decision Ironman makes after an alert-only trial (started
+    2026-10-23, alerts through farm-monitor).
 - **Printer configs change only through Farm Control's Printers tab** (`/printers`, `farm/cfgchange.py`). An AI session may *stage* a change with a reason (`python3 -m farm config stage --printer <name> --path printer.cfg --section printer --option max_velocity --value 200 --reason "..." --author agent`), but never applies or rolls one back on its own, and never edits printer files over SSH or the Moonraker file API directly. A person presses Apply. The one exception: Ironman names the specific change ids in the session and says apply them (as on 2026-10-23 for changes 4 and 7). The session then runs them through the same gate as `cli:Ironman`, and that permission covers only those ids. The gate refuses while printing or paused, takes a snapshot, verifies (Klipper ready, no new audit FAIL, no `Unknown command`), rolls back automatically if Klipper doesn't come back, and writes FARM.md's change log.
 - **Agents never approve or start prints.** No calls to `/api/builds/*/approve|start`, `farm approve` or `farm start` (the latter two refuse without a terminal anyway). Preparing, slicing and queueing for review is fine. Only `farm/gate.py` can start a print: `moonraker.start` needs its token, and the gate re-checks the approval hash, the 3D view, the audit, printer idle, the uploaded file and the spool.
 - **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has looked at the run's `.3mf` (Farm Control's 3D viewer or PrusaSlicer), confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.

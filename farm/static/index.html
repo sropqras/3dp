@@ -32,6 +32,8 @@ main > *, .grid > *, .body > *, .split > * { min-width: 0; }
 .ph .name { font-weight: 700; font-size: 16px; } .ph .host { color: var(--dim); font-size: 12px; }
 a.fluidd { color: var(--blue); font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; }
 a.fluidd:hover { border-color: var(--blue); }
+a.pg { font-size: 12px; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; color: var(--dim); white-space: nowrap; }
+a.pg.watch { color: var(--teal); } a.pg.bad { color: var(--red); border-color: var(--red); font-weight: 600; } a.pg:hover { border-color: var(--blue); }
 .ph .chip, a.fluidd { white-space: nowrap; } .ph { flex-wrap: wrap; } .facts .job { overflow-wrap: anywhere; }
 .pill { margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: capitalize; }
 .s-printing { background: rgba(45,212,191,.15); color: var(--teal); }
@@ -357,6 +359,21 @@ function tempRow(label, t) {
   return `<div class="temp"><span>${label}</span><div class="bar"><i style="width:${pct}%"></i></div><span><b style="color:var(--text)">${a.toFixed(0)}°</b> / ${tg.toFixed(0)}°</span></div>`;
 }
 
+// PrintGuard (local failure detection, alert-only): what it last thought of this printer's camera
+function pgBadge(p) {
+  const g = p.printguard;
+  if (!g) return "";
+  const link = (cls, text, title) => `<a class="pg ${cls}" href="${esc(g.ui)}" target="_blank" rel="noopener" title="${esc(title)}">${text}</a>`;
+  if (g.error) return link("", "PrintGuard ✕", g.error);
+  if (g.missing) return link("", "PrintGuard: no monitor", "PrintGuard has no monitor for this printer");
+  if (g.alert && g.alert.ts) {
+    const at = new Date(g.alert.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return link("bad", `⚠ PrintGuard ${(g.alert.score ?? 0).toFixed(2)} · ${at}`, "possible print failure: check the camera (alert only, nothing was paused)");
+  }
+  if (g.watching) return link("watch", `PrintGuard ${g.score == null ? "…" : g.score.toFixed(2)}`, `watching: failure score now (alerts at ${g.threshold})`);
+  return link("", "PrintGuard standby", "watches only while printing");
+}
+
 function fluiddLink(p) {
   return p.fluidd ? `<a class="fluidd" href="${esc(p.fluidd)}" target="_blank" rel="noopener" title="${esc(p.fluidd_note || "open this printer in Fluidd")}">Fluidd ↗</a>` : "";
 }
@@ -392,7 +409,7 @@ function printerCard(p) {
       ${!["printing", "paused"].includes(p.job) && !p.readonly ? `<button class="mini" onclick="openStart(${queued[0].id})">Start…</button>` : ""}</div>` : "";
   const active = ["printing", "paused"].includes(p.job);
   return `<div class="card">
-    <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span></div>
+    <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}${pgBadge(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span></div>
     ${p.alert ? `<div class="alert">⚑ ${esc(p.alert)}</div>` : ""}
     ${p.fluidd_note ? `<div class="stamp" style="padding:0 16px 8px">Fluidd: ${esc(p.fluidd_note)}</div>` : ""}
     <div class="body">

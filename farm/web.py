@@ -57,7 +57,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import (audit, cfgchange, config, db, fleet, gate, inventory, jobs, makers, model3mf, monitor, moonraker, nas, net, ops,
-               nasview, pipeline, printers, profiles, projects, spools, tracker, watch, worker)
+               nasview, pipeline, printers, printguard, profiles, projects, spools, tracker, watch, worker)
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -565,6 +565,12 @@ def overview() -> dict:
     by_remote = {rem: r for r in reversed(runs) for rem in r["uploaded"]}
     plist = list(printers.PRINTERS.values())
     live = [_safe_view(p, by_remote) for p in plist]
+    pg = cached("printguard", 10, printguard.status)
+    for v in live:
+        if pg.get("error"):
+            v["printguard"] = {"error": pg["error"], "ui": pg["ui"]}
+        elif pg:
+            v["printguard"] = {**pg["printers"].get(v["name"], {"missing": True}), "ui": pg["ui"]}
     hist = {}
     for p in plist:
         for h in sorted(cached(f"hist:{p.name}", 30, lambda p=p: history(p)), key=lambda h: h.get("start_time", 0)):

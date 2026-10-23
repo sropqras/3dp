@@ -193,6 +193,37 @@ def settle(seen: dict, now: dict, t: float) -> dict:
     return out
 
 
+def printguard_pass(state: dict) -> list[tuple[str, str]]:
+    """PrintGuard's alerts, told once each and loud straight away: PrintGuard has already required several bad
+    frames in a row, and nothing pauses the print, so a person has to look. PrintGuard down, or a printer printing
+    while PrintGuard gets no frames from its camera, are quiet notes, debounced like the health pass."""
+    from . import printguard
+    st = printguard.status()
+    if not st:
+        return []
+    pg = state.setdefault("_printguard", {})
+    alerts, probs = [], {}
+    if "error" in st:
+        probs["down"] = ("silent", f"PrintGuard unreachable: {st['error'][:120]}")
+    else:
+        first = "told" not in pg       # first pass: what PrintGuard already showed isn't news
+        new, pg["told"] = printguard.alerts_since(st, pg.get("told", {}))
+        for a in [] if first else new:
+            p = printers.PRINTERS.get(a.get("printer") or "")
+            link = f"\nFluidd: {p.fluidd}" if p and p.fluidd else ""
+            score = f" (score {a['score']:.2f})" if isinstance(a.get("score"), (int, float)) else ""
+            alerts.append(("loud", f"🟠 {a.get('printer') or 'a printer'}: PrintGuard sees a possible print failure{score}. "
+                                   f"Not paused - check the camera.\nPrintGuard: {st['ui']}{link}"))
+        for name, v in st["printers"].items():
+            if v["status"] in printguard.ACTIVE and v["enabled"] and not v["camera_online"]:
+                probs[f"blind:{name}"] = ("silent", f"{name} is printing but PrintGuard gets no frames from its camera"
+                                                    f" ({v['camera_reason'] or 'camera offline'})")
+    now = settle(pg.setdefault("seen", {}), {"printguard": probs} if probs else {}, time.time())
+    prev = {k: {kk: tuple(vv) for kk, vv in v.items()} for k, v in pg.get("health", {}).items()}
+    pg["health"] = now
+    return alerts + diff_problems(prev, now)
+
+
 def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:
     state = json.loads(state_file.read_text()) if state_file.exists() else {}
     alerts = []
@@ -204,6 +235,10 @@ def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:
             alerts += health_pass(state)
         except Exception as e:   # the health pass is extra: it must never stop the print-error watch
             alerts.append(("silent", f"farm monitor: health pass failed: {type(e).__name__}: {str(e)[:120]}"))
+    try:
+        alerts += printguard_pass(state)
+    except Exception as e:   # like the health pass: PrintGuard must never stop the print-error watch
+        alerts.append(("silent", f"farm monitor: PrintGuard pass failed: {type(e).__name__}: {str(e)[:120]}"))
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps(state, indent=2))
     return alerts

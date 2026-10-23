@@ -75,8 +75,12 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
    any macros).
    - **Power plugs**: Meross research and design in `docs/POWER.md`. It needs your plug models, IPs and the
      account key first.
-3. **PrintGuard on 3dpnas**: SSH is authorised (2026-10-23); run `sudo bash install-3dpnas.sh` there, then the UI setup in
-   `~/agent_workspace/infrastructure/printguard/PROJECT.md` (monitors on Alert only).
+3. **PrintGuard** (3dpnas:11111) is installed and set up (2026-10-23), alert-only; alerts reach you via farm-monitor.
+   Left for you (`~/agent_workspace/infrastructure/printguard/PROJECT.md`):
+   - camera crops, from a lit frame (the garage was dark at setup);
+   - Ender3Pro's camera: `/webcam2/` is shared with the MaxNeo, so which printer does it look at?
+   - optionally a dedicated Telegram bot inside PrintGuard for photo alerts;
+   - after 1-2 weeks of alerts, decide on pause per printer.
 4. **Confirm values**:
    - the Hyper PLA volumetric cap (15 proposed; `neo-hyperpla-028-litho` and `neo-pla-020-supports` stay unconfirmed until then);
    - lithophane t_min/t_max at 0.6;

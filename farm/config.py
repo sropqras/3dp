@@ -22,6 +22,11 @@ FONTS_DIR = Path(os.environ.get("FARM_FONTS_DIR", REPO / "assets" / "fonts"))
 # who Farm Control records with an action when the page hasn't been told otherwise (the "You" link changes it per
 # browser). A name the farm uses, never a personal detail.
 OPERATOR = os.environ.get("FARM_OPERATOR", "Ironman").strip() or "Ironman"
+# PrintGuard: local print-failure detection (a vision model in its own container on 3dpnas). Empty = not used.
+# Must stay on the LAN/Tailscale (tests/test_no_ai.py). The token is only needed once one is issued in PrintGuard:
+# from then on every read wants one. It's a secret: env only, never in farm.conf or git.
+PRINTGUARD_URL = os.environ.get("FARM_PRINTGUARD_URL", "").strip()
+PRINTGUARD_TOKEN = os.environ.get("FARM_PRINTGUARD_TOKEN", "").strip()
 
 # The maker apps on aali-cli (x111 ports, SERVER.md). One env var each, so another host can point elsewhere.
 MAKER_URLS = {
