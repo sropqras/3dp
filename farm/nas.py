@@ -18,6 +18,9 @@ from . import db, inventory
 from .printers import REPO
 
 NAS_URL = os.environ.get("FARM_NAS_URL", "rsync://192.168.1.121/3dprinting/3dprinting/Project Files/")
+PHOTOS_URL = os.environ.get("FARM_NAS_PHOTOS_URL", "rsync://192.168.1.121/3dprinting/3dprinting/ProductImages/")
+PHOTOS = "@ProductImages/"          # catalogue prefix for the photos share (portfolio pictures)
+IMAGES = {"jpg", "jpeg", "png", "webp"}
 NAS_DIR = Path(os.environ.get("FARM_NAS_DIR", REPO / "data" / "nas"))
 MODELS = {"stl", "3mf", "obj", "step", "stp", "scad", "gcode", "bgcode", "f3d", "fcstd", "cxprj", "amf"}
 PRINTABLE = {"stl", "3mf"}
@@ -31,7 +34,13 @@ def _rsync(*args, timeout=600) -> str:
     return r.stdout
 
 
-def parse_listing(text: str) -> list[dict]:
+def _url(path: str) -> str:
+    """The rsync source for a catalogued path, wildcards escaped (a NAS name like 'box [v2].stl' is literal)."""
+    root, rel = (PHOTOS_URL, path[len(PHOTOS):]) if path.startswith(PHOTOS) else (NAS_URL, path)
+    return root + re.sub(r"([*?\[\]\\])", r"\\\1", rel)
+
+
+def parse_listing(text: str, prefix: str = "") -> list[dict]:
     out = []
     for line in text.splitlines():
         m = _LINE.match(line)
@@ -39,17 +48,24 @@ def parse_listing(text: str) -> list[dict]:
             continue
         path = m.group(4)
         ext = path.rsplit(".", 1)[-1].lower() if "." in Path(path).name else ""
-        if ext not in MODELS or "/." in "/" + path:
+        if ext not in MODELS | IMAGES or "/." in "/" + path:
             continue
+        path = prefix + path
         out.append({"path": path, "size": int(m.group(2).replace(",", "")), "ext": ext,
                     "mtime": datetime.strptime(m.group(3), "%Y/%m/%d %H:%M:%S").timestamp(),
-                    "folder": path.split("/")[0] if "/" in path else "", "design": inventory.design_key(path)})
+                    "folder": path.split("/")[0] if "/" in path else "",
+                    "design": "" if ext in IMAGES else inventory.design_key(path)})
     return out
 
 
 def scan(con, log=print, listing: str | None = None) -> dict:
     """Refresh nas_files from the NAS (listing: tests pass rsync's output). Files no longer there are marked gone."""
     files = parse_listing(listing if listing is not None else _rsync("-r", "--list-only", NAS_URL))
+    if listing is None:
+        try:
+            files += parse_listing(_rsync("-r", "--list-only", PHOTOS_URL, timeout=120), PHOTOS)
+        except Exception as e:      # the photos share is a nice-to-have
+            log(f"nas: photos not listed ({str(e)[:80]})")
     t = time.time()
     with db.tx(con):
         for f in files:
@@ -58,8 +74,9 @@ def scan(con, log=print, listing: str | None = None) -> dict:
                         "mtime=excluded.mtime, design=excluded.design, seen_at=excluded.seen_at, gone=0",
                         (f["path"], f["size"], f["mtime"], f["ext"], f["folder"], f["design"], t))
         gone = con.execute("UPDATE nas_files SET gone=1 WHERE seen_at < ? AND gone=0", (t,)).rowcount
-    log(f"nas: {len(files)} model files catalogued, {gone} gone")
-    return {"files": len(files), "gone": gone}
+    models = sum(f["ext"] in MODELS for f in files)
+    log(f"nas: {models} model files and {len(files) - models} images catalogued, {gone} gone")
+    return {"files": models, "images": len(files) - models, "gone": gone}
 
 
 def matrix(con, q: str = "", matched_only: bool = False, folder: str = "", limit: int = 3000) -> dict:
@@ -67,7 +84,7 @@ def matrix(con, q: str = "", matched_only: bool = False, folder: str = "", limit
     from . import printers
     designs = {d["design"]: d for d in inventory.designs(con)}
     rows = []
-    for r in con.execute("SELECT * FROM nas_files WHERE gone=0 ORDER BY folder, path"):
+    for r in con.execute("SELECT * FROM nas_files WHERE gone=0 AND design <> '' ORDER BY folder, path"):
         r = db.row(r)
         d = designs.get(r["design"])
         if matched_only and not (d and d["printers"]):
@@ -78,8 +95,9 @@ def matrix(con, q: str = "", matched_only: bool = False, folder: str = "", limit
             continue
         rows.append({**r, "printers": d["printers"] if d else {}, "ok": d["ok"] if d else 0,
                      "printable": r["ext"] in PRINTABLE})
-    folders = [f for (f,) in con.execute("SELECT DISTINCT folder FROM nas_files WHERE gone=0 ORDER BY folder")]
-    stats = con.execute("SELECT COUNT(*), MAX(seen_at) FROM nas_files WHERE gone=0").fetchone()
+    folders = [f for (f,) in con.execute("SELECT DISTINCT folder FROM nas_files WHERE gone=0 AND design <> '' "
+                                         "ORDER BY folder")]
+    stats = con.execute("SELECT COUNT(*), MAX(seen_at) FROM nas_files WHERE gone=0 AND design <> ''").fetchone()
     return {"printers": list(printers.PRINTERS), "folders": folders, "total": stats[0], "scanned_at": stats[1],
             "matched": sum(1 for r in rows if r["printers"]), "rows": rows[:limit], "truncated": len(rows) > limit,
             "source": NAS_URL}
@@ -97,7 +115,7 @@ def import_file(con, path: str, actor: str) -> dict:
     if not str(dest).startswith(str(NAS_DIR.resolve()) + os.sep):
         raise ValueError("bad path")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    _rsync("-t", NAS_URL + re.sub(r"([*?\[\]\\])", r"\\\1", path), str(dest), timeout=300)   # no wildcards
+    _rsync("-t", _url(path), str(dest), timeout=300)
     title = inventory.title_of(path)
     with db.tx(con):
         aid = r["artefact_id"]
@@ -111,3 +129,24 @@ def import_file(con, path: str, actor: str) -> dict:
                  r["mtime"], db.now())).lastrowid
             con.execute("UPDATE nas_files SET artefact_id=? WHERE path=?", (aid, path))
     return {"artefact": aid, "title": title, "path": str(dest), "bytes": dest.stat().st_size}
+
+
+def photos_for(con, design: str, limit: int = 60) -> list[dict]:
+    """Pictures that may show this design: images in the folders holding its NAS models, then the photos share."""
+    dirs = {str(Path(r[0]).parent) for r in con.execute("SELECT path FROM nas_files WHERE design=? AND gone=0", (design,))}
+    near = [db.row(r) for r in con.execute("SELECT path, size FROM nas_files WHERE design='' AND gone=0 AND "
+                                           "path NOT LIKE ? ORDER BY path", (PHOTOS + "%",))
+            if str(Path(r[0]).parent) in dirs]
+    share = [db.row(r) for r in con.execute("SELECT path, size FROM nas_files WHERE design='' AND gone=0 AND path LIKE ? "
+                                            "ORDER BY mtime DESC", (PHOTOS + "%",))]
+    return [{**x, "near": True} for x in near][:limit] + [{**x, "near": False} for x in share][:max(0, limit - len(near))]
+
+
+def fetch_image(con, path: str, dest: Path) -> Path:
+    """One catalogued picture from the NAS (a product photo)."""
+    r = con.execute("SELECT ext FROM nas_files WHERE path=? AND gone=0", (path,)).fetchone()
+    if not r or r[0] not in IMAGES:
+        raise LookupError("not a catalogued picture")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _rsync("-t", _url(path), str(dest), timeout=120)
+    return dest

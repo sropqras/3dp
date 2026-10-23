@@ -69,6 +69,14 @@ a.fluidd:hover { border-color: var(--blue); }
 .cell { width: 11px; height: 11px; border-radius: 3px; background: #1e293b; }
 .c-sliced { background: var(--blue); } .c-queued { background: var(--violet); } .c-printing { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .c-done { background: var(--green); } .c-failed { background: var(--red); }
+.c-generating { background: #334155; box-shadow: inset 0 0 0 1px var(--teal); } .c-generated { background: var(--teal); opacity: .55; }
+.c-item-todo { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); } .c-item-done { background: var(--muted); }
+.prog.multi { display: flex; } .prog.multi i { border-radius: 0; } .pj { cursor: pointer; } .pj:hover { border-color: var(--teal); }
+.pgrid { display: flex; flex-wrap: wrap; gap: 4px; } .grp { margin-bottom: 14px; }
+.grp h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+.part { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; color: var(--muted); cursor: pointer; user-select: none; }
+.part.sel { border-color: var(--teal); background: rgba(45,212,191,.12); color: var(--text); } .part .cell { width: 9px; height: 9px; }
+.pbar { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
 .legend { display: flex; gap: 14px; color: var(--muted); font-size: 12px; margin-top: 10px; flex-wrap: wrap; } .legend .cell { display: inline-block; vertical-align: -1px; margin-right: 4px; }
 .note { color: var(--dim); font-size: 12px; margin-top: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -85,7 +93,7 @@ input, select { background: #0b1220; color: var(--text); border: 1px solid var(-
 input[type=number] { width: 78px; } button { background: linear-gradient(90deg, var(--teal), var(--violet)); color: #071018; border: 0; border-radius: 8px; padding: 6px 12px; font-weight: 700; cursor: pointer; }
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
 .stamp { color: var(--dim); font-size: 12px; }
-button.mini { padding: 3px 9px; font-size: 12px; }
+button.mini { padding: 3px 9px; font-size: 12px; } button:disabled { opacity: .35; cursor: default; }
 .chip.s-review { color: var(--amber); border-color: rgba(251,191,36,.5); } .chip.s-queued, .chip.s-approved, .chip.s-uploading { color: var(--violet); }
 .chip.s-printing, .chip.s-starting { color: var(--teal); } .chip.s-failed { color: var(--red); } .chip.s-slicing { color: var(--blue); }
 .acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .warn { color: var(--amber); font-size: 12px; } .err { color: var(--red); font-size: 12px; }
@@ -109,7 +117,11 @@ nav.tabs a.on { color: var(--text); border-color: var(--line); background: var(-
 .art { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 6px; align-content: start; }
 .art .th { height: 120px; border-radius: 8px; background: #0b1220; display: grid; place-items: center; overflow: hidden; color: var(--dim); font-size: 12px; }
 .art .th img { max-width: 100%; max-height: 120px; }
-.art .t { font-weight: 700; overflow-wrap: anywhere; } .pc { font-size: 11px; } .pc b { color: var(--green); } .pc i { color: var(--red); font-style: normal; } .pc u { color: var(--amber); text-decoration: none; }
+.art .t { font-weight: 700; overflow-wrap: anywhere; } .art.prod { border-color: rgba(251,191,36,.45); } .star { color: var(--amber); }
+.photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; max-height: 40vh; overflow: auto; }
+.photos label { position: relative; display: block; border: 2px solid transparent; border-radius: 8px; overflow: hidden; cursor: pointer; background: #0b1220; height: 96px; }
+.photos label:has(input:checked) { border-color: var(--teal); } .photos input { position: absolute; top: 4px; left: 4px; }
+.photos img { width: 100%; height: 100%; object-fit: cover; } .pc { font-size: 11px; } .pc b { color: var(--green); } .pc i { color: var(--red); font-style: normal; } .pc u { color: var(--amber); text-decoration: none; }
 .nas td, .nas th { white-space: nowrap; } .nas td.p { overflow-wrap: anywhere; white-space: normal; min-width: 260px; }
 .nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
@@ -147,16 +159,18 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     <section><h2>Jobs</h2><div class="card" style="overflow-x:auto"><table id="jobs"></table></div></section>
   </div>
   <div class="tab" data-tab="projects" hidden>
-    <section><h2>Batches</h2><div id="batches"></div></section>
-    <section><h2>Generated content <span class="stamp" style="text-transform:none;letter-spacing:0">every order's models are kept: tick items and send them to any printer, profile and layer height without generating them again</span></h2>
-      <div id="library"></div></section>
+    <section id="pj-list-sec"><h2>Farm projects <span class="stamp" style="text-transform:none;letter-spacing:0">a large order as groups of parts × qty - any maker, re-prints from the Inventory, or bought items</span>
+        <button class="mini" style="margin-left:auto" onclick="newProject()">+ Project</button></h2>
+      <div class="grid" id="pj-list"></div></section>
+    <section id="pj-view" hidden></section>
   </div>
   <div class="tab" data-tab="inventory" hidden>
     <section><h2>Inventory <span class="stamp" style="text-transform:none;letter-spacing:0">everything the farm has made or holds, and where it printed - the product portfolio starts here</span></h2>
       <div class="card pad ctl invbar">
         <span class="seg"><button class="mini" id="iv-v-designs" onclick="ivView('designs')">Designs</button><button class="mini ghost" id="iv-v-nas" onclick="ivView('nas')">NAS catalogue</button></span>
         <span id="iv-designs-ctl">Group by <select id="iv-by" onchange="loadInventory()"><option value="printer">Printer</option><option value="project">Project</option><option value="maker">Maker</option></select>
-          <label><input type="checkbox" id="iv-printed" onchange="loadInventory()"> printed OK only</label></span>
+          <label><input type="checkbox" id="iv-printed" onchange="loadInventory()"> printed OK only</label>
+          <label><input type="checkbox" id="iv-products" onchange="loadInventory()"> portfolio only</label></span>
         <span id="iv-nas-ctl" hidden>Folder <select id="nas-folder" onchange="loadNas()"><option value="">all</option></select>
           <label><input type="checkbox" id="nas-matched" checked onchange="loadNas()"> sent to a printer only</label></span>
         <input id="iv-q" placeholder="search" style="width:180px" oninput="clearTimeout(window._ivt); window._ivt = setTimeout(() => ivReload(), 300)">
@@ -173,6 +187,31 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
       </div></section>
   </div>
 </main>
+<dialog id="partsdlg">
+  <div class="vh"><span class="name">Add parts</span><button class="ghost x" onclick="$('partsdlg').close()">Close</button></div>
+  <div class="pad nj">
+    <label class="f">Group <select id="ap-group"></select></label>
+    <label class="f">Made by <select id="ap-source" onchange="apSource()"><option value="maker">a maker template (label personalises it)</option>
+      <option value="artefact">re-print of an Inventory artefact</option><option value="item">bought / not printed</option></select></label>
+    <label class="f" id="ap-tpl-row">Template <select id="ap-template"></select></label>
+    <label class="f" id="ap-art-row" hidden>Artefact id <input id="ap-artefact" type="number" placeholder="from Inventory"></label>
+    <label class="f">Parts — one per line: <code>label</code> or <code>label, qty</code>; a range <code>A01-A50</code> expands
+      <textarea id="ap-text" placeholder="A01-A50&#10;Box insert, 20"></textarea></label>
+    <div class="acts"><button onclick="apSubmit()">Add</button><span class="stamp" id="ap-msg"></span></div>
+  </div>
+</dialog>
+<dialog id="proddlg">
+  <div class="vh"><span class="name" id="pd-title">Product</span><button class="ghost x" onclick="$('proddlg').close()">Close</button></div>
+  <div class="pad nj">
+    <label class="f">Name <input id="pd-name"></label>
+    <label class="f">Description <textarea id="pd-desc" style="min-height:60px"></textarea></label>
+    <div class="grid2"><label class="f">Proven on <select id="pd-printer"></select></label>
+      <label class="f">Profile <select id="pd-profile"></select></label><label class="f">Layer mm <input id="pd-layer" type="number" step="0.01"></label></div>
+    <div class="f">Photo — a picture from the NAS, <label><input type="checkbox" id="pd-usecam"> a camera snapshot now from <select id="pd-cam"></select></label>, or a file <input type="file" id="pd-file" accept="image/*"></div>
+    <div class="photos" id="pd-photos"></div>
+    <div class="acts"><button onclick="saveProduct()">Save to the portfolio</button><button class="ghost" id="pd-del" onclick="saveProduct(true)">Remove from portfolio</button><span class="stamp" id="pd-msg"></span></div>
+  </div>
+</dialog>
 <dialog id="prdlg">
   <div class="vh"><span class="name" id="pr-title">Prints</span><button class="ghost x" onclick="$('prdlg').close()">Close</button></div>
   <div class="pad" id="pr-body" style="overflow-x:auto"></div>
@@ -319,15 +358,14 @@ function printerCard(p) {
     </div></div>`;
 }
 
-function batchCard(b) {
-  const rows = b.rows.map((r) => `<div class="brow"><span class="rn">${esc(r.name)}</span>
-      <div class="cells">${r.cells.map((c) => `<span class="cell c-${c.status}" title="${esc(c.label)}: ${c.status}"></span>`).join("")}</div>
-      <span class="rc">${r.cells.filter((c) => c.status === "done").length}/${r.cells.length}</span></div>`).join("");
-  return `<div class="card pad"><div class="bh"><span class="big">${b.done} / ${b.total}</span><span>${esc(b.name)}</span>
-      <span class="stamp" style="margin-left:auto">≈ ${Math.round(b.hours_left)} printer-hours left</span></div>
-    <div class="prog"><i style="width:${(b.done / Math.max(1, b.total)) * 100}%"></i></div>${rows}
-    <div class="legend">${["planned","sliced","queued","printing","done","failed"].map((s) => `<span><span class="cell c-${s}"></span>${s}</span>`).join("")}</div>
-    <div class="note">${esc(b.note)}</div></div>`;
+function projectCard(pj) {
+  const st = pj.status || {};
+  const seg = ["done", "printing", "queued", "sliced", "generated", "generating", "failed"].filter((k) => st[k])
+    .map((k) => `<i class="c-${k}" style="width:${(st[k] / Math.max(1, pj.total)) * 100}%"></i>`).join("");
+  return `<div class="card pad pj" onclick="openProject(${pj.id})"><div class="bh"><span class="big">${pj.done} / ${pj.total}</span><span>${esc(pj.name)}</span>
+      <span class="stamp" style="margin-left:auto">${pj.hours_left ? `≈ ${Math.round(pj.hours_left)} printer-hours left` : ""}</span></div>
+    <div class="prog multi">${seg}</div>
+    <div class="stamp">${pj.groups} group${pj.groups === 1 ? "" : "s"}${pj.client ? " · " + esc(pj.client) : ""} · ${Object.entries(st).map(([k, v]) => `${v} ${k}`).join(", ")}</div></div>`;
 }
 
 function buildActions(b) {
@@ -524,7 +562,7 @@ function jobsInProgress(js) {
   if (!js || !js.length) return "";
   return js.map((j) => `<tr><td></td><td>${esc(j.title)}<div class="labels"><span class="chip">${esc(j.label)}</span></div></td><td>${esc(j.printer)}</td>
     <td>${esc(j.maker)}</td><td>–</td><td><span class="chip s-${j.state === "failed" ? "failed" : "slicing"}">${esc(j.state)}</span></td>
-    <td>${j.error ? `<span class="err" title="${esc(j.error)}">${esc(j.error.slice(0, 90))}</span>` : j.state === "generated" && !j.planning ? `<span class="stamp">generated, not on a bed (its build was rejected) - <a href="#projects" style="color:var(--blue)">Projects → Send to printer</a></span>` : `<span class="stamp">${j.state === "generated" ? "planning…" : "making the model…"}</span>`}</td></tr>`).join("");
+    <td>${j.error ? `<span class="err" title="${esc(j.error)}">${esc(j.error.slice(0, 90))}</span>` : j.state === "generated" && !j.planning ? `<span class="stamp">generated, not on a bed (its build was rejected) - <a href="#inventory" style="color:var(--blue)">Inventory → Send to printer</a> (or its project)</span>` : `<span class="stamp">${j.state === "generated" ? "planning…" : "making the model…"}</span>`}</td></tr>`).join("");
 }
 
 async function act(id, action, body, confirmText) {
@@ -577,7 +615,7 @@ function showTab(name) {
   const t = ["dashboard", "projects", "inventory", "spools"].includes(name) ? name : "dashboard";
   document.querySelectorAll(".tab").forEach((el) => (el.hidden = el.dataset.tab !== t));
   document.querySelectorAll("nav.tabs a[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
-  if (t === "projects") loadLibrary();
+  if (t === "projects") (PJ ? openProject(PJ.id, true) : loadProjects());
   if (t === "inventory") ivReload();
 }
 
@@ -608,19 +646,24 @@ function artCard(d) {
   const th = d.artefacts.find((a) => a.thumb);
   const model = d.artefacts.find((a) => a.kind === "model");
   const pr = Object.entries(d.printers).map(([n, c]) => `<span class="chip pc">${esc(n)} ${pcounts(c)}</span>`).join(" ");
-  return `<div class="art">
-    <div class="th">${th ? `<img loading="lazy" src="/api/artefacts/${th.id}/thumb" alt="">` : model && model.job_id ? "3D model" : d.kinds.includes("gcode") ? "G-code" : "model"}</div>
-    <div class="t">${esc(d.title)}</div>
+  const prod = d.products[0];
+  return `<div class="art ${prod ? "prod" : ""}">
+    <div class="th">${prod && prod.photo ? `<img loading="lazy" src="/api/products/${prod.id}/photo?v=${encodeURIComponent(prod.photo)}" alt="">` : th ? `<img loading="lazy" src="/api/artefacts/${th.id}/thumb" alt="">` : model && model.job_id ? "3D model" : d.kinds.includes("gcode") ? "G-code" : "model"}</div>
+    <div class="t">${prod ? `<span class="star" title="in the portfolio">★</span> ${esc(prod.name)}` : esc(d.title)}</div>
+    ${prod && prod.description ? `<div class="stamp">${esc(prod.description)}</div>` : ""}
+    ${prod && prod.printer ? `<div class="stamp">proven: ${esc(prod.printer)}${prod.profile ? " · " + esc(prod.profile) : ""}${prod.layer_height ? " · " + prod.layer_height + " mm" : ""}</div>` : ""}
     <div class="stamp">${esc(d.makers.join(", "))} · ${d.artefacts.length} file${d.artefacts.length > 1 ? "s" : ""}${d.last ? " · last " + new Date(d.last * 1000).toLocaleDateString() : ""}</div>
     <div>${pr || `<span class="stamp">not printed yet</span>`}</div>
     ${d.projects.length ? `<div class="stamp">Projects: ${esc(d.projects.join(", "))}</div>` : ""}
     ${d.nas.length ? `<div class="stamp" title="${esc(d.nas.join("\n"))}">NAS: ${esc(d.nas[0])}${d.nas.length > 1 ? ` +${d.nas.length - 1}` : ""}</div>` : ""}
     <div class="acts"><button class="mini ghost" onclick="openPrints(${ref(d)})">Prints</button>
-      ${model ? `<button class="mini" onclick="openSendArtefact(${model.id}, ${ref(d.title)})">Send to printer…</button>` : ""}</div>
+      ${model ? `<button class="mini" onclick="openSendArtefact(${model.id}, ${ref(d.title)})">Send to printer…</button>` : ""}
+      <button class="mini ghost" onclick="openProduct(${ref(d)})">${prod ? "Edit product" : "Make product"}</button></div>
   </div>`;
 }
 async function loadInventory() {
-  const qs = new URLSearchParams({ by: $("iv-by").value, q: $("iv-q").value, printed: $("iv-printed").checked ? "1" : "" });
+  const qs = new URLSearchParams({ by: $("iv-by").value, q: $("iv-q").value, printed: $("iv-printed").checked ? "1" : "",
+    products: $("iv-products").checked ? "1" : "" });
   IV = await (await fetch("/api/inventory?" + qs)).json();
   REF = [];
   $("iv-msg").textContent = `${IV.total} designs`;
@@ -653,6 +696,56 @@ async function markPrint(id, quality) {
   if (!r.ok) { alert((await r.json().catch(() => ({}))).error || r.status); return; }
   openPrints($("prdlg").ref); loadInventory();
 }
+let PD = null;
+async function openProduct(i) {
+  const d = REF[i]; PD = d;
+  const prod = d.products[0];
+  const r = await (await fetch("/api/inventory/photos?d=" + encodeURIComponent(d.design))).json();
+  if (!MK) MK = await (await fetch("/api/makers")).json();
+  const pv = prod || r.proven || {};
+  $("pd-title").textContent = prod ? `Edit product: ${prod.name}` : `Make product: ${d.title}`;
+  $("pd-name").value = prod ? prod.name : d.title; $("pd-desc").value = prod ? prod.description || "" : "";
+  $("pd-printer").innerHTML = `<option value="">-</option>` + MK.printers.concat(Object.keys(d.printers)).filter((x, k, a) => a.indexOf(x) === k)
+    .map((p) => `<option ${p === pv.printer ? "selected" : ""}>${esc(p)}</option>`).join("");
+  $("pd-profile").innerHTML = `<option value="">-</option>` + MK.profiles.map((p) => `<option value="${esc(p.id)}" ${p.id === pv.profile ? "selected" : ""}>${esc(p.id)}</option>`).join("");
+  $("pd-layer").value = pv.layer_height || "";
+  $("pd-cam").innerHTML = r.cameras.map((c) => `<option>${esc(c)}</option>`).join("");
+  $("pd-photos").innerHTML = (prod && prod.photo ? `<label title="keep the current photo"><input type="radio" name="pdph" value="" checked><img src="/api/products/${prod.id}/photo?v=${encodeURIComponent(prod.photo)}"></label>` : "") +
+    r.nas.map((x) => `<label title="${esc(x.path)}${x.near ? " (next to the model on the NAS)" : ""}"><input type="radio" name="pdph" value="nas:${esc(x.path)}"><img loading="lazy" src="/api/nas/image?path=${encodeURIComponent(x.path)}"></label>`).join("") ||
+    `<span class="stamp">no pictures on the NAS for this design</span>`;
+  $("pd-del").hidden = !prod; $("pd-msg").textContent = "";
+  $("pd-file").value = "";
+  $("proddlg").showModal();
+}
+async function saveProduct(del) {
+  const d = PD, prod = d.products[0];
+  const who = opName() || prompt("Your name (recorded):", "");
+  if (!who) return;
+  try { localStorage.setItem("operator", who); } catch (e) {}
+  if (del) {
+    if (!confirm(`Take "${prod.name}" out of the portfolio?`)) return;
+    const r = await fetch(`/api/products/${prod.id}/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operator: who }) });
+    if (r.ok) { $("proddlg").close(); loadInventory(); }
+    return;
+  }
+  let photo = (document.querySelector('input[name="pdph"]:checked') || {}).value || "";
+  if ($("pd-usecam").checked) photo = "camera:" + $("pd-cam").value;
+  const f = $("pd-file").files[0];
+  if (f) {
+    $("pd-msg").textContent = "uploading photo…";
+    const u = await fetch(`/api/uploads?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+    const out = await u.json(); if (!u.ok) { $("pd-msg").textContent = out.error || u.status; return; }
+    photo = "upload:" + out.ref;
+  }
+  const art = (d.artefacts.find((a) => a.kind === "model") || d.artefacts[0]).id;
+  $("pd-msg").textContent = "saving…";
+  const r = await fetch(`/api/artefacts/${prod ? prod.artefact_id : art}/product`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    operator: who, name: $("pd-name").value, description: $("pd-desc").value, printer: $("pd-printer").value, profile: $("pd-profile").value,
+    layer_height: $("pd-layer").value, photo }) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) { $("pd-msg").textContent = out.error || r.status; return; }
+  $("proddlg").close(); loadInventory();
+}
 async function loadNas() {
   const qs = new URLSearchParams({ q: $("iv-q").value, matched: $("nas-matched").checked ? "1" : "", folder: $("nas-folder").value });
   NAS = await (await fetch("/api/nas?" + qs)).json();
@@ -677,41 +770,131 @@ async function nasImport(i, btn) {
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ---------------------------------------------------------------- Projects: generated content, send to a printer
-let LIB = [], sendIds = [], sendDefaults = {}, sendArtefact = null;
+let sendIds = [], sendDefaults = {}, sendArtefact = null;
 async function openSendArtefact(id, ti) {
   const title = REF[ti];
-  sendArtefact = id; sendIds = [];
+  sendArtefact = id; sendIds = []; sendParts = null;
   $("sd2-title").textContent = `Send "${title}"`; $("sd2-items").textContent = "";
   if (!MK) MK = await (await fetch("/api/makers")).json();
   sendDefaults = {};
   $("sd2-printer").innerHTML = MK.printers.map((p) => `<option>${esc(p)}</option>`).join("");
   $("sd2-msg").textContent = ""; sendProfiles(); $("senddlg").showModal();
 }
-async function loadLibrary() {
-  LIB = await (await fetch("/api/projects")).json();
-  $("library").innerHTML = LIB.length ? `<div class="lib">${LIB.map((o) => {
-    const gen = o.jobs.filter((j) => j.models.length);
-    return `<div class="card pad"><div class="bh"><b>${esc(o.title)}</b><span class="stamp">#${o.id} · ${esc(o.source)} · ${new Date(o.created_at * 1000).toLocaleString()}</span>
-        ${gen.length ? `<button class="mini" style="margin-left:auto" onclick="openSend(${o.id})">Send to printer…</button>` : ""}</div>
-      <table><tr><th></th><th>Item</th><th>Maker</th><th>State</th><th>Models</th></tr>${o.jobs.map((j) => `<tr>
-        <td>${j.models.length ? `<input type="checkbox" class="libsel" data-order="${o.id}" value="${j.id}" checked>` : ""}</td>
-        <td>${esc(j.label)}</td><td>${esc(j.maker)}</td><td><span class="chip">${esc(j.state)}</span></td>
-        <td>${j.models.length ? j.models.map((m) => `<span class="chip" title="${m.triangles} triangles">${esc(m.label)}${m.exists ? "" : " (file missing)"}</span>`).join(" ") : `<span class="stamp">${esc(j.error || "not generated")}</span>`}</td></tr>`).join("")}</table>
-      ${o.builds.length ? `<div class="stamp" style="margin-top:6px">Builds: ${o.builds.map((b) => `#${b.id} ${esc(b.printer)} ${b.layer_height || ""} mm <b>${esc(b.state)}</b>`).join(" · ")}</div>` : ""}
-    </div>`; }).join("")}</div>` : `<div class="stamp">No orders yet.</div>`;
+// ---------------------------------------------------------------- Farm Projects
+let PJ = null, pjSel = new Set(), TEMPLATES = null, sendParts = null;
+async function loadProjects() {
+  const list = await (await fetch("/api/projects")).json();
+  $("pj-list").innerHTML = list.map(projectCard).join("") || `<div class="stamp">No projects yet - + Project.</div>`;
 }
-async function openSend(orderId) {
-  sendArtefact = null;
-  sendIds = [...document.querySelectorAll(`.libsel[data-order="${orderId}"]:checked`)].map((c) => +c.value);
-  if (!sendIds.length) { alert("Tick at least one generated item."); return; }
-  const o = LIB.find((x) => x.id === orderId);
-  $("sd2-title").textContent = `Send ${sendIds.length} item(s) of "${o.title}"`;
-  $("sd2-items").textContent = o.jobs.filter((j) => sendIds.includes(j.id)).map((j) => j.label).join(", ");
+async function newProject() {
+  const name = prompt("Project name (the large order):", "");
+  if (!name) return;
+  const client = prompt("Client (optional):", "") || "";
+  const hpu = prompt("Printer-hours per unit, for the estimate (optional):", "") || "";
+  const r = await pjPost("/api/projects", { name, client, hours_per_unit: hpu ? +hpu : null, group: "Parts" });
+  if (r) { await loadProjects(); openProject(r.id); }
+}
+async function pjPost(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operator: opName(), ...body }) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(out.error || `HTTP ${r.status}`); return null; }
+  return out;
+}
+async function openProject(id, keep) {
+  PJ = await (await fetch(`/api/projects/${id}`)).json();
+  if (!keep) pjSel = new Set();
+  if (!TEMPLATES) TEMPLATES = await (await fetch("/api/templates")).json();
+  $("pj-list-sec").hidden = true; $("pj-view").hidden = false;
+  renderProject();
+}
+function closeProject() { PJ = null; $("pj-view").hidden = true; $("pj-list-sec").hidden = false; loadProjects(); }
+function renderProject() {
+  const parts = PJ.groups.flatMap((g) => g.parts);
+  const sel = parts.filter((p) => pjSel.has(p.id));
+  const can = {
+    gen: sel.some((p) => p.source === "maker" && p.cells.some((c) => c.status === "todo")),
+    send: sel.some((p) => p.generated || p.source === "artefact"),
+    item: sel.some((p) => p.source === "item"),
+  };
+  const statuses = ["todo", "generating", "generated", "sliced", "queued", "printing", "done", "failed", "item-todo", "item-done"];
+  $("pj-view").innerHTML = `<h2><a href="#projects" onclick="closeProject();return false" style="color:var(--blue)">← projects</a> ${esc(PJ.name)}
+      <span class="stamp" style="text-transform:none;letter-spacing:0">${PJ.done} / ${PJ.total} done${PJ.hours_left ? ` · ≈ ${Math.round(PJ.hours_left)} printer-hours left` : ""}${PJ.client ? " · " + esc(PJ.client) : ""}</span></h2>
+    ${PJ.note ? `<div class="stamp" style="margin-bottom:8px">${esc(PJ.note)}</div>` : ""}
+    <div class="card pad pbar"><b>${sel.length}</b> selected
+      <button class="mini ghost" onclick="pjSelect('all')">all</button><button class="mini ghost" onclick="pjSelect('todo')">not started</button><button class="mini ghost" onclick="pjSelect('none')">none</button>
+      <span style="flex:1"></span>
+      <button class="mini" ${can.gen ? "" : "disabled"} onclick="pjGenerate()" title="make the selected parts with their maker template, then slice for Review & queue">Generate</button>
+      <button class="mini" ${can.send ? "" : "disabled"} onclick="pjSend()" title="slice generated parts / Inventory artefacts for a printer">Send to printer…</button>
+      <button class="mini ghost" ${can.item ? "" : "disabled"} onclick="pjAct('item-done')">Item done</button>
+      <button class="mini ghost" ${can.item ? "" : "disabled"} onclick="pjAct('item-undo')">Item undo</button>
+      <button class="mini ghost" ${sel.length ? "" : "disabled"} onclick="pjAct('remove', 'Remove ' + pjSel.size + ' part(s) from the project?')">Remove</button>
+      <button class="mini ghost" onclick="pjAddParts()">+ Parts</button>
+      <select onchange="if (this.value) pjState(this.value); this.value = ''"><option value="">project…</option><option value="delivered">mark delivered</option><option value="archived">archive</option><option value="open">reopen</option></select>
+    </div>
+    <div class="card pad">${PJ.groups.map((g) => `<div class="grp"><h3 onclick="pjSelect('group', ${g.id})" title="select this group">${esc(g.name)} <span class="stamp">${g.parts.reduce((a, p) => a + p.cells.filter((c) => c.status === "done" || c.status === "item-done").length, 0)}/${g.parts.reduce((a, p) => a + p.cells.length, 0)}</span></h3>
+      <div class="pgrid">${g.parts.map((p) => `<span class="part ${pjSel.has(p.id) ? "sel" : ""}" onclick="pjToggle(${p.id}, event)" title="${esc(p.label)} · ${esc(p.source === "maker" ? (p.template || p.maker) : p.source === "artefact" ? "re-print of Inventory artefact " + p.artefact_id : "bought / not printed")} · ${p.cells.map((c) => c.status).join(", ")}">${esc(p.label)}${p.cells.map((c) => `<span class="cell c-${c.status}"></span>`).join("")}</span>`).join("") || `<span class="stamp">empty - + Parts</span>`}</div></div>`).join("")}
+      <div class="legend">${statuses.map((s) => `<span><span class="cell c-${s}"></span>${s.replace("item-", "item ")}</span>`).join("")}</div></div>
+    <div class="stamp" style="margin-top:8px">Generate and Send only prepare: every bed waits in Review &amp; queue for the 3D check, approval and the start checklist.</div>`;
+}
+let pjLast = null;
+function pjToggle(id, ev) {
+  const ids = PJ.groups.flatMap((g) => g.parts.map((p) => p.id));
+  if (ev.shiftKey && pjLast != null) {
+    const [a, b] = [ids.indexOf(pjLast), ids.indexOf(id)].sort((x, y) => x - y);
+    ids.slice(a, b + 1).forEach((i) => pjSel.add(i));
+  } else pjSel.has(id) ? pjSel.delete(id) : pjSel.add(id);
+  pjLast = id; renderProject();
+}
+function pjSelect(what, gid) {
+  const parts = PJ.groups.flatMap((g) => g.parts.map((p) => ({ ...p, gid: g.id })));
+  if (what === "none") pjSel = new Set();
+  else if (what === "all") pjSel = new Set(parts.map((p) => p.id));
+  else if (what === "todo") pjSel = new Set(parts.filter((p) => p.cells.some((c) => c.status === "todo" || c.status === "item-todo")).map((p) => p.id));
+  else if (what === "group") { const g = parts.filter((p) => p.gid === gid); const all = g.every((p) => pjSel.has(p.id)); g.forEach((p) => all ? pjSel.delete(p.id) : pjSel.add(p.id)); }
+  renderProject();
+}
+async function pjAct(action, ask) {
+  if (ask && !confirm(ask)) return;
+  if (!opName()) { const who = prompt("Your name (recorded):", ""); if (!who) return; try { localStorage.setItem("operator", who); } catch (e) {} }
+  const r = await pjPost(`/api/projects/${PJ.id}/${action}`, { parts: [...pjSel] });
+  if (r) { if (action === "remove") pjSel = new Set(); openProject(PJ.id, true); }
+}
+async function pjState(state) {
+  if (!confirm(`Mark "${PJ.name}" ${state}?`)) return;
+  if (await pjPost(`/api/projects/${PJ.id}/state`, { state })) state === "open" ? openProject(PJ.id, true) : closeProject();
+}
+async function pjGenerate() {
+  const parts = PJ.groups.flatMap((g) => g.parts).filter((p) => pjSel.has(p.id) && p.source === "maker");
+  const units = parts.reduce((a, p) => a + p.cells.filter((c) => c.status === "todo").length, 0);
+  const tpls = [...new Set(parts.map((p) => p.template || p.maker))];
+  if (!confirm(`Generate ${units} unit(s) of ${parts.length} part(s) with ${tpls.join(", ")} (each template's printer, profile and layer height)?\n\nThey are sliced and wait in Review & queue - nothing prints until you approve and start.`)) return;
+  const r = await pjPost(`/api/projects/${PJ.id}/generate`, { parts: parts.map((p) => p.id) });
+  if (r) { alert(r.orders.map((o) => `order ${o.order}: ${o.jobs.length} job(s) for ${o.printer} (${o.profile}, ${o.layer_height} mm)`).join("\n")); openProject(PJ.id, true); refresh(); }
+}
+async function pjSend() {
+  sendParts = [...pjSel]; sendArtefact = null;
+  const labels = PJ.groups.flatMap((g) => g.parts).filter((p) => pjSel.has(p.id) && (p.generated || p.source === "artefact")).map((p) => p.label);
+  $("sd2-title").textContent = `Send ${labels.length} part(s) of "${PJ.name}"`; $("sd2-items").textContent = labels.join(", ");
   if (!MK) MK = await (await fetch("/api/makers")).json();
-  const first = o.jobs.find((j) => sendIds.includes(j.id));
-  sendDefaults = { profile: first && first.profile, layer: first && first.layer_height };
+  sendDefaults = {};
   $("sd2-printer").innerHTML = MK.printers.map((p) => `<option>${esc(p)}</option>`).join("");
   $("sd2-msg").textContent = ""; sendProfiles(); $("senddlg").showModal();
+}
+function pjAddParts() {
+  $("ap-group").innerHTML = PJ.groups.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join("") + `<option value="">+ new group…</option>`;
+  $("ap-template").innerHTML = TEMPLATES.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+  $("ap-msg").textContent = ""; apSource(); $("partsdlg").showModal();
+}
+function apSource() {
+  const s = $("ap-source").value;
+  $("ap-tpl-row").hidden = s !== "maker"; $("ap-art-row").hidden = s !== "artefact";
+}
+async function apSubmit() {
+  const gid = $("ap-group").value;
+  const body = { text: $("ap-text").value, source: $("ap-source").value, template: $("ap-template").value,
+    artefact_id: +$("ap-artefact").value || null, group_id: gid ? +gid : null, group: gid ? "" : prompt("New group name:", "") || "" };
+  const r = await pjPost(`/api/projects/${PJ.id}/parts`, body);
+  if (r) { $("ap-msg").textContent = `${r.parts.length} part(s) added`; $("ap-text").value = ""; openProject(PJ.id, true); }
 }
 function sendProfiles() {
   const pr = $("sd2-printer").value;
@@ -725,6 +908,12 @@ function sendLayers() {
 }
 async function doSend() {
   $("sd2-msg").textContent = "sending…";
+  if (sendParts) {
+    const r = await pjPost(`/api/projects/${PJ.id}/send`, { parts: sendParts, printer: $("sd2-printer").value, profile: $("sd2-profile").value, layer_height: +$("sd2-layer").value });
+    if (r) { $("sd2-msg").textContent = `build(s) ${r.builds.join(", ") || "-"}${r.artefacts.length ? ` + ${r.artefacts.length} re-print(s)` : ""} slicing — they'll appear in Review & queue`; refresh(); openProject(PJ.id, true); }
+    else $("sd2-msg").textContent = "not sent";
+    return;
+  }
   if (sendArtefact) {
     const r = await fetch(`/api/artefacts/${sendArtefact}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
       printer: $("sd2-printer").value, profile: $("sd2-profile").value, layer_height: +$("sd2-layer").value, operator: opName() }) });
@@ -733,13 +922,6 @@ async function doSend() {
     if (r.ok) refresh();
     return;
   }
-  const r = await fetch("/api/jobs/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-    job_ids: sendIds, printer: $("sd2-printer").value, profile: $("sd2-profile").value, layer_height: +$("sd2-layer").value,
-    same_bed: $("sd2-samebed").checked }) });
-  const out = await r.json();
-  if (!r.ok) { $("sd2-msg").textContent = "not sent: " + (out.error || r.status); return; }
-  $("sd2-msg").textContent = `build(s) ${out.builds.join(", ")} slicing — they'll appear in Review & queue`;
-  refresh(); loadLibrary();
 }
 
 function jobsTable(runs) {
@@ -791,15 +973,14 @@ function toggleBoost(name) { boost[name] = boost[name] === false; localStorageSa
 
 function render() {
   const P = data.printers, online = P.filter((p) => p.online).length, printing = P.filter((p) => p.job === "printing").length;
-  const b = data.batches[0];
+  const b = [...(data.projects || [])].sort((x, y) => (y.total - y.done) - (x.total - x.done))[0];   // most work left
   const petg = (inv?.spools || []).filter((s) => s.material === "PETG").reduce((a, s) => a + (+s.remaining_g || 0), 0);
   $("kpis").innerHTML = [
     [`${online}/${P.length}`, "printers online"], [printing, "printing"],
-    b ? [`${b.done}/${b.total}`, "plates done"] : null, b ? [`${Math.round(b.hours_left)} h`, "batch left"] : null,
+    b ? [`${b.done}/${b.total}`, `${b.name.slice(0, 22)} done`] : null, b && b.hours_left ? [`${Math.round(b.hours_left)} h`, "project left"] : null,
     [`${(petg / 1000).toFixed(2)} kg`, "PETG on hand"], [new Date(data.time * 1000).toLocaleTimeString(), "updated"],
   ].filter(Boolean).map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><small>${esc(l)}</small></div>`).join("");
   $("printers").innerHTML = P.map(printerCard).join("");
-  $("batches").innerHTML = data.batches.map(batchCard).join("");
   $("jobs").innerHTML = jobsTable(data.runs);
   // don't redraw under an open printer drop-down (it would close it); anything else re-renders
   const busy = document.activeElement?.tagName === "SELECT" && document.activeElement.closest("#builds");

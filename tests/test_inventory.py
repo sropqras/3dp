@@ -100,6 +100,48 @@ class Backfill(unittest.TestCase):
         self.assertEqual(inventory.listing(self.con, "printer", q="quddus")["total"], 1)
 
 
+class Portfolio(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.con = db.connect(self.tmp / "farm.db")
+        self.aid = self.con.execute(
+            "INSERT INTO artefacts (kind, title, design, maker, printer, remote_path, meta, created_at) "
+            "VALUES ('gcode','Lamp','lamp','printer-file','s1pro','lamp.gcode',?,0)", ('{"layer_height": 0.2}',)).lastrowid
+        inventory.record(self.con, self.aid, "s1pro", H("lamp.gcode", "completed", 10), "history")
+        p = mock.patch.object(inventory, "PRODUCTS_DIR", self.tmp / "products")
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_promote_is_a_persons_and_prefills_what_it_was_proven_on(self):
+        with self.assertRaises(inventory.Refused):
+            inventory.promote(self.con, self.aid, {"name": "Lamp"}, "agent")
+        with self.assertRaises(ValueError):
+            inventory.promote(self.con, self.aid, {"name": " "}, "ui:Amir")
+        pr = inventory.promote(self.con, self.aid, {"name": "Moon lamp", "description": "PLA"}, "ui:Amir",
+                               (b"\xff\xd8" + b"x" * 200, ".JPG"))
+        self.assertEqual((pr["printer"], pr["layer_height"], pr["photo"]), ("s1pro", 0.2, f"{pr['id']}.jpg"))
+        self.assertEqual(inventory.product_photo(self.con, pr["id"])[1], "image/jpeg")
+        again = inventory.promote(self.con, self.aid, {"name": "Moon lamp v2"}, "ui:Amir")   # update, photo kept
+        self.assertEqual((again["id"], again["photo"]), (pr["id"], pr["photo"]))
+        with self.assertRaises(ValueError):
+            inventory.promote(self.con, self.aid, {"name": "x"}, "ui:Amir", (b"<html>" * 50, "html"))
+        self.assertEqual(inventory.listing(self.con, "maker", products_only=True)["total"], 1)
+        inventory.unpromote(self.con, pr["id"], "ui:Amir")
+        self.assertFalse((self.tmp / "products" / pr["photo"]).exists())
+        self.assertEqual(inventory.listing(self.con, "maker", products_only=True)["total"], 0)
+
+    def test_photos_near_the_model_on_the_nas(self):
+        nas.scan(self.con, log=lambda m: None, listing=(
+            "-rw 10 2025/06/01 09:24:58 Lights/Lamp.stl\n-rw 10 2025/06/01 09:24:58 Lights/lamp photo.jpg\n"
+            "-rw 10 2025/06/01 09:24:58 Other/cat.png\n"))
+        self.con.execute("INSERT INTO nas_files (path, size, mtime, ext, folder, design, seen_at) "
+                         "VALUES ('@ProductImages/IMG_1.JPG', 1, 1, 'jpg', '', '', 1)")
+        ph = nas.photos_for(self.con, "lamp")
+        self.assertEqual([(x["path"], x["near"]) for x in ph], [("Lights/lamp photo.jpg", True), ("@ProductImages/IMG_1.JPG", False)])
+        self.assertEqual(nas.matrix(self.con)["total"], 1)               # pictures aren't catalogue rows
+        self.assertEqual(nas._url("@ProductImages/a [1].jpg"), nas.PHOTOS_URL + "a \\[1\\].jpg")
+
+
 LISTING = """drwxrwxrwx          4,096 2026/10/11 21:47:44 .
 -rwxrwxrwx      4,741,782 2025/06/01 09:24:58 Allah/Al-Quddus_180mm.3mf
 -rwxrwxrwx         12,000 2025/06/01 09:24:58 Allah/Al-Quddus_180mm.step

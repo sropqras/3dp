@@ -319,3 +319,76 @@ def prints_of(con, design: str) -> list[dict]:
     return [db.row(r) for r in con.execute(
         "SELECT p.*, a.title, a.kind FROM prints p JOIN artefacts a ON a.id = p.artefact_id WHERE a.design=? "
         "ORDER BY p.started_at DESC LIMIT 200", (design,))]
+
+
+# ---------------------------------------------------------------- the portfolio: products a person promoted
+
+PRODUCTS_DIR = Path(__import__("os").environ.get("FARM_PRODUCTS_DIR", printers.REPO / "data" / "products"))
+
+
+def proven(con, design: str) -> dict:
+    """What it was last printed well with: the newest good print, else the newest completed one."""
+    r = con.execute(
+        "SELECT p.printer, a.meta, b.profile, b.layer_height FROM prints p JOIN artefacts a ON a.id = p.artefact_id "
+        "LEFT JOIN builds b ON b.id = p.build_id WHERE a.design=? AND p.status='completed' AND "
+        "COALESCE(p.quality,'') <> 'bad' ORDER BY (p.quality = 'good') DESC, p.started_at DESC LIMIT 1", (design,)).fetchone()
+    if not r:
+        return {}
+    meta = json.loads(r[1] or "{}")
+    return {"printer": r[0], "profile": r[2], "layer_height": r[3] or meta.get("layer_height")}
+
+
+def promote(con, artefact_id: int, body: dict, actor: str, photo: tuple[bytes, str] | None = None) -> dict:
+    """Make (or update) the product for an artefact. photo: (bytes, extension)."""
+    _person(actor)
+    a = con.execute("SELECT design FROM artefacts WHERE id=?", (artefact_id,)).fetchone()
+    if not a:
+        raise LookupError(f"no artefact {artefact_id}")
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise ValueError("a product needs a name")
+    pv = proven(con, a[0])
+    row = {"name": name[:120], "description": str(body.get("description") or "")[:2000],
+           "printer": body.get("printer") or pv.get("printer"), "profile": body.get("profile") or pv.get("profile"),
+           "layer_height": float(body["layer_height"]) if body.get("layer_height") else pv.get("layer_height")}
+    old = con.execute("SELECT id, photo FROM products WHERE artefact_id=?", (artefact_id,)).fetchone()
+    with db.tx(con):
+        if old:
+            pid = old[0]
+            con.execute("UPDATE products SET name=?, description=?, printer=?, profile=?, layer_height=? WHERE id=?",
+                        (row["name"], row["description"], row["printer"], row["profile"], row["layer_height"], pid))
+        else:
+            pid = con.execute("INSERT INTO products (artefact_id, name, description, printer, profile, layer_height, "
+                              "created_by, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                              (artefact_id, row["name"], row["description"], row["printer"], row["profile"],
+                               row["layer_height"], actor, db.now())).lastrowid
+        if photo:
+            data, ext = photo
+            ext = ext.lower().lstrip(".")
+            if ext not in ("jpg", "jpeg", "png", "webp") or len(data) < 100:
+                raise ValueError("photo: a jpg, png or webp image")
+            PRODUCTS_DIR.mkdir(parents=True, exist_ok=True)
+            dest = PRODUCTS_DIR / f"{pid}.{ext}"
+            for f in PRODUCTS_DIR.glob(f"{pid}.*"):
+                f.unlink()
+            dest.write_bytes(data)
+            con.execute("UPDATE products SET photo=? WHERE id=?", (dest.name, pid))
+    return db.row(con.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone())
+
+
+def unpromote(con, product_id: int, actor: str) -> None:
+    _person(actor)
+    r = con.execute("SELECT photo FROM products WHERE id=?", (product_id,)).fetchone()
+    if not r:
+        raise LookupError(f"no product {product_id}")
+    if r[0]:
+        (PRODUCTS_DIR / r[0]).unlink(missing_ok=True)
+    con.execute("DELETE FROM products WHERE id=?", (product_id,))
+
+
+def product_photo(con, product_id: int) -> tuple[bytes, str] | None:
+    r = con.execute("SELECT photo FROM products WHERE id=?", (product_id,)).fetchone()
+    if not r or not r[0] or not (PRODUCTS_DIR / r[0]).is_file():
+        return None
+    ext = r[0].rsplit(".", 1)[-1]
+    return (PRODUCTS_DIR / r[0]).read_bytes(), {"jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, f"image/{ext}")

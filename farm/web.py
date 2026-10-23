@@ -28,7 +28,14 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /api/nas?q=&matched=1&folder=   the OMV project-files catalogue vs the printers (farm/nas.py)
   POST /api/inventory/refresh | /api/nas/scan | /api/nas/import {path} | /api/prints/<id>/mark {quality, note}
   POST /api/artefacts/<id>/send {printer, profile, layer_height}   onto a printer via Review & queue
-  GET  /api/projects          orders -> generated jobs/models -> builds (the Projects tab's library)
+  POST /api/artefacts/<id>/product {name, description, printer, profile, layer_height, photo}   the portfolio (a person)
+  POST /api/products/<id>/delete   GET /api/products/<id>/photo   GET /api/inventory/photos?d=   GET /api/nas/image?path=
+  GET  /api/projects[/<id>]   Farm Projects: summaries / one project's grid (farm/projects.py)
+  POST /api/projects {name, client, note, hours_per_unit}   a new project
+  POST /api/projects/<id>/groups {name} | parts {group_id|group, text, source, template, artefact_id}
+       | generate {parts, printer?, profile?, layer_height?} | send {parts, printer, profile, layer_height}
+       | item-done | item-undo | remove {parts} | state {state}   (marks, removal, state: a person only)
+  GET  /api/library           orders -> generated jobs/models -> builds
   POST /api/jobs/send {job_ids, printer, profile, layer_height, same_bed}   re-use generated models on new builds
   POST /api/orders            a new order from the New-job page -> jobs queued for the worker
   POST /api/spools[/<id>]     add a spool / edit one ({"version": n, ...fields, "remaining_g"}); 409 if stale
@@ -41,7 +48,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, cfgchange, config, db, fleet, gate, inventory, nas, ops, jobs, makers, model3mf, monitor, net, pipeline, printers, profiles, spools, watch, worker
+from . import audit, cfgchange, config, db, fleet, gate, inventory, nas, ops, jobs, makers, model3mf, monitor, net, pipeline, printers, profiles, projects, spools, watch, worker
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -197,72 +204,17 @@ def history(p) -> list[dict]:
         return []
 
 
-# ---------------------------------------------------------------- batch progress
+# ---------------------------------------------------------------- Farm Projects (farm/projects.py)
 
-BUILD_TO_CELL = {"slicing": "sliced", "review": "sliced", "approved": "queued", "uploading": "queued",
-                 "queued": "queued", "starting": "printing", "printing": "printing", "done": "done",
-                 "failed": "failed"}
-
-
-def db_cells() -> dict:
-    """label -> batch-cell status from the farm DB (newest job per label wins; cancelled jobs don't count)."""
+def projects_view() -> list[dict]:
+    """Open projects for the KPIs and the Projects tab. A jobs/*/batch.json not yet imported becomes a project."""
     con = db.connect()
     try:
-        rows = con.execute(
-            "SELECT j.label, j.state, (SELECT b.state FROM build_jobs bj JOIN builds b ON b.id = bj.build_id "
-            " WHERE bj.job_id = j.id ORDER BY b.id DESC LIMIT 1) AS build_state FROM jobs j "
-            "WHERE j.state <> 'cancelled' ORDER BY j.id").fetchall()
+        for path in BATCHES:
+            projects.import_batch(con, path, "import", templates())
+        return projects.summaries(con)
     finally:
         con.close()
-    out = {}
-    for label, state, build_state in rows:
-        if state == "done":
-            out[label] = "done"
-        elif state == "failed":
-            out[label] = "failed"
-        elif build_state in BUILD_TO_CELL:
-            out[label] = BUILD_TO_CELL[build_state]
-        elif state in ("generated", "planned"):
-            out[label] = "sliced"
-    return out
-
-
-def batch_view(runs, live, hist_by_file) -> list[dict]:
-    out = []
-    from_db = db_cells()
-    for path in BATCHES:
-        b = json.loads(path.read_text(encoding="utf-8"))
-        status = {}
-        for r in reversed(runs):  # oldest first, newer runs override
-            st = "sliced" if r["result"] == "ok" else None
-            if r["uploaded"]:
-                st = "queued"
-                h = hist_by_file.get(r["uploaded"][0])
-                if h:
-                    st = {"completed": "done", "cancelled": "failed", "error": "failed",
-                          "klippy_shutdown": "failed"}.get(h["status"], st)
-            for lab in r["labels"]:
-                if st and (status.get(lab) != "done"):
-                    status[lab] = st
-        for pv in live:
-            if pv.get("run") and pv.get("job") in ("printing", "paused"):
-                for lab in pv["run"]["labels"]:
-                    status[lab] = "printing"
-        # the farm DB knows the queue and the gate's starts; a done cell stays done
-        for lab, st in from_db.items():
-            if status.get(lab) != "done":
-                status[lab] = st
-        rows = []
-        for row in b["rows"]:
-            labels = [f"{row['prefix']}{i:02d}" for i in range(1, row["count"] + 1)]
-            rows.append({"name": row.get("name", row["prefix"]),
-                         "cells": [{"label": l, "status": status.get(l, "planned")} for l in labels]})
-        total = sum(len(r["cells"]) for r in rows)
-        done = sum(c["status"] == "done" for r in rows for c in r["cells"])
-        beds_left = (total - done) / b.get("plates_per_bed", 1)
-        out.append({"name": b["name"], "rows": rows, "total": total, "done": done,
-                    "hours_left": beds_left * b.get("hours_per_bed", 0), "note": b.get("note", "")})
-    return out
 
 
 # ---------------------------------------------------------------- new jobs (makers, uploads, orders)
@@ -361,6 +313,71 @@ def create_order(body: dict) -> dict:
         return {"order": oid, "jobs": ids, "run": run.dir.name}
     finally:
         con.close()
+
+
+def project_action(con, pid: int | None, action: str, body: dict, who: str):
+    ids = [int(i) for i in body.get("parts") or []]
+    if action == "create":
+        new = projects.create(con, str(body.get("name") or ""), who, str(body.get("client") or ""),
+                              str(body.get("note") or ""), float(body["hours_per_unit"]) if body.get("hours_per_unit") else None)
+        projects.add_group(con, new, str(body.get("group") or "Parts"))
+        return {"id": new}
+    if action == "groups":
+        return {"id": projects.add_group(con, pid, str(body.get("name") or ""))}
+    if action == "parts":
+        labels = projects.parse_labels(str(body.get("text") or ""))
+        if not labels:
+            raise ValueError("no parts: one label per line (or a range like A01-A50)")
+        src = body.get("source") or "maker"
+        common = {"source": src, "template": body.get("template") if src == "maker" else None,
+                  "artefact_id": int(body["artefact_id"]) if src == "artefact" and body.get("artefact_id") else None}
+        gid = int(body["group_id"]) if body.get("group_id") else projects.add_group(con, pid, str(body.get("group") or ""))
+        return {"parts": projects.add_parts(con, gid, [{"label": l, "qty": q, **common} for l, q in labels])}
+    if action == "generate":
+        out = projects.generate(con, pid, ids, who, templates(), _resolve_input,
+                                {k: body.get(k) for k in ("printer", "profile", "layer_height") if body.get(k)})
+        for o in out:
+            for jid in o["jobs"]:
+                worker.enqueue(con, "generate", jid)
+        return {"orders": out}
+    if action == "send":
+        out = projects.send(con, pid, ids, str(body["printer"]), str(body["profile"]), float(body["layer_height"]),
+                            send_artefact)
+        for bid in out["builds"]:
+            worker.enqueue(con, "slice", bid)
+        return out
+    if action in ("item-done", "item-undo"):
+        return {"changed": projects.items(con, pid, ids, 1 if action == "item-done" else -1, who)}
+    if action == "remove":
+        return {"removed": projects.remove(con, pid, ids, who)}
+    if action == "state":
+        projects.set_state(con, pid, str(body.get("state")), who)
+        return {"state": body.get("state")}
+    raise LookupError(f"no project action {action}")
+
+
+def cam_snapshot(p) -> tuple[bytes, str]:
+    cams = net.get_json(f"{p.moonraker}/server/webcams/list", timeout=4)["result"]["webcams"]
+    host = urllib.parse.urlparse(p.moonraker).hostname
+    with urllib.request.urlopen(f"http://{host}{cams[0]['snapshot_url']}", timeout=5) as r:
+        return r.read(), r.headers.get("Content-Type", "image/jpeg")
+
+
+def product_photo(con, src: str) -> tuple[bytes, str] | None:
+    """camera:<printer> (a snapshot now), nas:<catalogued picture>, upload:<ref>; empty keeps the old photo."""
+    kind, _, ref = src.partition(":")
+    if not src:
+        return None
+    if kind == "camera":
+        data, ctype = cam_snapshot(printers.get(ref))
+        return data, "png" if "png" in ctype else "jpg"
+    if kind == "nas":
+        dest = nas.fetch_image(con, ref, nas.NAS_DIR / "_images" / ref.replace("@", ""))
+        return dest.read_bytes(), dest.suffix
+    if kind == "upload":
+        path = Path(_resolve_input(src))
+        return path.read_bytes(), path.suffix
+    raise ValueError("photo: camera:<printer>, nas:<path> or upload:<ref>")
 
 
 def send_artefact(con, artefact_id: int, body: dict) -> dict:
@@ -530,7 +547,8 @@ def overview() -> dict:
         inv = {"spools": spools.all_spools(con)}
     finally:
         con.close()
-    return {"time": time.time(), "printers": live, "runs": shown[:25], "batches": batch_view(runs, live, hist),
+    return {"time": time.time(), "printers": live, "runs": shown[:25],
+            "projects": [x for x in cached("projects", 15, projects_view) if x["state"] == "open"],
             "builds": builds_view(), "jobs_in_progress": jobs_in_progress(),
             "inventory": inv, "petg_used_g": round(sum(r["grams"] for r in shown if r["status"] == "completed"), 1)}
 
@@ -617,6 +635,16 @@ class Handler(BaseHTTPRequestHandler):
             t = cached(f"thumb:{path}", 3600, fetch)
             return self._send(200, t[0], t[1]) if t else self._send(404, b"{}")
         if path == "/api/projects":
+            return self._send(200, json.dumps(projects_view(), default=str).encode())
+        if path.startswith("/api/projects/") and path.split("/")[3].isdigit():
+            con = db.connect()
+            try:
+                return self._send(200, json.dumps(projects.grid(con, int(path.split("/")[3])), default=str).encode())
+            except LookupError as e:
+                return self._send(404, json.dumps({"error": str(e)}).encode())
+            finally:
+                con.close()
+        if path == "/api/library":
             con = db.connect()
             try:
                 return self._send(200, json.dumps(pipeline.library(con), default=str).encode())
@@ -631,12 +659,38 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self._send(404, b"{}")
             try:
-                cams = net.get_json(f"{p.moonraker}/server/webcams/list", timeout=4)["result"]["webcams"]
-                host = urllib.parse.urlparse(p.moonraker).hostname
-                with urllib.request.urlopen(f"http://{host}{cams[0]['snapshot_url']}", timeout=5) as r:
-                    return self._send(200, r.read(), r.headers.get("Content-Type", "image/jpeg"))
+                return self._send(200, *cam_snapshot(p))
             except Exception:
                 return self._send(502, b"")
+        if path.startswith("/api/products/") and path.endswith("/photo"):
+            con = db.connect()
+            try:
+                ph = inventory.product_photo(con, int(path.split("/")[3]))
+            except ValueError:
+                ph = None
+            finally:
+                con.close()
+            return self._send(200, *ph) if ph else self._send(404, b"{}")
+        if path in ("/api/inventory/photos", "/api/nas/image"):
+            q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).items()}
+            con = db.connect()
+            try:
+                if path == "/api/inventory/photos":
+                    out = {"nas": nas.photos_for(con, q.get("d", "")),
+                           "cameras": [x.name for x in printers.PRINTERS.values()], "proven": inventory.proven(con, q.get("d", ""))}
+                    return self._send(200, json.dumps(out, default=str).encode())
+                rel = q.get("path", "")
+                dest = (nas.NAS_DIR / "_images" / rel.replace("@", "")).resolve()
+                if not str(dest).startswith(str((nas.NAS_DIR / "_images").resolve())):
+                    return self._send(400, b"{}")
+                if not dest.is_file():
+                    nas.fetch_image(con, rel, dest)
+                ext = dest.suffix.lower().lstrip(".")
+                return self._send(200, dest.read_bytes(), "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}")
+            except (LookupError, RuntimeError, OSError) as e:
+                return self._send(404, json.dumps({"error": str(e)[:200]}).encode())
+            finally:
+                con.close()
         if path.startswith("/api/model/"):
             parts = [urllib.parse.unquote(x) for x in path[len("/api/model/"):].split("/")]
             blob = model_blob(*parts) if len(parts) == 2 else None
@@ -753,7 +807,7 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 con.close()
         if path in ("/api/inventory/refresh", "/api/nas/scan", "/api/nas/import") or (
-                len(parts) == 4 and parts[:2] in (["api", "prints"], ["api", "artefacts"]) and parts[2].isdigit()):
+                len(parts) == 4 and parts[:2] in (["api", "prints"], ["api", "artefacts"], ["api", "products"]) and parts[2].isdigit()):
             con = db.connect()
             try:
                 body = self._json_body()
@@ -768,12 +822,32 @@ class Handler(BaseHTTPRequestHandler):
                     out = inventory.mark(con, int(parts[2]), body.get("quality"), who, str(body.get("note") or ""))
                 elif parts[1] == "artefacts" and parts[3] == "send":
                     out = send_artefact(con, int(parts[2]), body)
+                elif parts[1] == "artefacts" and parts[3] == "product":
+                    out = inventory.promote(con, int(parts[2]), body, who, product_photo(con, str(body.get("photo") or "")))
+                elif parts[1] == "products" and parts[3] == "delete":
+                    inventory.unpromote(con, int(parts[2]), who)
+                    out = {"deleted": int(parts[2])}
                 else:
                     return self._send(404, b"{}")
                 return self._send(200, json.dumps(out, default=str).encode())
             except LookupError as e:
                 return self._send(404, json.dumps({"error": str(e)}).encode())
             except (inventory.Refused, pipeline.StepFailed, ValueError, KeyError, RuntimeError, SystemExit) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
+            finally:
+                con.close()
+        if parts[:2] == ["api", "projects"] and (len(parts) == 2 or len(parts) == 4 and parts[2].isdigit()):
+            con = db.connect()
+            try:
+                body = self._json_body()
+                who = "ui:" + (str(body.get("operator") or "").strip()[:40] or "unknown")
+                out = project_action(con, int(parts[2]) if len(parts) == 4 else None, parts[3] if len(parts) == 4
+                                     else "create", body, who)
+                _cache.pop("projects", None)
+                return self._send(200, json.dumps(out, default=str).encode())
+            except LookupError as e:
+                return self._send(404, json.dumps({"error": str(e)}).encode())
+            except (projects.Refused, pipeline.StepFailed, ValueError, KeyError, TypeError, SystemExit) as e:
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             finally:
                 con.close()
