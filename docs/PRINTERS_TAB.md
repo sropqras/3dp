@@ -4,7 +4,7 @@
 
 Tonight every printer operation was done by hand from an AI session over SSH, the Moonraker API, or a script: audits, config backups, macro and baseline edits, the s1pro instance, the history and G-code migration, camera and service setup, and explaining timeouts.
 
-Amir wants all of that **inside Farm Control**, so day-to-day running needs no AI. Sessions like this one are then only for developing the tooling.
+Ironman wants all of that **inside Farm Control**, so day-to-day running needs no AI. Sessions like this one are then only for developing the tooling.
 
 His decisions (2026-10-23):
 - **Config changes are staged, then applied through a gate.**
@@ -26,8 +26,8 @@ What's available to build on:
   - history and its totals.
 - **SSH from aali-cli:**
   - enders3dp works (`~/.ssh/enders3dp`);
-  - 3dpnas has SSH, but aali-cli's key isn't authorised there yet (Amir: `ssh-copy-id`).
-  - Neither host has passwordless sudo, so anything needing root (systemd units) stays a generated script for Amir to run.
+  - 3dpnas has SSH, but aali-cli's key isn't authorised there yet (Ironman: `ssh-copy-id`).
+  - Neither host has passwordless sudo, so anything needing root (systemd units) stays a generated script for Ironman to run.
 - **Already in place:**
   - `farm/audit.py` (rules);
   - `farm/monitor.py` (alerts);
@@ -168,7 +168,7 @@ What's available to build on:
   - maintenance due computed from fake history totals.
 - **UI check** (`tests/ui_check.*` pattern, fakes only): open the Printers tab, stage a fix, apply, see the change verified, then roll back.
 - **Live, read-only:** the tab against the real farm with **no changes applied**: versions, audit and drift match `farm audit` / `farm status`.
-- **The first real Apply** is an s1pro baseline item (no print risk), with Amir watching.
+- **The first real Apply** is an s1pro baseline item (no print risk), with Ironman watching.
 
 ## Rules carried over (enforced in code, not just docs)
 
@@ -176,7 +176,7 @@ What's available to build on:
 - No restart or config change while printing or paused (the gate).
 - Secret config files are never snapshotted, shown or logged.
 - Agents may stage but never apply or start; that rule is added to CLAUDE.md.
-- Root-only host steps are scripts for Amir.
+- Root-only host steps are scripts for Ironman.
 
 ## Critical files
 - **New:** `farm/hosts.py`, `farm/configs.py`, `farm/baseline.py`, `farm/maintenance.py`, `farm/static/printers.html`, `farm/static/printers.js`, `printers/hosts.json`, `printers/registry.json`, `tests/test_configs.py`, `tests/test_baseline.py`

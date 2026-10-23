@@ -62,12 +62,12 @@ class FluiddLayout(unittest.TestCase):
                 mock.patch.object(standard, "_put", lambda url, k, v: store.__setitem__(k, v)):
             with self.assertRaises(PermissionError):
                 standard.fluidd_apply(con, "p", "http://x", {"cool": ""}, "agent")
-            r = standard.fluidd_apply(con, "p", "http://x", {"cool": ""}, "ui:Amir")
+            r = standard.fluidd_apply(con, "p", "http://x", {"cool": ""}, "ui:Ironman")
             self.assertEqual(store["macros"]["stored"][0]["categoryId"], "farm-utility")
-            standard.fluidd_undo(con, r["id"], "ui:Amir")
+            standard.fluidd_undo(con, r["id"], "ui:Ironman")
             self.assertEqual(store["macros"], {"stored": []})
             with self.assertRaises(PermissionError):     # Klipper not running: nothing to lay out, nothing wiped
-                standard.fluidd_apply(con, "p", "http://x", {"_farm_printer": ""}, "ui:Amir")
+                standard.fluidd_apply(con, "p", "http://x", {"_farm_printer": ""}, "ui:Ironman")
 
 
 if __name__ == "__main__":

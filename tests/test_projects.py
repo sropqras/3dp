@@ -32,7 +32,7 @@ class Projects(unittest.TestCase):
         self.uploads = []
         self._upload = moonraker.upload
         moonraker.upload = lambda *a: self.uploads.append(a) or "x"
-        self.pid = projects.create(self.con, "Order 42", "ui:Amir", hours_per_unit=2)
+        self.pid = projects.create(self.con, "Order 42", "ui:Ironman", hours_per_unit=2)
         self.gid = projects.add_group(self.con, self.pid, "Row A")
 
     def tearDown(self):
@@ -64,7 +64,7 @@ class Projects(unittest.TestCase):
                                                       {"label": "T02", "template": "plate", "qty": 2},
                                                       {"label": "Box", "source": "item", "qty": 3}])
         self.assertEqual(self.cells(), {"T01": ["todo"], "T02": ["todo", "todo"], "Box": ["item-todo"] * 3})
-        out = projects.generate(self.con, self.pid, ids, "ui:Amir", TEMPLATES, str)
+        out = projects.generate(self.con, self.pid, ids, "ui:Ironman", TEMPLATES, str)
         self.assertEqual(len(out), 1)                                   # one order: same template/printer/profile
         self.assertEqual(len(out[0]["jobs"]), 3)                        # one job per unit, items not made
         texts = sorted(json.loads(r[0])["text"] for r in self.con.execute("SELECT params FROM jobs"))
@@ -72,7 +72,7 @@ class Projects(unittest.TestCase):
         self.assertEqual(self.con.execute("SELECT project_id FROM orders").fetchone()[0], self.pid)
         self.assertEqual(self.cells()["T02"], ["generating", "generating"])
         with self.assertRaises(ValueError):                             # nothing left to make
-            projects.generate(self.con, self.pid, ids, "ui:Amir", TEMPLATES, str)
+            projects.generate(self.con, self.pid, ids, "ui:Ironman", TEMPLATES, str)
         for jid in out[0]["jobs"]:
             worker.enqueue(self.con, "generate", jid)
         self.drain()
@@ -89,7 +89,7 @@ class Projects(unittest.TestCase):
     def test_qty_on_separate_beds_gets_one_build_each(self):
         t = [dict(TEMPLATES[0], id="solo", same_bed=False)]
         ids = projects.add_parts(self.con, self.gid, [{"label": "T02", "template": "solo", "qty": 2}])
-        for jid in projects.generate(self.con, self.pid, ids, "ui:Amir", t, str)[0]["jobs"]:
+        for jid in projects.generate(self.con, self.pid, ids, "ui:Ironman", t, str)[0]["jobs"]:
             worker.enqueue(self.con, "generate", jid)
         self.drain()
         bs = jobs.builds(self.con)
@@ -99,7 +99,7 @@ class Projects(unittest.TestCase):
 
     def test_send_generated_parts_and_artefact_reprints(self):
         ids = projects.add_parts(self.con, self.gid, [{"label": "T01", "template": "plate"}])
-        for jid in projects.generate(self.con, self.pid, ids, "ui:Amir", TEMPLATES, str)[0]["jobs"]:
+        for jid in projects.generate(self.con, self.pid, ids, "ui:Ironman", TEMPLATES, str)[0]["jobs"]:
             worker.enqueue(self.con, "generate", jid)
         self.drain()
         stl = box_stl(self.tmp / "own.stl", 0, 0, 0, 20, 20, 10)
@@ -122,16 +122,16 @@ class Projects(unittest.TestCase):
                                                       {"label": "T09", "template": "plate"}])
         with self.assertRaises(projects.Refused):
             projects.items(self.con, self.pid, ids[:1], 1, "agent")
-        projects.items(self.con, self.pid, ids[:1], 1, "ui:Amir")
-        projects.items(self.con, self.pid, ids[:1], 5, "ui:Amir")      # capped at qty
+        projects.items(self.con, self.pid, ids[:1], 1, "ui:Ironman")
+        projects.items(self.con, self.pid, ids[:1], 5, "ui:Ironman")      # capped at qty
         self.assertEqual(self.cells()["Box"], ["item-done", "item-done"])
         with self.assertRaises(projects.Refused):
             projects.remove(self.con, self.pid, ids[1:], "agent")
-        projects.remove(self.con, self.pid, ids[1:], "ui:Amir")
+        projects.remove(self.con, self.pid, ids[1:], "ui:Ironman")
         self.assertNotIn("T09", self.cells())
-        other = projects.create(self.con, "Other", "ui:Amir")
+        other = projects.create(self.con, "Other", "ui:Ironman")
         with self.assertRaises(LookupError):                            # parts belong to their own project
-            projects.remove(self.con, other, ids[:1], "ui:Amir")
+            projects.remove(self.con, other, ids[:1], "ui:Ironman")
 
     def test_bad_parts_refused(self):
         with self.assertRaises(ValueError):
@@ -140,7 +140,7 @@ class Projects(unittest.TestCase):
             projects.add_parts(self.con, self.gid, [{"label": "X", "source": "maker"}])
         ids = projects.add_parts(self.con, self.gid, [{"label": "X", "template": "gone"}])
         with self.assertRaises(ValueError):
-            projects.generate(self.con, self.pid, ids, "ui:Amir", TEMPLATES, str)
+            projects.generate(self.con, self.pid, ids, "ui:Ironman", TEMPLATES, str)
 
     def test_batch_import_counts_legacy_prints_by_label(self):
         batch = self.tmp / "jobs" / "q" / "batch.json"

@@ -1,6 +1,6 @@
 # The farm standard: one macro library, one Fluidd layout
 
-Amir asked on 2026-10-23 for "ancestral" G-code macros and Fluidd front ends, so that functions and tuning macros
+Ironman asked on 2026-10-23 for "ancestral" G-code macros and Fluidd front ends, so that functions and tuning macros
 look and behave the same on every printer.
 
 ## What was there

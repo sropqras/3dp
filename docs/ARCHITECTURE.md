@@ -4,16 +4,16 @@
 
 Today `~/repos/3dp` drives one product end to end. That product is likhan grave plates in PETG on the 0.6 printers, run from the CLI. Farm Control (:10111) displays and monitors, but it doesn't orchestrate.
 
-Amir's goal is a central app around the five maker apps on aali-cli:
+Ironman's goal is a central app around the five maker apps on aali-cli:
 - likhan :4111
 - lithophane :5111
 - namakdani :6111
 - lamp + plaque :8111
 - holder :9111 (WIP)
 
-Each of these has one job: generate a model to print. The central app should then send it to print. Orders arrive from **Farm Control's New-job page** and from **invtool** (:3111). The original written requirement isn't on aali-cli; it was probably in the Windows-workstation session. This plan is built from Amir's answers in this session.
+Each of these has one job: generate a model to print. The central app should then send it to print. Orders arrive from **Farm Control's New-job page** and from **invtool** (:3111). The original written requirement isn't on aali-cli; it was probably in the Windows-workstation session. This plan is built from Ironman's answers in this session.
 
-Decisions from Amir:
+Decisions from Ironman:
 - Makers are **plugins behind one shared contract**.
 - Every **job** chooses its printer, print preset, filament preset and layer height. Coarse or large models, including lithophanes in 0.6 Hyper PLA, can go to the big 0.6 printers.
 - EnderV3SE can be onboarded, as its own gated phase.
@@ -119,7 +119,7 @@ Research found the following (four survey agents plus a design agent):
   - **lithophane:**
     - sync, 900 s, STL;
     - its bed fit is checked from width and height, since it takes no bed parameter;
-    - it warns on 0.6 thickness settings until Amir confirms them;
+    - it warns on 0.6 thickness settings until Ironman confirms them;
     - default profile is the 0.6 Hyper PLA litho one.
   - **lamp:**
     - sync, 900 s;
@@ -166,12 +166,12 @@ Research found the following (four survey agents plus a design agent):
 maker, worker with leases, the start gate, tracker + spool ledger, the New-job page). Deviations from the text below:
 the test registry is `FARM_REGISTRY` / `FARM_MOONRAKER_OVERRIDE` rather than `FARM_PRINTERS_FILE`; the batch grid
 became **Farm Projects** (`docs/FARM_PROJECTS.md`, the Qabrastaan batch imported as the first project); holder runs
-on the unconfirmed `neo-pla-020-supports` profile. Phase 7 (invtool) and phase 8 (EnderV3SE) wait for Amir.
+on the unconfirmed `neo-pla-020-supports` profile. Phase 7 (invtool) and phase 8 (EnderV3SE) wait for Ironman.
 
 **Phase 0: prerequisites and safety net**
-- [x] Amir runs `sudo apt-get install -y flatpak`, then the user-level Flathub install of PrusaSlicer 2.9.6, plus `flatpak override --user --filesystem=/home/aali/repos/3dp`. Then set `FARM_PRUSASLICER` in `farm_control/farm.conf`. Today's apt 2.7.2 is for testing only.
+- [x] Ironman runs `sudo apt-get install -y flatpak`, then the user-level Flathub install of PrusaSlicer 2.9.6, plus `flatpak override --user --filesystem=/home/aali/repos/3dp`. Then set `FARM_PRUSASLICER` in `farm_control/farm.conf`. Today's apt 2.7.2 is for testing only.
 - [x] Add a `farm doctor` command that reports the slicer version (refuses <2.9.6 for production), each maker's health, and whether the font is present. It never reads or serves the font.
-- [x] likhan-maker: pull `c5658a6` → `94efc97` (fixed plate size and font option), then restart it through its own `stop.sh && start.sh` while idle. Amir copies the Charles Wright font into `assets/fonts/` by hand. Then dry-run A01 with no upload.
+- [x] likhan-maker: pull `c5658a6` → `94efc97` (fixed plate size and font option), then restart it through its own `stop.sh && start.sh` while idle. Ironman copies the Charles Wright font into `assets/fonts/` by hand. Then dry-run A01 with no upload.
 - [x] `runlog`: add a `Run.guard()` so every exit writes a `result`, and keep slice/validate/project steps per bed. Make run folder names unique.
 - [x] Create `tests/` with stdlib unittest (`python -m unittest discover -s tests`) for `align_first_layer`, `insert_colour_changes`, `gcode.validate`, `layout_bed`, `watch.milestones`, `audit.rules` and `model3mf.load`. Add a **golden G-code diff for A01** (ignoring timestamp lines).
 
@@ -185,7 +185,7 @@ on the unconfirmed `neo-pla-020-supports` profile. Phase 7 (invtool) and phase 8
 - [x] `farm/profiles.py` with `maxneo-petg-036` identical to today's setup (the golden diff must still match). The slicer and validate read their first-layer limits and flow cap from the profile.
 - [x] Add a farm-owned bundle, `prusa/farm_profiles.ini`. The user's own bundle is untouched. It holds:
   - a 0.6 PLA printer preset: `START_PRINT EXTRUDER_TEMP={first_layer_temperature[0]} BED_TEMP={first_layer_bed_temperature[0]}`, `autoemit_temperature_commands = 0`, and the bed matching the registry;
-  - `Creality Hyper PLA 0.6 (farm)` with a real volumetric cap. **The value is for Amir to confirm** (about 15 proposed);
+  - `Creality Hyper PLA 0.6 (farm)` with a real volumetric cap. **The value is for Ironman to confirm** (about 15 proposed);
   - `0.28 Litho 0.6 (farm)`.
 
   These make up profile `neo-hyperpla-028-litho` for MaxNeo and S1 Plus.
@@ -255,16 +255,16 @@ on the unconfirmed `neo-pla-020-supports` profile. Phase 7 (invtool) and phase 8
   - end to end with a **test** MADE_TO_ORDER sale: it appears as an Order, a dry run reaches review, and a cancel flows back to invtool as CANCELLED.
 
 **Phase 8: EnderV3SE onboarding (gated)**
-- [ ] **Start conditions:** an explicit go-ahead from Amir in his own message, the printer idle (`farm status`), and a fresh config backup.
+- [ ] **Start conditions:** an explicit go-ahead from Ironman in his own message, the printer idle (`farm status`), and a fresh config backup.
 - [ ] Fixes:
   - a guided M600 with no auto-unload, replacing the broken `PAUSE_MACRO`;
   - CLEAR_PAUSE in START_PRINT;
   - the paused-safe idle timeout and 12 h cap;
-  - one bed size agreed with Amir (today the registry, slicer and Klipper all differ).
+  - one bed size agreed with Ironman (today the registry, slicer and Klipper all differ).
 - [ ] Then `farm audit EnderV3SE` must pass and `gcode_store` must show no "Unknown command".
 - [ ] Add 0.4 profiles (first layer 0.15–0.3), and set `has_m600_prompt=True` and `readonly=False`.
 - [ ] Update FARM.md's feature matrix and change log.
-- [ ] The first real job goes through review and the Start gate with Amir present.
+- [ ] The first real job goes through review and the Start gate with Ironman present.
 
 ## Critical files
 - 3dp:
@@ -278,10 +278,10 @@ on the unconfirmed `neo-pla-020-supports` profile. Phase 7 (invtool) and phase 8
 
 ## Verification, overall
 - Every phase: `python -m unittest discover -s tests` passes, and the A01 golden G-code diff is identical.
-- Every dry run uses no `--upload` and real makers only. Gate and UI tests use the fake Moonraker. Nothing in implementation starts a print or edits a printer config, except Phase 8, which needs Amir's go-ahead and an idle printer.
+- Every dry run uses no `--upload` and real makers only. Gate and UI tests use the fake Moonraker. Nothing in implementation starts a print or edits a printer config, except Phase 8, which needs Ironman's go-ahead and an idle printer.
 - After deploying, check `farm-web`, `farm-worker` and `farm-monitor` in `jobctl list`, and make sure SERVER.md is current.
 
-## Open values for Amir (asked when each phase reaches them)
+## Open values for Ironman (asked when each phase reaches them)
 1. Hyper PLA volumetric cap on the 0.6 Sprite.
 2. Lithophane thickness (`t_min`/`t_max`) at 0.6.
 3. Whether to turn on `remaining_times`, which would give an exact countdown to the colour change.

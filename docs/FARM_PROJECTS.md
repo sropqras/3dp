@@ -18,7 +18,7 @@ The last pass got the tabs wrong:
   - shown on a flexible grid.
   - Today's grid is a hard-coded, likhan-only `jobs/*/batch.json` (Qabrastaan A..R).
 
-Amir's answers (2026-10-23):
+Ironman's answers (2026-10-23):
 - **Grid:** groups → parts × qty. Qabrastaan becomes the first project.
 - **Portfolio:** artefacts are promoted to products by hand.
 - **Success** comes from three sources: the tracker, Moonraker history, and a person's good/bad mark.
@@ -163,7 +163,7 @@ Amir's answers (2026-10-23):
 - Printers are read-only for the backfill, EnderV3SE included (watching is allowed). Nothing is ever written to a printer from Inventory.
 - The licensed font is never served. Artefact params may name it, but thumbnails and downloads never include font files.
 
-## OMV NAS catalogue (Amir, 2026-10-23)
+## OMV NAS catalogue (Ironman, 2026-10-23)
 
 `\\OMV\3dprinting\3dprinting\Project Files` (about 1,600 STL/3MF/STEP/OBJ/SCAD files) is catalogued, not copied:
 

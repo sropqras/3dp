@@ -57,7 +57,7 @@ class Gate(unittest.TestCase):
             pass
 
     def start(self, **kw):
-        args = dict(operator="Amir", checklist=OK, spool_id="SP-1", via="ui", nonce=gate.issue_nonce(self.bid))
+        args = dict(operator="Ironman", checklist=OK, spool_id="SP-1", via="ui", nonce=gate.issue_nonce(self.bid))
         args.update(kw)
         return gate.start_build(self.con, self.bid, args.pop("operator"), args.pop("checklist"),
                                 args.pop("spool_id"), **args)
@@ -76,7 +76,7 @@ class Gate(unittest.TestCase):
         self.assertEqual(jobs.get(self.con, "build", self.bid)["state"], "printing")
         self.assertEqual({r[0] for r in self.con.execute("SELECT state FROM jobs")}, {"printing"})
         who = self.con.execute("SELECT actor, checklist FROM approvals WHERE kind='start'").fetchone()
-        self.assertEqual(who["actor"], "ui:Amir")
+        self.assertEqual(who["actor"], "ui:Ironman")
         self.assertEqual(json.loads(who["checklist"])["spool"], "SP-1")
 
     def test_nonce_required_single_use_and_per_build(self):
@@ -129,7 +129,7 @@ class Gate(unittest.TestCase):
         def go(n):
             c = db.connect(path)
             try:
-                gate.start_build(c, self.bid, "Amir", OK, "SP-1", via="ui", nonce=n)
+                gate.start_build(c, self.bid, "Ironman", OK, "SP-1", via="ui", nonce=n)
                 results.append("started")
             except gate.GateRefused as e:
                 results.append(str(e))

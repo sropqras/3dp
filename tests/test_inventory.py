@@ -83,7 +83,7 @@ class Backfill(unittest.TestCase):
         pid = self.con.execute("SELECT id FROM prints WHERE status='completed' LIMIT 1").fetchone()[0]
         with self.assertRaises(inventory.Refused):
             inventory.mark(self.con, pid, "good", "agent")
-        inventory.mark(self.con, pid, "bad", "ui:Amir", "stringing")
+        inventory.mark(self.con, pid, "bad", "ui:Ironman", "stringing")
         self.m.history[0]["end_time"] = 9999
         inventory.backfill_printer(self.con, self.p, log=lambda m: None)
         self.assertEqual(self.con.execute("SELECT quality FROM prints WHERE id=?", (pid,)).fetchone()[0], "bad")
@@ -116,17 +116,17 @@ class Portfolio(unittest.TestCase):
         with self.assertRaises(inventory.Refused):
             inventory.promote(self.con, self.aid, {"name": "Lamp"}, "agent")
         with self.assertRaises(ValueError):
-            inventory.promote(self.con, self.aid, {"name": " "}, "ui:Amir")
-        pr = inventory.promote(self.con, self.aid, {"name": "Moon lamp", "description": "PLA"}, "ui:Amir",
+            inventory.promote(self.con, self.aid, {"name": " "}, "ui:Ironman")
+        pr = inventory.promote(self.con, self.aid, {"name": "Moon lamp", "description": "PLA"}, "ui:Ironman",
                                (b"\xff\xd8" + b"x" * 200, ".JPG"))
         self.assertEqual((pr["printer"], pr["layer_height"], pr["photo"]), ("s1pro", 0.2, f"{pr['id']}.jpg"))
         self.assertEqual(inventory.product_photo(self.con, pr["id"])[1], "image/jpeg")
-        again = inventory.promote(self.con, self.aid, {"name": "Moon lamp v2"}, "ui:Amir")   # update, photo kept
+        again = inventory.promote(self.con, self.aid, {"name": "Moon lamp v2"}, "ui:Ironman")   # update, photo kept
         self.assertEqual((again["id"], again["photo"]), (pr["id"], pr["photo"]))
         with self.assertRaises(ValueError):
-            inventory.promote(self.con, self.aid, {"name": "x"}, "ui:Amir", (b"<html>" * 50, "html"))
+            inventory.promote(self.con, self.aid, {"name": "x"}, "ui:Ironman", (b"<html>" * 50, "html"))
         self.assertEqual(inventory.listing(self.con, "maker", products_only=True)["total"], 1)
-        inventory.unpromote(self.con, pr["id"], "ui:Amir")
+        inventory.unpromote(self.con, pr["id"], "ui:Ironman")
         self.assertFalse((self.tmp / "products" / pr["photo"]).exists())
         self.assertEqual(inventory.listing(self.con, "maker", products_only=True)["total"], 0)
 
@@ -180,11 +180,11 @@ class Nas(unittest.TestCase):
             Path(args[-1]).write_bytes(b"x" * 10)
             return ""
         with mock.patch.object(nas, "_rsync", fake_rsync), mock.patch.object(nas, "NAS_DIR", self.tmp / "nas"):
-            r = nas.import_file(self.con, "Allah/box [v2].stl", "ui:Amir")
+            r = nas.import_file(self.con, "Allah/box [v2].stl", "ui:Ironman")
             with self.assertRaises(ValueError):
-                nas.import_file(self.con, "Allah/Al-Quddus_180mm.step", "ui:Amir")
+                nas.import_file(self.con, "Allah/Al-Quddus_180mm.step", "ui:Ironman")
             with self.assertRaises(LookupError):
-                nas.import_file(self.con, "../../etc/passwd", "ui:Amir")
+                nas.import_file(self.con, "../../etc/passwd", "ui:Ironman")
         self.assertTrue(calls[0][1].endswith("Allah/box \\[v2\\].stl"))
         a = self.con.execute("SELECT * FROM artefacts WHERE id=?", (r["artefact"],)).fetchone()
         self.assertEqual((a["maker"], a["kind"]), ("nas", "model"))
@@ -308,14 +308,14 @@ class Reconnect(unittest.TestCase):
         self.assertTrue(fleet._instance("s1pro")["off"])
         with self.assertRaises(cfgchange.Refused):
             fleet.reconnect("s1pro", "agent")
-        r = fleet.reconnect("s1pro", "ui:Amir", wait_s=3)
+        r = fleet.reconnect("s1pro", "ui:Ironman", wait_s=3)
         self.assertEqual((r["state"], self.m.restarts), ("ready", 1))
         fleet._cache.clear()
         with self.assertRaises(cfgchange.Refused):                          # ready now: nothing to reconnect
-            fleet.reconnect("s1pro", "ui:Amir", wait_s=1)
+            fleet.reconnect("s1pro", "ui:Ironman", wait_s=1)
         self.m.klipper, self.m.klipper_msg = "error", "Unable to open config file x.cfg"
         with self.assertRaises(cfgchange.Refused):                          # a config error isn't a power switch
-            fleet.reconnect("s1pro", "ui:Amir", wait_s=1)
+            fleet.reconnect("s1pro", "ui:Ironman", wait_s=1)
         self.assertEqual(self.m.restarts, 1)
 
     def test_watch_only_refused(self):
@@ -323,7 +323,7 @@ class Reconnect(unittest.TestCase):
                                                                                moonraker=self.m.url, readonly=True)}):
             fleet._cache.clear()
             with self.assertRaises(cfgchange.Refused):
-                fleet.reconnect("s1pro", "ui:Amir", wait_s=1)
+                fleet.reconnect("s1pro", "ui:Ironman", wait_s=1)
         self.assertEqual(self.m.restarts, 0)
 
 

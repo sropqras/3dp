@@ -36,7 +36,7 @@ class Configs(unittest.TestCase):
         s1 = configs.snapshot(self.con, "neo", self.m.url, "test")
         self.assertTrue(configs.snapshot(self.con, "neo", self.m.url, "test").get("unchanged"))
         self.assertIsNone(configs.drift(self.con, "neo", s1["files"])["reference"])
-        configs.review(self.con, s1["id"], "ui:Amir")
+        configs.review(self.con, s1["id"], "ui:Ironman")
         self.assertEqual(configs.drift(self.con, "neo", s1["files"])["changed"], [])
         self.m.config["printer.cfg"] = b"[printer]\nmax_velocity: 300\n"
         self.m.config["new.cfg"] = b"x"

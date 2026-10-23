@@ -41,7 +41,7 @@ class Registry(unittest.TestCase):
         self.m.close()
 
     def _onboard(self, **kw):
-        return fleet.onboard(self.key, {**NEW, **kw}, "ui:Amir")
+        return fleet.onboard(self.key, {**NEW, **kw}, "ui:Ironman")
 
     def test_not_onboarded_until_saved_then_live_everywhere(self):
         v = fleet._instance(self.key)
@@ -77,26 +77,26 @@ class Registry(unittest.TestCase):
     def test_onboarded_twice_refused(self):
         self._onboard()
         with self.assertRaises(ValueError):
-            fleet.onboard("newone", {**NEW, "name": "again"}, "ui:Amir")
+            fleet.onboard("newone", {**NEW, "name": "again"}, "ui:Ironman")
 
     def test_update_watch_only_and_profiles(self):
         self._onboard()
-        r = fleet.update_registry("newone", {"readonly": True, "profiles": []}, "ui:Amir")
+        r = fleet.update_registry("newone", {"readonly": True, "profiles": []}, "ui:Ironman")
         self.assertEqual(len(r["changed"]), 2)
         self.assertTrue(printers.PRINTERS["newone"].readonly)
         self.assertNotIn("newone", profiles.PROFILES["neo-petg-036"].printers)
         self.assertIn("watch-only", (self.tmp / "FARM.md").read_text())
-        self.assertEqual(fleet.update_registry("newone", {"readonly": True}, "ui:Amir")["changed"], [])
+        self.assertEqual(fleet.update_registry("newone", {"readonly": True}, "ui:Ironman")["changed"], [])
         with self.assertRaises(cfgchange.Refused):
             fleet.update_registry("newone", {"readonly": False}, "agent")
         with self.assertRaises(LookupError):
-            fleet.update_registry("nobody", {}, "ui:Amir")
+            fleet.update_registry("nobody", {}, "ui:Ironman")
 
     def test_serial_is_a_staged_change(self):
         with self.assertRaises(ValueError):
-            fleet.stage_serial(self.key, "/dev/ttyUSB1", "ui:Amir")
+            fleet.stage_serial(self.key, "/dev/ttyUSB1", "ui:Ironman")
         port = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:3.3:1.0-port0"
-        r = fleet.stage_serial(self.key, port, "ui:Amir")
+        r = fleet.stage_serial(self.key, port, "ui:Ironman")
         self.assertIn("serial", r["summary"])
         self.assertEqual(self.m.config["printer.cfg"].count(b"ttyUSB0"), 1)   # staged, not applied
         con = db.connect()
@@ -109,14 +109,14 @@ class Registry(unittest.TestCase):
 
     def test_missing_include_is_a_staged_comment_out(self):
         with self.assertRaises(cfgchange.Refused):                   # "config error" isn't a missing file
-            fleet.stage_missing_include(self.key, "ui:Amir")
+            fleet.stage_missing_include(self.key, "ui:Ironman")
         self.m.config = {"printer.cfg": b"[include macros.cfg]\n[include sub/extra.cfg]\n[printer]\nkinematics: cartesian\n",
                          "macros.cfg": b"[gcode_macro X]\ngcode:\n  G28\n",
                          "sub/extra.cfg": b"[include moonraker_obico_macros.cfg]\n[include ../macros.cfg]\n",
                          "unused.cfg": b"[include moonraker_obico_macros.cfg]\n"}
         self.m.klipper = "error"
         self.m.klipper_msg = "Unable to open config file /home/aali/newone_data/config/moonraker_obico_macros.cfg"
-        out = fleet.stage_missing_include(self.key, "ui:Amir")
+        out = fleet.stage_missing_include(self.key, "ui:Ironman")
         self.assertEqual([c["path"] for c in out], ["sub/extra.cfg"])   # only what printer.cfg reaches
         con = db.connect()
         try:
@@ -128,10 +128,10 @@ class Registry(unittest.TestCase):
 
     def test_camera_registered_on_the_instance(self):
         with self.assertRaises(ValueError):
-            fleet.register_camera(self.key, {"path": "../etc"}, "ui:Amir")
+            fleet.register_camera(self.key, {"path": "../etc"}, "ui:Ironman")
         with self.assertRaises(cfgchange.Refused):
             fleet.register_camera(self.key, {"path": "webcam3"}, "agent")
-        r = fleet.register_camera(self.key, {"name": "newone", "path": "/webcam3/"}, "ui:Amir")
+        r = fleet.register_camera(self.key, {"name": "newone", "path": "/webcam3/"}, "ui:Ironman")
         self.assertEqual(r["stream"], "/webcam3/?action=stream")
         self.assertEqual(self.m.webcams[0]["snapshot_url"], "/webcam3/?action=snapshot")
 

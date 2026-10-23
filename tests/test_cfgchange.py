@@ -50,7 +50,7 @@ class Changes(unittest.TestCase):
         self.m.close()
 
     def stage(self, **kw):
-        args = dict(section="printer", option="max_velocity", value="180", reason="slower travel", author="ui:Amir")
+        args = dict(section="printer", option="max_velocity", value="180", reason="slower travel", author="ui:Ironman")
         args.update(kw)
         return cfgchange.stage(self.con, "Ender3MaxNeo", self.m.url, "printer.cfg", **args)
 
@@ -73,7 +73,7 @@ class Changes(unittest.TestCase):
     def test_happy_apply_records_everything(self):
         c = self.stage()
         self.assertIn("+max_velocity: 180", cfgchange.preview(self.con, c["id"]))
-        out = cfgchange.apply(self.con, c["id"], "ui:Amir")
+        out = cfgchange.apply(self.con, c["id"], "ui:Ironman")
         self.assertEqual(out["state"], "applied", out["error"])
         self.assertIn(b"max_velocity: 180", self.m.config["printer.cfg"])
         self.assertEqual(self.m.restarts, 1)
@@ -89,14 +89,14 @@ class Changes(unittest.TestCase):
                 cfgchange.apply(self.con, c["id"], actor)
         self.m.state = "printing"
         with self.assertRaises(cfgchange.Refused):
-            cfgchange.apply(self.con, c["id"], "ui:Amir")
+            cfgchange.apply(self.con, c["id"], "ui:Ironman")
         self.m.state, self.m.paused = "standby", True
         with self.assertRaises(cfgchange.Refused):
-            cfgchange.apply(self.con, c["id"], "ui:Amir")
+            cfgchange.apply(self.con, c["id"], "ui:Ironman")
         self.m.paused = False
         self.m.config["printer.cfg"] += b"\n# edited in Fluidd meanwhile\n"
         with self.assertRaises(cfgchange.Refused) as e:
-            cfgchange.apply(self.con, c["id"], "ui:Amir")
+            cfgchange.apply(self.con, c["id"], "ui:Ironman")
         self.assertIn("changed on the printer", str(e.exception))
         self.assertEqual(self.m.restarts, 0)
         self.assertEqual(cfgchange.get(self.con, c["id"])["state"], "staged")
@@ -104,18 +104,18 @@ class Changes(unittest.TestCase):
     def test_new_audit_fail_or_console_error_fails_verification(self):
         c = self.stage(value="190")
         self.m.on_restart = lambda m: m.settings["printer"].update(max_velocity=300)   # the change broke a rule
-        out = cfgchange.apply(self.con, c["id"], "ui:Amir")
+        out = cfgchange.apply(self.con, c["id"], "ui:Ironman")
         self.assertEqual(out["state"], "failed")
         self.assertIn("max_velocity", out["error"])
         self.m.on_restart = lambda m: m.console.append({"message": '// Unknown command:"_X1"', "time": 9e9, "type": "response"})
         self.m.settings["printer"]["max_velocity"] = 200
         c2 = self.stage(value="170")
-        self.assertEqual(cfgchange.apply(self.con, c2["id"], "ui:Amir")["state"], "failed")
+        self.assertEqual(cfgchange.apply(self.con, c2["id"], "ui:Ironman")["state"], "failed")
 
     def test_klipper_not_coming_back_rolls_back_automatically(self):
         c = self.stage()
         self.m.after_restart = "error"
-        out = cfgchange.apply(self.con, c["id"], "ui:Amir")
+        out = cfgchange.apply(self.con, c["id"], "ui:Ironman")
         self.assertEqual(out["state"], "rolled_back")
         self.assertEqual(self.m.config["printer.cfg"], PRINTER_CFG)
         self.assertEqual(self.m.restarts, 2)
@@ -124,25 +124,25 @@ class Changes(unittest.TestCase):
         off = "mcu 'mcu': Unable to connect\nOnce the underlying issue is corrected, use FIRMWARE_RESTART"
         c = self.stage()
         self.m.klipper, self.m.after_restart, self.m.klipper_msg = "error", "error", off
-        out = cfgchange.apply(self.con, c["id"], "ui:Amir")
+        out = cfgchange.apply(self.con, c["id"], "ui:Ironman")
         self.assertEqual(out["state"], "applied", out["error"])
         self.assertTrue(json.loads(out["result"])["board_off"])
         self.assertIn(b"max_velocity: 180", self.m.config["printer.cfg"])
         # a config error while off is not "switched off": rolled back like any other
         c2 = self.stage(value="170")
         self.m.on_restart = lambda m: setattr(m, "klipper_msg", "Option 'max_velocit' is not valid in section 'printer'")
-        out = cfgchange.apply(self.con, c2["id"], "ui:Amir")
+        out = cfgchange.apply(self.con, c2["id"], "ui:Ironman")
         self.assertEqual(out["state"], "rolled_back")
         self.assertIn(b"max_velocity: 180", self.m.config["printer.cfg"])
 
     def test_manual_rollback(self):
         c = self.stage()
-        cfgchange.apply(self.con, c["id"], "ui:Amir")
-        out = cfgchange.rollback(self.con, c["id"], "ui:Amir")
+        cfgchange.apply(self.con, c["id"], "ui:Ironman")
+        out = cfgchange.rollback(self.con, c["id"], "ui:Ironman")
         self.assertEqual(out["state"], "rolled_back")
         self.assertEqual(self.m.config["printer.cfg"], PRINTER_CFG)
         with self.assertRaises(cfgchange.Refused):
-            cfgchange.rollback(self.con, c["id"], "ui:Amir")
+            cfgchange.rollback(self.con, c["id"], "ui:Ironman")
 
     def test_two_applies_race_one_wins(self):
         c = self.stage()
@@ -152,7 +152,7 @@ class Changes(unittest.TestCase):
         def go():
             con = db.connect(path)
             try:
-                results.append(cfgchange.apply(con, c["id"], "ui:Amir")["state"])
+                results.append(cfgchange.apply(con, c["id"], "ui:Ironman")["state"])
             except (cfgchange.Refused, jobs.StateConflict) as e:
                 results.append(type(e).__name__)
 

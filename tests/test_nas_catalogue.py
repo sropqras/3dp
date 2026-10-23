@@ -64,19 +64,19 @@ class Catalogue(unittest.TestCase):
         tools = self.con.execute("SELECT id FROM nas_categories WHERE name='Tools'").fetchone()[0]
         with self.assertRaises(PermissionError):
             nasview.assign(self.con, {"category": tools, "folders": ["misc"]}, "agent")
-        nasview.assign(self.con, {"category": tools, "folders": ["misc"]}, "ui:Amir")
+        nasview.assign(self.con, {"category": tools, "folders": ["misc"]}, "ui:Ironman")
         self.assertEqual(self.cat("misc/thing.step"), "Tools")
         self.assertEqual(self.cat("misc/CE3PRO_benchy_PETG.3mf"), "Tools")                # folder beats a name match
         isl = self.con.execute("SELECT id FROM nas_categories WHERE name='Islamic art'").fetchone()[0]
-        nasview.assign(self.con, {"category": isl, "paths": ["misc/thing.step"]}, "ui:Amir")
+        nasview.assign(self.con, {"category": isl, "paths": ["misc/thing.step"]}, "ui:Ironman")
         self.assertEqual(self.cat("misc/thing.step"), "Islamic art")                      # a file override wins
-        new = nasview.category_edit(self.con, {"action": "create", "name": "Garden"}, "ui:Amir")["id"]
-        nasview.assign(self.con, {"category": new, "folders": ["garage_misc"]}, "ui:Amir")
-        nasview.category_edit(self.con, {"action": "delete", "id": new}, "ui:Amir")
+        new = nasview.category_edit(self.con, {"action": "create", "name": "Garden"}, "ui:Ironman")["id"]
+        nasview.assign(self.con, {"category": new, "folders": ["garage_misc"]}, "ui:Ironman")
+        nasview.category_edit(self.con, {"action": "delete", "id": new}, "ui:Ironman")
         self.assertEqual(self.cat("garage_misc/hook.stl"), "Uncategorised")              # a deleted category's files
         with self.assertRaises(ValueError):
             uncat = self.con.execute("SELECT id FROM nas_categories WHERE name='Uncategorised'").fetchone()[0]
-            nasview.category_edit(self.con, {"action": "delete", "id": uncat}, "ui:Amir")
+            nasview.category_edit(self.con, {"action": "delete", "id": uncat}, "ui:Ironman")
 
     def test_name_tags(self):
         t = nasindex.name_tags("Neptune 4 tool holder  - 6180371/files/holder (1).stl")
@@ -86,7 +86,7 @@ class Catalogue(unittest.TestCase):
         t = nasindex.name_tags("misc/CE3PRO_benchy_PETG_v24.3mf")
         self.assertEqual([x for x in t if not x.startswith("thing")], ["for:CE3PRO", "v24", "mat:PETG", "calibration"])
         self.assertIn("size:180mm", nasindex.name_tags("Allah/Al-Quddus_180mm.3mf"))
-        nasview.tag(self.con, {"paths": ["garage_misc/hook.stl"], "add": ["keeper"]}, "ui:Amir")
+        nasview.tag(self.con, {"paths": ["garage_misc/hook.stl"], "add": ["keeper"]}, "ui:Ironman")
         nas.scan(self.con, log=lambda m: None, listing=LISTING.replace("1,007", "1,107"))      # the file changed
         self.assertIn("keeper", [r[0] for r in self.con.execute("SELECT tag FROM nas_tags WHERE path='garage_misc/hook.stl'")])
 
@@ -105,9 +105,9 @@ class Catalogue(unittest.TestCase):
         tr = nasview.tree(self.con)
         allah = next(c for c in tr["children"] if c["name"] == "Allah")
         self.assertEqual((allah["count"], [c["name"] for c in allah["children"]]), (2, ["sub"]))
-        v = nasview.view_edit(self.con, {"action": "save", "name": "Orders STL", "spec": {"ext": ["stl"], "offset": 9}}, "ui:Amir")
+        v = nasview.view_edit(self.con, {"action": "save", "name": "Orders STL", "spec": {"ext": ["stl"], "offset": 9}}, "ui:Ironman")
         self.assertEqual(nasview.views(self.con)[0]["spec"], {"ext": ["stl"]})
-        nasview.view_edit(self.con, {"action": "delete", "id": v["id"]}, "ui:Amir")
+        nasview.view_edit(self.con, {"action": "delete", "id": v["id"]}, "ui:Ironman")
         self.assertEqual(nasview.views(self.con), [])
 
     # ------------------------------------------------------------ previews

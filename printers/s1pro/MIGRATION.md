@@ -1,7 +1,7 @@
 # s1pro: migrating from its own SBC (s1propad, 192.168.1.114) to an instance on enders3dp
 
 Configs in this folder were pulled from s1propad over Moonraker's file API on 2026-10-23 (secrets and Klipper
-auto-backups excluded). Status (2026-10-23): **staged on enders3dp; waiting for Amir's sudo step, then the cable cut-over.** The SBC's files are in `from-s1propad/`; this folder is now the enders3dp instance (backup-configs.sh mirrors `~/printer_s1pro_data` here).
+auto-backups excluded). Status (2026-10-23): **staged on enders3dp; waiting for Ironman's sudo step, then the cable cut-over.** The SBC's files are in `from-s1propad/`; this folder is now the enders3dp instance (backup-configs.sh mirrors `~/printer_s1pro_data` here).
 
 Facts from s1propad:
 - Klipper **v0.13.0-770-gce7002bed** on Armbian (bookworm); MCU STM32F401 flashed with the same version.
@@ -14,18 +14,18 @@ Facts from s1propad:
 - Not farm-baseline yet: `idle_timeout: 99999999`, no CLEAR_PAUSE/guided M600/paused-safe idle (FARM.md).
 - enders3dp already has an orphan `s1pro` Klipper service with no config (FARM.md) - the natural slot.
 
-## Decisions (Amir, 2026-10-23)
+## Decisions (Ironman, 2026-10-23)
 - **Own Klipper for s1pro**: a second checkout on enders3dp pinned to v0.13.0-770-gce7002bed with its own
   Python env, used only by the s1pro instance. No reflash; the running instances' shared Klipper is untouched.
 - **All G-code files** (135, 1.9 GB) are copied over Moonraker's API, keeping folders.
 
 ## Steps (each needs the printers it touches idle; nothing restarts the existing instances)
-1. SSH from aali-cli: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@enders3dp.local` (Amir, once).
+1. SSH from aali-cli: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@enders3dp.local` (Ironman, once).
 2. On enders3dp: inspect the orphan `s1pro` service and `~/s1pro_data` (if any) before reusing the slot.
 3. `git clone` Klipper to `~/klipper-s1pro`, checkout `ce7002bed`; venv `~/klippy-env-s1pro`.
 4. `~/s1pro_data/{config,gcodes,logs,comms}`; configs from this folder with the SBC-only sections removed,
    serial left as a placeholder until the board is plugged into enders3dp.
-5. Moonraker instance on the next free port (enders3dp uses 7125-7128 -> 7129), systemd units (sudo, Amir).
+5. Moonraker instance on the next free port (enders3dp uses 7125-7128 -> 7129), systemd units (sudo, Ironman).
 6. Cut-over (printer idle, no filament): stop klipper on s1propad, move the USB cable, set the by-path serial,
    start the instance, `farm audit s1pro` read-only, then farm-baseline the config (idle timeout, CLEAR_PAUSE,
    guided M600, paused-safe idle).
@@ -41,11 +41,11 @@ Facts from s1propad:
   macros.cfg = enders1plus's farm-baseline macros (guided M600, CLEAR_PAUSE, _PAUSE_HARD_STOP, RESUME reheat);
   its [screws_tilt_adjust] dropped (S1 Plus positions). KAMP + fluidd.cfg symlinked like the other instances.
   moonraker.conf from the MaxNeo template on port 7129.
-- `~/s1pro-install.sh` (sudo, Amir): drop-in so klipper-s1pro runs the new checkout/venv, moonraker-s1pro unit,
+- `~/s1pro-install.sh` (sudo, Ironman): drop-in so klipper-s1pro runs the new checkout/venv, moonraker-s1pro unit,
   enable + start. Touches only s1pro.
 
-## Migrated 2026-10-23 (SBC cooled, Klipper stopped on s1propad at Amir's request; Moonraker left up for the copy)
-- Amir ran `~/s1pro-install.sh`: klipper-s1pro runs ~/klipper-s1pro (v0.13.0-770) via its drop-in; moonraker-s1pro on :7129.
+## Migrated 2026-10-23 (SBC cooled, Klipper stopped on s1propad at Ironman's request; Moonraker left up for the copy)
+- Ironman ran `~/s1pro-install.sh`: klipper-s1pro runs ~/klipper-s1pro (v0.13.0-770) via its drop-in; moonraker-s1pro on :7129.
 - **G-code: all 135 files (1.92 GB, folder `PETG/`)** copied over Moonraker's API into `~/printer_s1pro_data/gcodes`,
   modification times kept, every size verified on enders3dp.
 - **Print history: 297 jobs (2024-12-28 .. 2026-09-24) + totals** (295 jobs, 1000 h printing, 3.7 km filament,
@@ -56,7 +56,7 @@ Facts from s1propad:
 - Lesson: enders3dp's units (KIAUH template) have `RemainAfterExit=yes`, so a stopped Klipper/Moonraker is NOT
   restarted by systemd despite Restart=always - restart them with `sudo systemctl restart <unit>`, never by killing.
 
-## Left: the cut-over (Amir at the printer)
+## Left: the cut-over (Ironman at the printer)
 USB cable SBC -> enders3dp; set `serial:` to the new /dev/serial/by-path port; restart klipper-s1pro (sudo);
 check no MCU version error; `farm audit s1pro`; add s1pro + profile `s1pro-petg-020` (presets staged in
 prusa/farm_profiles.ini) to the farm; sampling print through review + Start.

@@ -112,14 +112,14 @@ class Restore(unittest.TestCase):
         o = restore.capture_origin(self.con, "Ender3MaxNeo", self.m.url, actor="cli:test")
         self.m.config["farm_macros.cfg"] = b"[gcode_macro FARM_INFO]\ngcode:\n"
         live_before = dict(self.m.config)
-        r = restore.stage_restore(self.con, "Ender3MaxNeo", self.m.url, o["id"], author="ui:Amir")
+        r = restore.stage_restore(self.con, "Ender3MaxNeo", self.m.url, o["id"], author="ui:Ironman")
         self.assertEqual(sorted(r["files"]), ["macros.cfg", "printer.cfg"])
         self.assertEqual(r["files"][-1], "printer.cfg")         # printer.cfg last
         self.assertIn("farm_macros.cfg", r["left_in_place"])
         self.assertIn("+max_velocity: 300", restore.diff(self.con, "Ender3MaxNeo", self.m.url, o["id"]))
         # the restored config has the audit FAILs the original had: reported, not a failed restore
         self.m.on_restart = lambda m: m.settings["printer"].update(max_velocity=300)
-        out = cfgchange.apply(self.con, r["changes"][0], "ui:Amir")
+        out = cfgchange.apply(self.con, r["changes"][0], "ui:Ironman")
         self.assertEqual(out["state"], "applied", out["error"])
         self.assertEqual(self.m.restarts, 1)                    # one restart for the whole set
         self.assertEqual(self.m.config["printer.cfg"], ORIG_PRINTER)
@@ -128,22 +128,22 @@ class Restore(unittest.TestCase):
         self.assertEqual(states, {"applied"})
         self.assertIn("audit_fails_now", json.loads(out["result"]))
         self.m.on_restart = None
-        back = cfgchange.rollback(self.con, r["changes"][1], "ui:Amir")
+        back = cfgchange.rollback(self.con, r["changes"][1], "ui:Ironman")
         self.assertEqual(back["state"], "rolled_back")
         self.assertEqual(self.m.restarts, 2)
         for p in ("printer.cfg", "macros.cfg"):
             self.assertEqual(self.m.config[p], live_before[p])
         now = configs.snapshot(self.con, "Ender3MaxNeo", self.m.url, actor="backup")
         with self.assertRaises(cfgchange.Refused):          # restoring what the printer already runs
-            restore.stage_restore(self.con, "Ender3MaxNeo", self.m.url, now["id"], author="ui:Amir")
+            restore.stage_restore(self.con, "Ender3MaxNeo", self.m.url, now["id"], author="ui:Ironman")
 
     def test_set_that_klipper_rejects_is_put_back_whole(self):
         configs.snapshot(self.con, "Ender3MaxNeo", self.m.url, actor="backup")
         o = restore.capture_origin(self.con, "Ender3MaxNeo", self.m.url, actor="cli:test")
         before = dict(self.m.config)
-        r = restore.stage_restore(self.con, "Ender3MaxNeo", self.m.url, o["id"], author="ui:Amir")
+        r = restore.stage_restore(self.con, "Ender3MaxNeo", self.m.url, o["id"], author="ui:Ironman")
         self.m.after_restart = "error"
-        out = cfgchange.apply(self.con, r["changes"][0], "ui:Amir")
+        out = cfgchange.apply(self.con, r["changes"][0], "ui:Ironman")
         self.assertEqual(out["state"], "rolled_back")
         self.assertEqual({cfgchange.get(self.con, i)["state"] for i in r["changes"]}, {"rolled_back"})
         for p in ("printer.cfg", "macros.cfg"):

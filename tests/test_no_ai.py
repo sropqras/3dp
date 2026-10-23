@@ -1,5 +1,5 @@
 """The farm runs on its own tooling: no AI model is called anywhere in the pipeline, the web server or the jobs.
-Claude sessions develop the tooling; they are never a step the farm depends on (Amir, 2026-10-23)."""
+Claude sessions develop the tooling; they are never a step the farm depends on (Ironman, 2026-10-23)."""
 import re
 import unittest
 from pathlib import Path

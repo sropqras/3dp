@@ -317,7 +317,7 @@ def cmd_backup(args):
 
 def _inventory_refresh(con) -> list[str]:
     """Printers' files + history into the Inventory, then the NAS catalogue. Returns the NAS model files that are
-    new since the last scan (the hourly sync tells Amir about them)."""
+    new since the last scan (the hourly sync tells Ironman about them)."""
     from . import inventory, nas
     try:
         inventory.backfill(con, log=lambda m: print("OK   " + m))

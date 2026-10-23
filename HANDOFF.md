@@ -46,7 +46,7 @@ After a `git pull`: `~/agent_workspace/infrastructure/farm_control/stop.sh && wo
 | Ender3MaxNeo | 192.168.1.184:7125 (enders3dp) | 0.6 Sprite, PETG plates |
 | s1pro | 192.168.1.184:7129 (enders3dp) | own Klipper v0.13 instance, 0.4 nozzle (moved off its SBC 2026-10-23) |
 | enders1plus | 192.168.1.68:7125 (3dpnas) | 0.6 Sprite, shares G-code with the MaxNeo |
-| EnderV3SE | 192.168.1.184:7128 (enders3dp) | Amir's own production printer, **handed over to the farm 2026-10-23** (changes only while idle; no print profile yet) |
+| EnderV3SE | 192.168.1.184:7128 (enders3dp) | Ironman's own production printer, **handed over to the farm 2026-10-23** (changes only while idle; no print profile yet) |
 
 The registry is `printers/registry.json`, edited from the Printers tab only.
 
@@ -55,9 +55,9 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 1. **Apply the staged changes** (Printers tab → Changes; `FARM.md` "Staged" table). Put your name in the **You**
    box first: without it Apply stops at "Put your name in the 'You' box first". That is probably why 1/3/4/7
    didn't go on the first time.
-   - 4 (MaxNeo) and 7 (s1pro) were applied 2026-10-23 by a Claude session on Amir's explicit instruction
-     (actor `cli:Amir`). Both verified: no audit FAIL, console clean.
-   - 9-12 (the macro library on MaxNeo and s1pro) were applied 2026-10-23 on Amir's instruction: `FARM_INFO`
+   - 4 (MaxNeo) and 7 (s1pro) were applied 2026-10-23 by a Claude session on Ironman's explicit instruction
+     (actor `cli:Ironman`). Both verified: no audit FAIL, console clean.
+   - 9-12 (the macro library on MaxNeo and s1pro) were applied 2026-10-23 on Ironman's instruction: `FARM_INFO`
      answers on both and both audits pass.
    - **enders1plus 18 → 19 → 20** (library, max_velocity, macros incl. tgalarm/reheat/BEEP; 1 and 3 were folded
      in and cancelled), then the **Telegram pack**.
@@ -85,7 +85,7 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
    printed one and confirmed the profile.
 6. **Next features** (ranked in `docs/FEATURE_GAPS.md`): cost per print/product, product SKUs with recipes, proven
    settings as the send default, suggested printer, Spoolman sync. Phase 7 (invtool) and phase 8 (EnderV3SE) still
-   wait for Amir's go-ahead.
+   wait for Ironman's go-ahead.
 7. **Telegram bots** for EnderV3SE / Ender3Pro (and EnderCR10SE until it is removed) on enders3dp crash-loop (tokens rejected by Telegram).
    The monitor now reports each one once instead of every 2 minutes.
 8. **Filament** for the full Qabrastaan batch: ~40 kg plate colour + ~16 kg letter colour (+5-10 %).
@@ -95,6 +95,6 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 `CLAUDE.md` is the authority. In short:
 - agents never approve or start prints;
 - printer configs change only through the Printers tab's gated Apply (agents may stage);
-- EnderV3SE: changes only while it is idle (Amir's production printer);
+- EnderV3SE: changes only while it is idle (Ironman's production printer);
 - the Charles Wright font is never committed or served;
 - read `gcode_store` after any macro change.

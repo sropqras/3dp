@@ -3,7 +3,7 @@
 OMV keeps its own folders; the farm lays its own categories over them. A category is reached by rules: a `folder`
 rule covers that folder and everything under it, a `file` rule is a person's per-file override, a `match` rule is a
 regex on the file name. The most specific wins (file > deepest folder > match). Categories are seeded once from the
-top-level folders that existed on 2026-10-23; after that they are Amir's to edit in the catalogue.
+top-level folders that existed on 2026-10-23; after that they are Ironman's to edit in the catalogue.
 
 Tags come from the names themselves (Thingiverse ids, printer prefixes, sizes, versions, copies, materials,
 calibration pieces) and are refreshed at every scan; a person's own tags (source 'person') are never touched.

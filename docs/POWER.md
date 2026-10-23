@@ -1,6 +1,6 @@
 # Switching printers on and off: Meross smart plugs (research, 2026-10-23)
 
-Nothing is built yet. This is the design and what is needed from Amir first.
+Nothing is built yet. This is the design and what is needed from Ironman first.
 
 ## Findings
 
@@ -29,7 +29,7 @@ Nothing is built yet. This is the design and what is needed from Amir first.
    OFF while printing or paused, or while the hotend is above about 50 C (the heat-break fan has to keep running).
 4. **No plug may feed a host** (enders3dp or 3dpnas). One OFF would take down every instance on it.
 
-## Needed from Amir
+## Needed from Ironman
 
 - Each plug's model and hardware/firmware version (Meross app → device → settings), and which printer it feeds.
 - A DHCP reservation per plug.

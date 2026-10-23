@@ -35,7 +35,7 @@ class TelegramPack(unittest.TestCase):
         self.assertNotIn("bot", replaced)
 
     def test_pack_applied_bot_restarted_token_never_logged(self):
-        r = ops.telegram_pack(self.con, "Ender3MaxNeo", self.m.url, "Ender3MaxNeo", "ui:Amir", wait_s=0)
+        r = ops.telegram_pack(self.con, "Ender3MaxNeo", self.m.url, "Ender3MaxNeo", "ui:Ironman", wait_s=0)
         self.assertEqual(r["service"], "moonraker-telegram-bot-Ender3MaxNeo")
         self.assertEqual(self.m.service_restarts, ["moonraker-telegram-bot-Ender3MaxNeo"])
         self.assertIn(b"SECRET-TOKEN", self.m.config["telegram.conf"])
@@ -46,7 +46,7 @@ class TelegramPack(unittest.TestCase):
 
     def test_bot_not_starting_restores_old_file(self):
         self.m.service_after = "activating/auto-restart"
-        r = ops.telegram_pack(self.con, "Ender3MaxNeo", self.m.url, "Ender3MaxNeo", "ui:Amir", wait_s=0)
+        r = ops.telegram_pack(self.con, "Ender3MaxNeo", self.m.url, "Ender3MaxNeo", "ui:Ironman", wait_s=0)
         self.assertTrue(r.get("rolled_back"))
         self.assertEqual(self.m.config["telegram.conf"], TELEGRAM.encode())
 
@@ -54,7 +54,7 @@ class TelegramPack(unittest.TestCase):
         with self.assertRaises(ops.Refused):
             ops.telegram_pack(self.con, "Ender3MaxNeo", self.m.url, "Ender3MaxNeo", "agent")
         with self.assertRaises(ops.Refused):
-            ops.telegram_pack(self.con, "EnderV3SE", self.m.url, "EnderV3SE", "ui:Amir")
+            ops.telegram_pack(self.con, "EnderV3SE", self.m.url, "EnderV3SE", "ui:Ironman")
         with self.assertRaises(PermissionError):
             configs.read_file(self.m.url, "telegram.conf")                         # the normal path stays closed
 
@@ -77,7 +77,7 @@ class Services(unittest.TestCase):
     def tearDown(self):
         self.m.close()
 
-    def restart(self, svc, host, actor="ui:Amir"):
+    def restart(self, svc, host, actor="ui:Ironman"):
         return ops.restart_service(self.con, "Ender3MaxNeo", self.m.url, svc, host, actor)
 
     def test_gates(self):

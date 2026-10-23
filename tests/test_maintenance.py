@@ -15,7 +15,7 @@ class Maintenance(unittest.TestCase):
     def test_due_from_print_hours_since_last_entry(self):
         self.assertTrue(self.st(1000)["nozzle"]["no_record"])
         self.assertFalse(self.st(1000)["nozzle"]["due"])          # never logged: no guess
-        maintenance.log(self.con, "neo", "nozzle", "new 0.6 Sprite nozzle", "ui:Amir", 1000.0)
+        maintenance.log(self.con, "neo", "nozzle", "new 0.6 Sprite nozzle", "ui:Ironman", 1000.0)
         self.assertEqual(self.st(1100)["nozzle"]["since_hours"], 100.0)
         self.assertFalse(self.st(1269)["nozzle"]["due"])
         self.assertTrue(self.st(1271)["nozzle"]["soon"])
