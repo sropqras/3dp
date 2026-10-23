@@ -132,10 +132,15 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 
 ## Rules
 
-- **The farm runs without AI.** No farm code, page or job calls a language model or a cloud AI service: the pipeline,
-  the worker, Farm Control, the monitor and the makers are deterministic tools (`tests/test_no_ai.py` enforces it).
-  The jobctl `farm-*` jobs set `AI_ESCALATE=0` (no Claude diagnosis on repeated failure) and `NOTIFY_PLAIN=1` (no
-  Ollama summaries). Claude sessions are for developing the tooling only. Never add a step that needs one.
+- **The farm runs without language models or paid/cloud AI.** No farm code, page or job calls a language model
+  (Claude, OpenAI, Ollama, ...) or a cloud or pay-per-use AI service. The pipeline, the worker, Farm Control, the
+  monitor and the makers are deterministic tools (`tests/test_no_ai.py` enforces it). The jobctl `farm-*` jobs set
+  `AI_ESCALATE=0` (no Claude diagnosis on repeated failure) and `NOTIFY_PLAIN=1` (no Ollama summaries). Claude
+  sessions are for developing the tooling only; never add a step that needs one.
+  - **Allowed (Ironman, 2026-10-23):** a **local vision model** that costs nothing per use and sends nothing off the
+    LAN. The first is PrintGuard for print-failure detection, running in its own container. Farm code may read its
+    results only from a LAN/Tailscale address (`FARM_PRINTGUARD_URL`, checked by the test). A detector may alert;
+    pausing a print automatically is a per-printer decision Ironman makes after an alert-only trial.
 - **Printer configs change only through Farm Control's Printers tab** (`/printers`, `farm/cfgchange.py`). An AI session may *stage* a change with a reason (`python3 -m farm config stage --printer <name> --path printer.cfg --section printer --option max_velocity --value 200 --reason "..." --author agent`), but never applies or rolls one back on its own, and never edits printer files over SSH or the Moonraker file API directly. A person presses Apply. The one exception: Ironman names the specific change ids in the session and says apply them (as on 2026-10-23 for changes 4 and 7). The session then runs them through the same gate as `cli:Ironman`, and that permission covers only those ids. The gate refuses while printing or paused, takes a snapshot, verifies (Klipper ready, no new audit FAIL, no `Unknown command`), rolls back automatically if Klipper doesn't come back, and writes FARM.md's change log.
 - **Agents never approve or start prints.** No calls to `/api/builds/*/approve|start`, `farm approve` or `farm start` (the latter two refuse without a terminal anyway). Preparing, slicing and queueing for review is fine. Only `farm/gate.py` can start a print: `moonraker.start` needs its token, and the gate re-checks the approval hash, the 3D view, the audit, printer idle, the uploaded file and the spool.
 - **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has looked at the run's `.3mf` (Farm Control's 3D viewer or PrusaSlicer), confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.

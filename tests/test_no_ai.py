@@ -1,5 +1,7 @@
-"""The farm runs on its own tooling: no AI model is called anywhere in the pipeline, the web server or the jobs.
-Claude sessions develop the tooling; they are never a step the farm depends on (Ironman, 2026-10-23)."""
+"""The farm runs on its own tooling: no language model and no paid or cloud AI is called anywhere in the pipeline,
+the web server or the jobs. Claude sessions develop the tooling; they are never a step the farm depends on.
+A local vision model (PrintGuard failure detection) is allowed: it costs nothing per use and stays on the LAN
+(Ironman, 2026-10-23), so the only thing checked for it is that its address is local."""
 import re
 import unittest
 from pathlib import Path
@@ -18,6 +20,22 @@ class NoAI(unittest.TestCase):
                 for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1)
                 if AI.search(line)]
         self.assertEqual(hits, [])
+
+    def test_vision_service_stays_local(self):
+        import ipaddress
+        import urllib.parse
+        from farm import config
+        url = getattr(config, "PRINTGUARD_URL", "")
+        if not url:
+            return
+        host = urllib.parse.urlparse(url).hostname or ""
+        local = host in ("localhost",) or host.endswith((".local", ".ts.net"))
+        try:
+            ip = ipaddress.ip_address(host)
+            local = ip.is_private or ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")   # Tailscale
+        except ValueError:
+            pass
+        self.assertTrue(local, f"FARM_PRINTGUARD_URL must stay on the LAN/Tailscale, not {host}")
 
     @unittest.skipUnless(JOBS.is_dir(), "jobctl definitions live on aali-cli")
     def test_farm_jobs_never_escalate_to_ai(self):
