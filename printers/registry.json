@@ -34,7 +34,7 @@
     {
       "name": "enders1plus",
       "note": "Ender 3 S1 Plus on 3dpnas: same bed and Sprite Pro 0.6 as the MaxNeo (G-code shared), filament sensor, Klipper v0.13.",
-      "moonraker": "http://3dpnas.local:7125",
+      "moonraker": "http://192.168.1.68:7125",
       "fluidd": "http://192.168.1.68/",
       "fluidd_note": "",
       "bed_min": [

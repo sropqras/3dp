@@ -13,10 +13,10 @@ Slicer profiles (PrusaSlicer 2.9.6) live in `prusa/`.
 | Ender3Pro | :7126 | not connected | idle instance |
 | EnderCR10SE | :7127 | not connected | idle instance |
 | **s1pro** (Ender 3 S1 Pro) | :7129 | connected (USB 3.3) | ready; moved off its SBC 2026-10-23, own Klipper v0.13.0-770, 0.4 nozzle, RunoutSensor, profile `s1pro-petg-020` |
-| **enders1plus** (host 3dpnas.local) | :7125 | connected | ready; Ender 3 S1 Plus, same bed + Sprite Pro 0.6 as MaxNeo, filament sensor |
+| **enders1plus** (host 3dpnas.local, 192.168.1.68) | :7125 | connected | ready; Ender 3 S1 Plus, same bed + Sprite Pro 0.6 as MaxNeo, filament sensor |
 
 Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.local, s1propad.local,
-3dpnas.local, 192.168.1.39:4408, 192.168.1.200:4408.
+192.168.1.39:4408, 192.168.1.200:4408.
 
 ## Feature matrix
 
