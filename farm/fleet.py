@@ -5,7 +5,7 @@ import time
 import urllib.parse
 from types import SimpleNamespace
 
-from . import audit, baseline, cfgchange, configs, db, hosts, jobs, ops, printers
+from . import audit, baseline, cfgchange, configs, db, hosts, jobs, maintenance, ops, printers
 
 _cache, _lock = {}, threading.Lock()
 
@@ -48,6 +48,8 @@ def overview() -> dict:
                                  "reference": ref and {k: ref[k] for k in ("id", "reviewed_by", "reviewed_at")},
                                  "files": len(latest["files"]) if latest else 0,
                                  "drift": configs.drift(con, v["key"], latest["files"]) if latest else None}
+                if v.get("registry"):
+                    v["maintenance"] = [s for s in maintenance.status(con, v["registry"], v.get("print_hours"))]
                 v["changes"] = [{k: c[k] for k in ("id", "state", "path", "summary", "reason", "author", "error",
                                                    "applied_by", "created_at")}
                                 for c in cfgchange.listing(con, v["key"], 8)]
@@ -220,6 +222,30 @@ def usb(host_name: str) -> dict:
     finally:
         con.close()
     return ops.usb_devices(host, serial, cams)
+
+
+def maint(key: str) -> dict:
+    v = _instance(key)
+    con = db.connect()
+    try:
+        return {"status": maintenance.status(con, key, v.get("print_hours")), "entries": maintenance.entries(con, key),
+                "intervals": maintenance.intervals(con, key), "kinds": list(maintenance.KINDS),
+                "print_hours": v.get("print_hours")}
+    finally:
+        con.close()
+
+
+def maint_log(key: str, body: dict, actor: str) -> dict:
+    v = _instance(key)
+    con = db.connect()
+    try:
+        if body.get("interval") is not None:
+            maintenance.set_interval(con, str(body["kind"]), float(body["interval"]),
+                                     printer=key if body.get("this_printer") else "*")
+            return {"ok": True}
+        return maintenance.log(con, key, str(body["kind"]), str(body.get("note") or ""), actor, v.get("print_hours"))
+    finally:
+        con.close()
 
 
 def unquote_key(part: str) -> str:

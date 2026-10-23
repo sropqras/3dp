@@ -167,6 +167,29 @@ async function changeAct(id, action) {
   refresh();
 }
 
+function maintBlock(v) {
+  if (!v.maintenance) return "";
+  const due = v.maintenance.filter((m) => m.due), soon = v.maintenance.filter((m) => m.soon);
+  const row = (m) => `<tr><td>${esc(m.kind.replace("_", " "))}</td>
+    <td class="${m.due ? "bad" : m.soon ? "warn" : m.no_record ? "dim" : "ok"}">${m.no_record ? "no record" : `${m.since_hours ?? "?"} h since`}</td>
+    <td class="dim">${m.interval ? "every " + m.interval + " h" : "no reminder"}</td>
+    <td><button class="ghost" onclick='maintDone(${JSON.stringify(v.key)}, ${JSON.stringify(m.kind)})'>Done</button>
+        <button class="ghost" title="reminder interval in print hours" onclick='maintInterval(${JSON.stringify(v.key)}, ${JSON.stringify(m.kind)}, ${m.interval || 0})'>⏱</button></td></tr>`;
+  return `<details ${due.length ? "open" : ""}><summary>Maintenance${due.length ? ` · <span class="bad">${due.length} due</span>` : ""}${soon.length ? ` · <span class="warn">${soon.length} soon</span>` : ""} · ${v.print_hours ?? "?"} print h</summary>
+    <table>${v.maintenance.map(row).join("")}</table></details>`;
+}
+async function maintDone(key, kind) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const note = prompt(`${kind.replace("_", " ")} on ${key} done - note (optional):`, "");
+  if (note === null) return;
+  if (await post(`/api/fleet/${encodeURIComponent(key)}/maintenance`, { kind, note })) refresh();
+}
+async function maintInterval(key, kind, cur) {
+  const h = prompt(`Remind about ${kind.replace("_", " ")} every how many print hours? (0 = no reminder; applies to every printer)`, cur);
+  if (h === null) return;
+  if (await post(`/api/fleet/${encodeURIComponent(key)}/maintenance`, { kind, interval: +h })) refresh();
+}
+
 function onboardBlock(v) {
   if (v.registry) return "";
   const items = [
@@ -195,6 +218,7 @@ function card(v) {
     ${auditBlock(v)}
     ${configBlock(v)}
     ${changesBlock(v)}
+    ${maintBlock(v)}
     ${onboardBlock(v)}
     <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div style="margin-top:6px">${vers}</div></details>
   </div>`;

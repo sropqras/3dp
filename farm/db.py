@@ -99,6 +99,15 @@ MIGRATIONS = [
         created_at REAL NOT NULL, updated_at REAL NOT NULL);
     CREATE INDEX config_changes_printer ON config_changes(printer, state)
     """,
+    # 6: maintenance log + reminder intervals in print hours (farm/maintenance.py)
+    """
+    CREATE TABLE maintenance (
+        id INTEGER PRIMARY KEY, printer TEXT NOT NULL, kind TEXT NOT NULL, note TEXT, actor TEXT NOT NULL,
+        at REAL NOT NULL, print_hours REAL);
+    CREATE INDEX maintenance_printer ON maintenance(printer, kind, id);
+    CREATE TABLE maintenance_intervals (
+        printer TEXT NOT NULL DEFAULT '*', kind TEXT NOT NULL, hours REAL NOT NULL, PRIMARY KEY (printer, kind))
+    """,
 ]
 
 

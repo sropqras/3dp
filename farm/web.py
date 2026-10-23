@@ -494,6 +494,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, fleet.file_text(key, q["path"][0]).encode(), "text/plain; charset=utf-8")
                 if parts[1:] == ["changes"]:
                     return self._send(200, json.dumps(fleet.changes(key), default=str).encode())
+                if parts[1:] == ["maintenance"]:
+                    return self._send(200, json.dumps(fleet.maint(key), default=str).encode())
                 if parts[1:] == ["diff"]:
                     return self._send(200, fleet.diff(key, q["path"][0]).encode(), "text/plain; charset=utf-8")
             except (LookupError, KeyError, IndexError) as e:
@@ -549,6 +551,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.review(key, int(body["snapshot"]), who)).encode())
                 if parts[3] == "changes":
                     return self._send(200, json.dumps(fleet.stage_change(key, body, who)).encode())
+                if parts[3] == "maintenance":
+                    return self._send(200, json.dumps(fleet.maint_log(key, body, who), default=str).encode())
                 if parts[3] == "fix":
                     return self._send(200, json.dumps(fleet.stage_fix(key, str(body["rule"]), who)).encode())
                 if parts[3] == "telegram-pack":

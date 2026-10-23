@@ -61,12 +61,91 @@ def check(p, prev: dict) -> tuple[dict, list[tuple[str, str]]]:
     return now, out
 
 
-def run(state_file: Path) -> list[tuple[str, str]]:
+# ---------------------------------------------------------------- fleet health (Printers tab, phase 4)
+
+DISK_PCT, CPU_TEMP_C = 90, 80
+QUIET_SERVICES = ("backup-on-boot", "backup-filewatch")   # one-shot by design: "inactive" is normal
+
+
+def health_problems(fleet: list[dict], maint_due: dict | None = None) -> dict:
+    """{scope: {problem key: (level, text)}} from one fleet read (farm/hosts.py). Hosts: services, disk, CPU.
+    Registry printers: failed components, Moonraker warnings, camera, maintenance due."""
+    out = {}
+    for v in fleet:
+        if not v.get("reachable"):
+            continue
+        host = out.setdefault(f"host:{v['host']}", {})
+        for name, st in (v.get("services") or {}).items():
+            if st.startswith("active/running") or any(q in name for q in QUIET_SERVICES):
+                continue
+            core = name.startswith(("klipper", "moonraker")) and not any(x in name for x in ("telegram", "obico", "backup"))
+            host[f"svc:{name}"] = ("loud" if core else "silent", f"{v['host']}: service {name} is {st}")
+        if (v.get("disk_used_pct") or 0) > DISK_PCT:
+            host["disk"] = ("loud", f"{v['host']}: disk {v['disk_used_pct']}% full ({v.get('disk_free_gb')} GB free)")
+        if (v.get("cpu_temp") or 0) > CPU_TEMP_C:
+            host["cpu_temp"] = ("loud", f"{v['host']}: CPU at {round(v['cpu_temp'])} C")
+        if v.get("throttled"):
+            host["throttled"] = ("loud", f"{v['host']}: throttled ({', '.join(v['throttled'])})")
+        if not v.get("registry"):
+            continue
+        mine = out.setdefault(f"printer:{v['registry']}", {})
+        for comp in v.get("failed_components") or []:
+            mine[f"failed:{comp}"] = ("loud", f"{v['registry']}: Moonraker component {comp} failed")
+        for i, w in enumerate(v.get("warnings") or []):
+            mine[f"warning:{w[:60]}"] = ("silent", f"{v['registry']}: Moonraker warning: {w[:200]}")
+        for c in v.get("cameras") or []:
+            if c.get("ok") is False:
+                mine[f"camera:{c.get('name')}"] = ("silent", f"{v['registry']}: camera {c.get('name')} gives no snapshot")
+        for kind in (maint_due or {}).get(v["registry"], []):
+            mine[f"maint:{kind}"] = ("silent", f"{v['registry']}: maintenance due - {kind}")
+    return out
+
+
+def diff_problems(prev: dict, now: dict) -> list[tuple[str, str]]:
+    alerts = []
+    for scope, probs in now.items():
+        old = prev.get(scope, {})
+        for key, (level, text) in probs.items():
+            if key not in old:
+                alerts.append((level, ("🔴 " if level == "loud" else "🟡 ") + text))
+    for scope, old in prev.items():
+        for key, (level, text) in old.items():
+            if key not in now.get(scope, {}):
+                alerts.append(("silent", f"✅ recovered: {text[:120]}"))
+    return alerts
+
+
+def health_pass(state: dict) -> list[tuple[str, str]]:
+    from . import db, hosts, maintenance
+    fl = hosts.fleet(cameras=True)
+    due = {}
+    try:
+        con = db.connect()
+        for v in fl:
+            if v.get("registry") and v.get("print_hours") is not None:
+                due[v["registry"]] = [s["kind"] for s in maintenance.status(con, v["registry"], v["print_hours"]) if s["due"]]
+        con.close()
+    except Exception:
+        pass
+    retired = {h["name"] for h in hosts.load_hosts() if h.get("retired")}
+    now = health_problems([v for v in fl if v["host"] not in retired], due)
+    prev = {k: {kk: tuple(vv) for kk, vv in v.items()} for k, v in state.get("_health", {}).items()}
+    alerts = diff_problems(prev, now)
+    state["_health"] = now
+    return alerts
+
+
+def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:
     state = json.loads(state_file.read_text()) if state_file.exists() else {}
     alerts = []
     for p in printers.PRINTERS.values():
         state[p.name], found = check(p, state.get(p.name, {}))
         alerts += found
+    if health:
+        try:
+            alerts += health_pass(state)
+        except Exception as e:   # the health pass is extra: it must never stop the print-error watch
+            alerts.append(("silent", f"farm monitor: health pass failed: {type(e).__name__}: {str(e)[:120]}"))
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps(state, indent=2))
     return alerts
