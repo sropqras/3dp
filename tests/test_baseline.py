@@ -111,3 +111,38 @@ class Fixable(unittest.TestCase):
         for st, rule, _ in audit.rules(s, p):
             if st == "FAIL":
                 self.assertEqual(bool(baseline.fixes_for(rule, s, files, "x")), baseline.fixable(rule), rule)
+
+
+class Minimal(unittest.TestCase):
+    """A fix never replaces a printer's tuned macros: the S1 Plus case of 2026-10-23."""
+    TUNED = """[gcode_macro M600]
+description: tuned
+gcode:
+    PAUSE_MACRO
+    _COLOUR_CHANGE_PROMPT
+
+[gcode_macro _COLOUR_CHANGE_PROMPT]
+gcode:
+    RESPOND TYPE=command MSG="action:prompt_begin Colour change"
+    RESPOND TYPE=command MSG="action:prompt_text Hold the filament, press UNLOAD and clip the old end to its spool."
+    RESPOND TYPE=command MSG="action:prompt_show"
+
+[gcode_macro _COLOUR_CHANGE_RESUME]
+gcode:
+    M83
+    G1 E-2 F1800
+    RESUME
+"""
+
+    def test_tgalarm_fix_adds_one_line_and_nothing_else(self):
+        out = baseline.fixes_for("colour change alerts Telegram (tgalarm)", {}, {"macros.cfg": self.TUNED}, "s1plus")
+        self.assertEqual(len(out), 1)
+        import difflib
+        added = [l for l in difflib.ndiff(self.TUNED.splitlines(), out[0]["content"].splitlines()) if l[:2] in ("+ ", "- ")]
+        self.assertEqual(len(added), 1, added)
+        self.assertTrue(added[0].startswith("+     RESPOND PREFIX=tgalarm"), added)
+
+    def test_auto_unload_fix_only_drops_that_line(self):
+        bad = self.TUNED.replace("    PAUSE_MACRO\n", "    PAUSE_MACRO\n    UNLOAD_FILAMENT\n")
+        out = baseline.fixes_for("M600 does not auto-unload", {}, {"macros.cfg": bad}, "x")
+        self.assertEqual(out[0]["content"], self.TUNED)

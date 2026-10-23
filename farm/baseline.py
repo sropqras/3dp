@@ -127,6 +127,7 @@ gcode:
         "gcode_macro _COLOUR_CHANGE_PROMPT": f"""[gcode_macro _COLOUR_CHANGE_PROMPT]
 gcode:
     RESPOND TYPE=command MSG="action:prompt_begin Colour change"
+    RESPOND TYPE=command MSG="action:prompt_text Hold the filament, press UNLOAD and clip the old end to its spool."
     RESPOND TYPE=command MSG="action:prompt_text Insert the next colour, press LOAD, PURGE until it runs clean, remove the blob, wipe the nozzle, then RESUME."
     RESPOND TYPE=command MSG="action:prompt_button UNLOAD|UNLOAD_FILAMENT|error"
     RESPOND TYPE=command MSG="action:prompt_button LOAD 75mm|LOAD_FILAMENT|primary"
@@ -138,7 +139,10 @@ gcode:
         "gcode_macro _COLOUR_CHANGE_RESUME": """[gcode_macro _COLOUR_CHANGE_RESUME]
 gcode:
     RESPOND TYPE=command MSG="action:prompt_end"
-    G4 P500
+    # relieve nozzle pressure after PURGE so it doesn't ooze a ring across the plate on the way back
+    M83
+    G1 E-2 F1800
+    G4 P2000
     RESUME
 """,
         "gcode_macro _DISABLE_FS": f"""[gcode_macro _DISABLE_FS]
@@ -221,18 +225,50 @@ def fixes_for(rule: str, settings: dict, files: dict, printer: str) -> list[dict
         edit(p, add_clear, "START_PRINT runs CLEAR_PAUSE")
     elif rule in ("M600 macro exists", "M600 does not auto-unload", "M600 shows the colour-change prompt",
                   "colour change alerts Telegram (tgalarm)"):
+        # Minimal: change only what's missing. A printer's existing colour-change macros are tuned (anti-ooze
+        # resume, prompt wording) - a fix never replaces them wholesale.
         blocks = colour_change_blocks(printer, _sensor(settings, files))
+        p600 = _file_with(files, "gcode_macro M600", macros)
+        prompt_name = next((re.match(r"\s*(\S+)", l).group(1) for l in macro_body(files.get(p600, ""), "M600").splitlines()
+                            if "PROMPT" in l and not l.lstrip().startswith(("#", "description"))), None)
 
-        def add_all(t):
+        def add_missing(t):
+            """Add each set member the printer doesn't define anywhere."""
             for name, block in blocks.items():
-                existing = _file_with({macros: t}, name, None)
-                # a helper the printer already defines elsewhere stays; the M600 family is replaced
-                if name in ("gcode_macro _DISABLE_FS", "gcode_macro _ENABLE_FS") and \
-                        any(section_span(x, name) for pth, x in files.items() if pth != macros):
-                    continue
-                t = replace_section(t, name, block)
+                if not any(section_span(x, name) for pth, x in files.items() if pth != macros) and not section_span(t, name):
+                    t = replace_section(t, name, block)
             return t
-        edit(macros, add_all, "farm guided colour change (M600 + prompt, no auto-unload, tgalarm)")
+
+        if rule == "M600 macro exists":
+            edit(macros, add_missing, "farm guided colour change (M600 + prompt, no auto-unload, tgalarm)")
+        elif rule == "M600 does not auto-unload":
+            def drop_unload(t):
+                span = section_span(t, "gcode_macro M600")
+                body = t[span[0]:span[1]]
+                body = re.sub(r"^[ \t]*UNLOAD_FILAMENT\b.*\n", "", body, flags=re.M)
+                return t[:span[0]] + body + t[span[1]:]
+            edit(p600, drop_unload, "M600 no longer unloads on its own (UNLOAD is a prompt button)")
+        elif rule == "M600 shows the colour-change prompt":
+            def add_prompt(t):
+                t = add_missing(t)
+                span = section_span(t, "gcode_macro M600")
+                body = t[span[0]:span[1]]
+                if "_COLOUR_CHANGE_PROMPT" not in body:
+                    body = body.rstrip("\n") + "\n    _COLOUR_CHANGE_PROMPT\n\n"
+                return t[:span[0]] + body + t[span[1]:]
+            edit(p600, add_prompt, "M600 shows the guided colour-change prompt")
+        else:   # tgalarm: one line in the printer's own prompt macro
+            target = prompt_name or "_COLOUR_CHANGE_PROMPT"
+            pp = _file_with(files, f"gcode_macro {target}", macros)
+
+            def add_alarm(t):
+                span = section_span(t, f"gcode_macro {target}")
+                if span is None:
+                    return add_missing(t)
+                body = t[span[0]:span[1]].rstrip("\n")
+                line = f'    RESPOND PREFIX=tgalarm MSG="{printer}: colour change - load the next colour, then RESUME"'
+                return t[:span[0]] + body + "\n" + line + "\n\n" + t[span[1]:]
+            edit(pp, add_alarm, f"colour change alerts Telegram (tgalarm line in {target})")
     elif rule.endswith(": insert does not resume"):
         sec = rule.split(":")[0]
         p = _file_with(files, sec, "printer.cfg")
