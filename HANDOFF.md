@@ -75,7 +75,8 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
    any macros).
    - **Power plugs**: Meross research and design in `docs/POWER.md`. It needs your plug models, IPs and the
      account key first.
-3. **3dpnas SSH** for the USB device listing: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@3dpnas.local`.
+3. **PrintGuard on 3dpnas**: SSH is authorised (2026-10-23); run `sudo bash install-3dpnas.sh` there, then the UI setup in
+   `~/agent_workspace/infrastructure/printguard/PROJECT.md` (monitors on Alert only).
 4. **Confirm values**:
    - the Hyper PLA volumetric cap (15 proposed; `neo-hyperpla-028-litho` and `neo-pla-020-supports` stay unconfirmed until then);
    - lithophane t_min/t_max at 0.6;

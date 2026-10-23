@@ -151,7 +151,7 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - After any printer config change, `python -m farm audit <printer>` must pass. Record the change in FARM.md's change log and feature matrix.
 - In the feature matrix, `?` means unconfirmed. Configs contain copy-pasted sections, so don't infer hardware from them.
 - `printers/` backups exclude secrets (`telegram.conf`, `moonraker-obico.cfg`, `octoeverywhere.conf`), and `.gitignore` excludes them too. Keep it that way. Symlinked upstream code (KAMP, fluidd.cfg, timelapse) is recorded in `SYMLINKS.txt`, not copied.
-- enders1plus (3dpnas) is changed like every printer, through the Printers tab (Moonraker's file API). aali-cli's key isn't authorised on 3dpnas yet, so its USB device listing doesn't work until Ironman runs `ssh-copy-id`.
+- enders1plus (3dpnas) is changed like every printer, through the Printers tab (Moonraker's file API). aali-cli's read-only key (`~/.ssh/enders3dp`) is authorised on 3dpnas since 2026-10-23, so its USB device listing works. 3dpnas will also host PrintGuard (port 11111, `~/agent_workspace/infrastructure/printguard/`).
 - **Never edit a DB migration that may have run.** The every-2-min `farm-monitor` job runs straight from the working tree, so a migration is applied to the live DB the moment it's saved. Add a new numbered migration instead, with `IF NOT EXISTS` if a draft got out.
 - Macro names like letter+digits (e.g. `_A1`) get parsed by Klipper as classic G-code commands, and the audit flags them.
 - aali-cli has the apt `prusa-slicer` **2.7.2** at `/usr/bin/prusa-slicer`. It's fine for testing, but production G-code needs 2.9.6 (Flathub).
