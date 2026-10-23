@@ -657,7 +657,8 @@ function artCard(d) {
     ${d.projects.length ? `<div class="stamp">Projects: ${esc(d.projects.join(", "))}</div>` : ""}
     ${d.nas.length ? `<div class="stamp" title="${esc(d.nas.join("\n"))}">NAS: ${esc(d.nas[0])}${d.nas.length > 1 ? ` +${d.nas.length - 1}` : ""}</div>` : ""}
     <div class="acts"><button class="mini ghost" onclick="openPrints(${ref(d)})">Prints</button>
-      ${model ? `<button class="mini" onclick="openSendArtefact(${model.id}, ${ref(d.title)})">Send to printer…</button>` : ""}
+      ${d.artefacts.filter((a) => a.job_id).length > 1 ? `<button class="mini" onclick="openSendJobs(${ref(d)})">Send to printer…</button>`
+        : model ? `<button class="mini" onclick="openSendArtefact(${model.id}, ${ref(d.title)})">Send to printer…</button>` : ""}
       <button class="mini ghost" onclick="openProduct(${ref(d)})">${prod ? "Edit product" : "Make product"}</button></div>
   </div>`;
 }
@@ -771,6 +772,15 @@ window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ---------------------------------------------------------------- Projects: generated content, send to a printer
 let sendIds = [], sendDefaults = {}, sendArtefact = null;
+async function openSendJobs(i) {
+  const d = REF[i], arts = d.artefacts.filter((a) => a.job_id);
+  sendIds = arts.map((a) => a.job_id); sendArtefact = null; sendParts = null;
+  $("sd2-title").textContent = `Send "${d.title}"`; $("sd2-items").textContent = arts.map((a) => a.title).join(", ");
+  if (!MK) MK = await (await fetch("/api/makers")).json();
+  sendDefaults = {};
+  $("sd2-printer").innerHTML = MK.printers.map((p) => `<option>${esc(p)}</option>`).join("");
+  $("sd2-msg").textContent = ""; sendProfiles(); $("senddlg").showModal();
+}
 async function openSendArtefact(id, ti) {
   const title = REF[ti];
   sendArtefact = id; sendIds = []; sendParts = null;
@@ -922,6 +932,12 @@ async function doSend() {
     if (r.ok) refresh();
     return;
   }
+  const r = await fetch("/api/jobs/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    job_ids: sendIds, printer: $("sd2-printer").value, profile: $("sd2-profile").value, layer_height: +$("sd2-layer").value,
+    same_bed: $("sd2-samebed").checked }) });
+  const out = await r.json().catch(() => ({}));
+  $("sd2-msg").textContent = r.ok ? `build(s) ${out.builds.join(", ")} slicing — they'll appear in Review & queue` : "not sent: " + (out.error || r.status);
+  if (r.ok) refresh();
 }
 
 function jobsTable(runs) {

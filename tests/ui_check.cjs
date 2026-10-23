@@ -63,11 +63,12 @@ const [base, reviewId, queuedId, shots] = process.argv.slice(2);
   console.log("new job reached review:", state === "review");
   await p.evaluate(() => refresh()); await p.waitForTimeout(800);
   await p.locator("#builds").screenshot({ path: `${shots}/builds2.png` });
-  // tabs: Projects holds the batch grid + generated content; send an order's plates to another printer
-  await p.click("nav.tabs >> text=Projects"); await p.waitForSelector("#library .card", { timeout: 15000 });
+  // tabs: Inventory holds every generated item (a design per order); send one to another printer
+  await p.click("nav.tabs >> text=Inventory"); await p.waitForSelector(".art", { timeout: 15000 });
   console.log("tabs: dashboard hidden", await p.evaluate(() => document.querySelector('.tab[data-tab=dashboard]').hidden),
-              "| batches in projects", await p.evaluate(() => !!document.querySelector('.tab[data-tab=projects] #batches')));
-  await p.click("#library .card:has-text('UI new job') >> text=Send to printer…"); await p.waitForTimeout(500);
+              "| projects tab", await p.evaluate(() => !!document.querySelector('.tab[data-tab=projects] #pj-list')));
+  await p.selectOption("#iv-by", "maker"); await p.waitForTimeout(800);
+  await p.click(".art:has-text('UI new job') >> text=Send to printer…"); await p.waitForTimeout(500);
   await p.selectOption("#sd2-printer", "enders1plus"); await p.dispatchEvent("#sd2-printer", "change"); await p.waitForTimeout(300);
   await p.click("#senddlg >> text=Slice for review"); await p.waitForTimeout(1200);
   console.log("send:", await p.textContent("#sd2-msg"));

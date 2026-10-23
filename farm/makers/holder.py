@@ -20,13 +20,15 @@ class Holder(Maker):
         inputs=tuple(FileInput(f"image{i}", ("image/*",), required=(i == 1), label=f"Photo {i}") for i in range(1, 5)),
         params={
             "lighter": {"type": "enum", "enum": ["maxi", "mini", "slim", "custom"], "default": "maxi", "label": "Lighter"},
+            "cutout": {"type": "boolean", "default": False,
+                       "label": "Photos are already cut out (transparent PNG): use their transparency, skip auto-detection"},
             "clearance": {"type": N, "min": 0, "max": 2, "default": 0.35, "advanced": True},
             "fit": {"type": "enum", "enum": ["photo", "contain", "stretch"], "default": "photo", "advanced": True},
             "recipes": {"type": "json", "advanced": True,
                         "label": "Per-photo recipes {\"image1\": {...}} (optional: without one the subject is found automatically)"},
             "overrides": OVERRIDES,
         },
-        typical={"profiles": [], "layer_heights": [0.2], "material": "pla"},
+        typical={"profiles": ["neo-pla-020-supports"], "layer_heights": [0.2], "material": "pla"},
         supports=True, experimental=True,
     )
 
@@ -41,8 +43,10 @@ class Holder(Maker):
                 entry = {"id": json.loads(body)["id"], "name": img.stem}
                 if recipes.get(key):
                     entry["recipe"] = recipes[key]
+                elif ctx.params.get("cutout"):
+                    entry["recipe"] = {"matte": "alpha"}
                 ids.append(entry)
-            params = nested_params(self.spec.params, {k: v for k, v in ctx.params.items() if k != "recipes"})
+            params = nested_params(self.spec.params, {k: v for k, v in ctx.params.items() if k not in ("recipes", "cutout")})
             _, _, body = net.post_json_body(f"{self.spec.url}/api/holders", {"images": ids, "params": params}, timeout=60)
             job = json.loads(body)
             ctx.log(f"holder: job {job['id']} queued ({len(ids)} photo(s))")

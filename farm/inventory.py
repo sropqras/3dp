@@ -261,7 +261,9 @@ def designs(con) -> list[dict]:
     out = {}
     for a in con.execute("SELECT * FROM artefacts ORDER BY id"):
         a = db.row(a)
-        name = a["design"].capitalize() if a["maker"] == "farm" else a["title"]   # farm/<order>/ files: the order
+        meta0 = a["meta"] if isinstance(a["meta"], dict) else json.loads(a["meta"] or "{}")
+        name = (a["design"].capitalize() if a["maker"] == "farm" else      # farm/<order>/ files: the order
+                meta0.get("order") or a["title"] if a["job_id"] and a["maker"] not in ("upload", "nas") else a["title"])
         d = out.setdefault(a["design"], {"design": a["design"], "title": name, "makers": set(), "kinds": set(),
                                         "artefacts": [], "printers": {}, "projects": set(), "products": [],
                                         "last": 0, "nas": nas.get(a["design"], [])})

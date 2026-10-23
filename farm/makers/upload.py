@@ -15,12 +15,35 @@ from . import FileInput, GenContext, GenResult, MakerError, Maker, MakerSpec, re
 from .base import fit_problems, model_out, safe_stem
 
 
+def _normal(t) -> tuple:
+    (ax, ay, az), (bx, by, bz), (cx, cy, cz) = t
+    ux, uy, uz, vx, vy, vz = bx - ax, by - ay, bz - az, cx - ax, cy - ay, cz - az
+    n = (uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx)
+    length = (n[0] ** 2 + n[1] ** 2 + n[2] ** 2) ** 0.5 or 1.0
+    # -0.0 for a zero component: PrusaSlicer (admesh) calls an STL ASCII when the 128 bytes after the header hold no
+    # byte > 127, which small positive coordinates + zero normals can do; -0.0 sets the sign bit, a harmless 0x80
+    return tuple((c / length) or -0.0 for c in n)
+
+
 def _write_stl(out: Path, tris: list, note: bytes) -> Path:
     with out.open("wb") as f:
         f.write(note.ljust(80, b" ")[:80] + struct.pack("<I", len(tris)))
         for t in tris:
-            f.write(struct.pack("<3f", 0, 0, 0) + b"".join(struct.pack("<3f", *v) for v in t) + b"\0\0")
+            f.write(struct.pack("<3f", *_normal(t)) + b"".join(struct.pack("<3f", *v) for v in t) + b"\0\0")
     return out
+
+
+def read_as_ascii(data: bytes) -> bool:
+    """Would PrusaSlicer misread this binary STL as ASCII (no byte > 127 right after the header)?"""
+    return not any(b > 127 for b in data[80:80 + 128])
+
+
+def _rewrite_binary(src: Path, out: Path) -> Path:
+    data = src.read_bytes()
+    n = struct.unpack_from("<I", data, 80)[0]
+    tris = [(struct.unpack_from("<3f", data, 84 + 50 * i + 12), struct.unpack_from("<3f", data, 84 + 50 * i + 24),
+             struct.unpack_from("<3f", data, 84 + 50 * i + 36)) for i in range(n)]
+    return _write_stl(out, tris, b"farm upload (rewritten for the slicer)")
 
 
 def stls_from_3mf(src: Path, out_dir: Path, stem: str) -> list[tuple[Path, str]]:
@@ -97,6 +120,8 @@ class Upload(Maker):
             head = src.read_bytes()[:5]
             if head.lower() == b"solid" and b"facet" in src.read_bytes()[:400]:
                 stl_from_ascii(src, out)
+            elif read_as_ascii(src.read_bytes()):
+                _rewrite_binary(src, out)
             else:
                 shutil.copyfile(src, out)
         else:

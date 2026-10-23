@@ -222,6 +222,19 @@ class UploadMaker(unittest.TestCase):
         self.assertEqual(r.models[1].bbox[0][2], 0.0)                     # dropped onto the bed
         self.assertEqual(r.warnings, [])
 
+    def test_every_stl_it_writes_reads_as_binary_in_prusaslicer(self):
+        from farm.makers import upload
+        f = three_mf(Path(tempfile.mkdtemp()) / "small.3mf", [(0, 0, 0)])    # 0..10 mm, all-positive: the trap
+        r = makers.get("upload").generate(self.ctx(f))
+        self.assertFalse(upload.read_as_ascii(r.models[0].path.read_bytes()))
+        plain = Path(tempfile.mkdtemp()) / "plain.stl"                    # someone else's binary STL, same trap
+        tri = struct.pack("<3f", 0, 0, 0) + struct.pack("<9f", 0, 0, 0, 10, 0, 0, 0, 10, 0) + b"\0\0"
+        plain.write_bytes(b"x" * 80 + struct.pack("<I", 4) + tri * 4)
+        self.assertTrue(upload.read_as_ascii(plain.read_bytes()))
+        r = makers.get("upload").generate(self.ctx(plain))
+        self.assertFalse(upload.read_as_ascii(r.models[0].path.read_bytes()))
+        self.assertEqual(r.models[0].triangles, 4)
+
     def test_ascii_stl_and_refusals(self):
         d = Path(tempfile.mkdtemp())
         binary = box_stl(d / "b.stl", 0, 0, 0, 10, 10, 10)

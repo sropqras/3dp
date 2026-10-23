@@ -70,6 +70,14 @@ PROFILES = {p.id: p for p in (
         layer_heights=(0.2, 0.24, 0.28, 0.32), max_volumetric=15, confirmed=False,
         note="Hyper PLA volumetric cap 15 mm³/s is a proposal; confirm before production",
         tags=("lithophane", "lamp", "decor")),
+    # Sculpted models that need supports (holder-maker): organic supports on the 0.6 Sprites. Never printed yet.
+    Profile(
+        id="neo-pla-020-supports", name="Hyper PLA 0.6 with supports", base_printers=("Ender3MaxNeo", "enders1plus"),
+        nozzle=0.6, bundle=FARM_BUNDLE, printer_preset="Farm Sprite 0.6 (MaxNeo + S1 Plus)",
+        print_preset="Farm 0.20 PLA supports 0.6", filament_preset="Farm Hyper PLA 0.6", material="pla",
+        layer_heights=(0.2, 0.24, 0.28), max_volumetric=15, first_layer=(0.2, 0.45), supports=True, confirmed=False,
+        note="organic supports; unconfirmed until a supported print has been checked on the farm",
+        tags=("holder", "sculpted")),
 )}
 
 
