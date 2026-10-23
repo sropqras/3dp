@@ -79,3 +79,30 @@ def validate(run, gcode: Path, printer, change_zs: list[float], max_flow: float)
 def flow_at(width: float, height: float, speed: float) -> float:
     """PrusaSlicer's rounded-rectangle extrusion cross-section times speed, in mm^3/s."""
     return ((width - height) * height + math.pi * (height / 2) ** 2) * speed
+
+
+E_MOVE = re.compile(r"^G[01]\b[^;]*?\bE(-?[\d.]+)")
+
+
+def segments(gcode: Path) -> list[dict]:
+    """Filament per colour: the extrusion between colour changes (M600), in mm and grams. Relative E (M83, as
+    the farm presets emit); grams from the config block's filament_diameter/density. The sum matches the
+    slicer's 'filament used' totals (tests/test_gcode.py)."""
+    text = gcode.read_text(encoding="utf-8")
+    dia = float(re.search(r"^; filament_diameter = ([\d.]+)", text, re.M).group(1))
+    dens = float(re.search(r"^; filament_density = ([\d.]+)", text, re.M).group(1))
+    area = math.pi * (dia / 2) ** 2
+    segs, mm, start = [], 0.0, 0
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        if line.strip() == "M600":
+            segs.append((mm, start))
+            mm, start = 0.0, pos
+        else:
+            m = E_MOVE.match(line)
+            if m:
+                mm += float(m.group(1))
+        pos += len(line.encode())
+    segs.append((mm, start))
+    return [{"colour_idx": i, "mm": round(v, 2), "grams": round(v * area * dens / 1000, 2), "start_byte": s}
+            for i, (v, s) in enumerate(segs)]

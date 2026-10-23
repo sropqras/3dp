@@ -117,7 +117,7 @@ def cmd_start(args):
     checklist = {"viewed_3d": ask("Checked the 3D view / .3mf of THIS build?"),
                  "bed_clear": ask("Bed clear and clean?"),
                  "colour_loaded": ask(f"First colour loaded ({', '.join(b['colours'][:1]) or 'as planned'})?")}
-    spools = gate.spools_for(b["printer"])
+    spools = gate.spools_for(con, b["printer"])
     for sp in spools:
         print(f"  spool {sp['id']}: {sp.get('colour')} {sp.get('material')} ({sp.get('remaining_g')} g)")
     spool = input("Spool id loaded now: ").strip()

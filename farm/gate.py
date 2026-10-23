@@ -19,12 +19,11 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from . import audit, db, jobs, moonraker, net, pipeline, printers, profiles
+from . import audit, db, jobs, moonraker, net, pipeline, printers, profiles, spools
 from .printers import REPO
 
 CHECKLIST = ("viewed_3d", "bed_clear", "colour_loaded")
 NONCE_TTL_S = 120
-INVENTORY = REPO / "data" / "inventory.json"
 
 
 class GateRefused(Exception):
@@ -58,12 +57,8 @@ def _use_nonce(nonce: str, build_id: int) -> bool:
     return bool(hit) and hit[0] == build_id and hit[1] >= time.time()
 
 
-def spools_for(printer_name: str) -> list[dict]:
-    try:
-        inv = json.loads(INVENTORY.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return [s for s in inv.get("spools", []) if s.get("location") == printer_name]
+def spools_for(con, printer_name: str) -> list[dict]:
+    return spools.at(con, printer_name)
 
 
 def preflight(con, build_id: int, viewed_required: bool = True) -> dict:
@@ -126,13 +121,16 @@ def preflight(con, build_id: int, viewed_required: bool = True) -> dict:
             reasons.append(f"uploaded file not found on {printer.name}: {str(e)[:120]}")
     elif not b["remote_path"]:
         reasons.append("not uploaded")
-    info["spools"] = spools_for(printer.name)
+    info["spools"] = spools_for(con, printer.name)
+    info["all_spools"] = spools.all_spools(con)
     info["material"] = profile.material
     return {**info, "reasons": reasons}
 
 
 def start_build(con, build_id: int, operator: str, checklist: dict, spool_id: str | None, via: str,
-                nonce: str | None = None) -> str:
+                nonce: str | None = None, later_spools: list | None = None) -> str:
+    """spool_id: loaded now (first colour, must be on this printer); later_spools: for colours 2.. (optional,
+    any spool - they come off the shelf at the colour change); together they decide where the grams go."""
     """Start an approved, queued, uploaded build. Returns the remote file started. Raises GateRefused."""
     if via == "ui" and not (nonce and _use_nonce(nonce, build_id)):
         raise GateRefused("the Start dialog expired or was not opened for this build; open it again")
@@ -147,6 +145,11 @@ def start_build(con, build_id: int, operator: str, checklist: dict, spool_id: st
         pf["reasons"].append(f"choose the spool loaded on {pf['build']['printer']} (none chosen or not there)")
     elif str(spool.get("material", "")).lower() != pf.get("material"):
         pf["reasons"].append(f"spool {spool_id} is {spool.get('material')}, the profile prints {pf.get('material')}")
+    known = {s["id"] for s in pf.get("all_spools", [])}
+    later = [s or None for s in (later_spools or [])]
+    unknown = [s for s in later if s and s not in known]
+    if unknown:
+        pf["reasons"].append(f"unknown spool(s) for later colours: {', '.join(unknown)}")
     if pf["reasons"]:
         raise GateRefused("; ".join(pf["reasons"]))
     b = pf["build"]
@@ -160,7 +163,8 @@ def start_build(con, build_id: int, operator: str, checklist: dict, spool_id: st
         with db.tx(con):
             con.execute("INSERT INTO approvals (build_id, kind, gcode_sha256, actor, at, checklist) "
                         "VALUES (?,?,?,?,?,?)", (build_id, "start", b["gcode_sha256"], f"{via}:{operator}",
-                                                  db.now(), db.dumps({**checklist, "spool": spool_id})))
+                                                  db.now(), db.dumps({**checklist, "spool": spool_id,
+                                                                      "spools": [spool_id] + later})))
         moonraker.start(run, printer, b["remote_path"], token=_TOKEN)
     except BaseException as e:
         jobs.transition(con, "build", build_id, "starting", "queued", "gate", error=str(e)[:300])

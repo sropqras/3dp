@@ -144,6 +144,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     <label><input type="checkbox" id="sd-bed"> Bed is clear and clean</label>
     <label><input type="checkbox" id="sd-colour"> <span id="sd-colour-lbl">First colour is loaded</span></label>
     <label>Spool loaded <select id="sd-spool"></select></label>
+    <div id="sd-later"></div>
     <label>Your name <input id="sd-operator" style="width:160px"></label>
     <div class="acts"><button id="sd-go" onclick="doStart()">Start print</button><span id="sd-msg" class="stamp"></span></div>
     <div class="stamp">The server checks everything again (approval, file on the printer, audit, printer idle) before it starts.</div>
@@ -291,7 +292,9 @@ async function openStart(id) {
   startNonce = pf.nonce;
   $("sd-info").textContent = `${b ? b.labels : ""} · ${pf.material || ""} · printer ${pf.printer_status ? pf.printer_status.klipper + " / " + pf.printer_status.job : "?"}`;
   $("sd-reasons").innerHTML = (pf.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("");
-  $("sd-spool").innerHTML = `<option value="">choose…</option>` + (pf.spools || []).map((sp) => `<option value="${esc(sp.id)}">${esc(sp.id)} · ${esc(sp.colour)} ${esc(sp.material)} · ${esc(sp.remaining_g)} g</option>`).join("");
+  const opt = (sp) => `<option value="${esc(sp.id)}">${esc(sp.id)} · ${esc(sp.colour)} ${esc(sp.material)} · ${esc(sp.remaining_g)} g</option>`;
+  $("sd-spool").innerHTML = `<option value="">choose…</option>` + (pf.spools || []).map(opt).join("");
+  $("sd-later").innerHTML = (pf.colours || []).slice(1).map((c, i) => `<label>Colour ${i + 2} (${esc(c)}) from <select class="sd-later"><option value="">not tracked</option>${(pf.all_spools || []).map(opt).join("")}</select></label>`).join("");
   $("sd-msg").textContent = (pf.reasons || []).length ? "Start will be refused until these are fixed." : "Ready when you are.";
 }
 
@@ -301,7 +304,8 @@ async function doStart() {
   localStorageSafe("operator", operator);
   $("sd-msg").textContent = "starting…";
   const r = await fetch(`/api/builds/${startFor}/start`, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nonce: startNonce, checklist, operator, spool_id: $("sd-spool").value }) });
+    body: JSON.stringify({ nonce: startNonce, checklist, operator, spool_id: $("sd-spool").value,
+                           later_spools: [...document.querySelectorAll(".sd-later")].map((x) => x.value) }) });
   const out = await r.json().catch(() => ({}));
   if (!r.ok) { $("sd-msg").textContent = ""; $("sd-reasons").innerHTML = `<li>${esc(out.error || "HTTP " + r.status)}</li>`; startNonce = null; openStartNonceHint(); return; }
   $("startdlg").close(); refresh();
@@ -331,15 +335,27 @@ function renderSpools() {
   }).join("");
 }
 
-function setSp(i, k, v) { inv.spools[i][k] = v; invDirty = true; $("invmsg").textContent = "unsaved changes"; }
+const dirtySpools = new Set();
+function setSp(i, k, v) { inv.spools[i][k] = v; dirtySpools.add(i); invDirty = true; $("invmsg").textContent = "unsaved changes"; }
 function addSpool() {
   const n = inv.spools.length + 1;
-  inv.spools.push({ id: `SP-${String(n).padStart(3, "0")}`, material: "PETG", brand: "Creality", colour: "New", hex: "#888888", weight_g: 1000, remaining_g: 1000, location: "shelf" });
-  invDirty = true; renderSpools();
+  inv.spools.push({ id: `SP-${String(n).padStart(3, "0")}`, material: "PETG", brand: "Creality", colour: "New", hex: "#888888", weight_g: 1000, remaining_g: 1000, location: "shelf", isNew: true });
+  dirtySpools.add(inv.spools.length - 1); invDirty = true; renderSpools();
 }
 async function saveInv() {
-  const r = await fetch("/api/inventory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(inv) });
-  $("invmsg").textContent = r.ok ? "saved" : "save failed"; invDirty = !r.ok; refresh();
+  // one spool at a time, each with the version this page loaded: a print that used filament meanwhile wins
+  const problems = [];
+  for (const i of [...dirtySpools]) {
+    const s = inv.spools[i];
+    const body = { material: s.material, brand: s.brand, colour: s.colour, hex: s.hex, location: s.location, role: s.role,
+                   weight_g: +s.weight_g, remaining_g: +s.remaining_g };
+    const r = s.isNew ? await fetch("/api/spools", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: s.id, ...body }) })
+                      : await fetch(`/api/spools/${encodeURIComponent(s.id)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: s.version, ...body }) });
+    if (r.ok) dirtySpools.delete(i); else problems.push(`${s.id}: ${(await r.json().catch(() => ({}))).error || r.status}`);
+  }
+  $("invmsg").textContent = problems.length ? "not saved: " + problems.join("; ") : "saved";
+  if (problems.length) { dirtySpools.clear(); }
+  invDirty = false; refresh();
 }
 function toggleBoost(name) { boost[name] = boost[name] === false; localStorageSafe("boost", JSON.stringify(boost)); render(); }
 

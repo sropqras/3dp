@@ -7,7 +7,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from farm import db, gate, jobs, makers, pipeline, printers, runlog, worker
+from farm import db, gate, jobs, makers, pipeline, printers, runlog, spools, worker
 from tests.fakes import FakeMaker, FakeMoonraker
 from tests.test_audit_model3mf import GOOD
 from tests.test_pipeline_worker import FAKE_SLICER, JOB
@@ -18,7 +18,7 @@ OK = {"viewed_3d": True, "bed_clear": True, "colour_loaded": True}
 class Gate(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
-        self.saved = (runlog.RUNS_DIR, dict(printers.PRINTERS), gate.INVENTORY)
+        self.saved = (runlog.RUNS_DIR, dict(printers.PRINTERS))
         runlog.RUNS_DIR = self.tmp / "runs"
         os.environ["FARM_PRUSASLICER"] = FAKE_SLICER
         os.environ["FARM_ALLOW_ANY_SLICER"] = "1"
@@ -29,10 +29,8 @@ class Gate(unittest.TestCase):
         self.moon = FakeMoonraker(copy.deepcopy(GOOD))
         for name in ("Ender3MaxNeo", "enders1plus", "EnderV3SE"):
             printers.PRINTERS[name] = dataclasses.replace(printers.PRINTERS[name], moonraker=self.moon.url)
-        gate.INVENTORY = self.tmp / "inventory.json"
-        gate.INVENTORY.write_text(json.dumps({"spools": [
-            {"id": "SP-1", "material": "PETG", "location": "Ender3MaxNeo"},
-            {"id": "SP-9", "material": "PLA", "location": "Ender3MaxNeo"}]}))
+        spools.add(self.con, {"id": "SP-1", "material": "PETG", "location": "Ender3MaxNeo", "weight_g": 1000})
+        spools.add(self.con, {"id": "SP-9", "material": "PLA", "location": "Ender3MaxNeo", "weight_g": 1000})
         # an order all the way to queued, viewed in the UI
         pipeline.submit_job_file(self.con, JOB)
         for (jid,) in self.con.execute("SELECT id FROM jobs").fetchall():
@@ -46,7 +44,7 @@ class Gate(unittest.TestCase):
         gate.record_view(self.con, Path(self.b["project_3mf"]))
 
     def tearDown(self):
-        runlog.RUNS_DIR, saved_printers, gate.INVENTORY = self.saved
+        runlog.RUNS_DIR, saved_printers = self.saved
         printers.PRINTERS.clear()
         printers.PRINTERS.update(saved_printers)
         os.environ.pop("FARM_ALLOW_ANY_SLICER", None)

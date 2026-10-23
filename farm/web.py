@@ -10,7 +10,7 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /api/builds[?state=]   builds from the farm DB
   POST /api/builds/<id>/<act> approve | reject | cancel | retry | move {printer} | start-dialog | start
                               (start needs the dialog's nonce + checklist + spool + operator: farm/gate.py)
-  POST /api/inventory         replace the spool list (JSON body {"spools": [...]})
+  POST /api/spools[/<id>]     add a spool / edit one ({"version": n, ...fields, "remaining_g"}); 409 if stale
 """
 import json
 import threading
@@ -20,7 +20,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, db, gate, jobs, model3mf, net, pipeline, printers, profiles, watch, worker
+from . import audit, db, gate, jobs, model3mf, net, pipeline, printers, profiles, spools, watch, worker
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -176,8 +176,37 @@ def history(p) -> list[dict]:
 
 # ---------------------------------------------------------------- batch progress
 
+BUILD_TO_CELL = {"slicing": "sliced", "review": "sliced", "approved": "queued", "uploading": "queued",
+                 "queued": "queued", "starting": "printing", "printing": "printing", "done": "done",
+                 "failed": "failed"}
+
+
+def db_cells() -> dict:
+    """label -> batch-cell status from the farm DB (newest job per label wins; cancelled jobs don't count)."""
+    con = db.connect()
+    try:
+        rows = con.execute(
+            "SELECT j.label, j.state, (SELECT b.state FROM build_jobs bj JOIN builds b ON b.id = bj.build_id "
+            " WHERE bj.job_id = j.id ORDER BY b.id DESC LIMIT 1) AS build_state FROM jobs j "
+            "WHERE j.state <> 'cancelled' ORDER BY j.id").fetchall()
+    finally:
+        con.close()
+    out = {}
+    for label, state, build_state in rows:
+        if state == "done":
+            out[label] = "done"
+        elif state == "failed":
+            out[label] = "failed"
+        elif build_state in BUILD_TO_CELL:
+            out[label] = BUILD_TO_CELL[build_state]
+        elif state in ("generated", "planned"):
+            out[label] = "sliced"
+    return out
+
+
 def batch_view(runs, live, hist_by_file) -> list[dict]:
     out = []
+    from_db = db_cells()
     for path in BATCHES:
         b = json.loads(path.read_text(encoding="utf-8"))
         status = {}
@@ -196,6 +225,10 @@ def batch_view(runs, live, hist_by_file) -> list[dict]:
             if pv.get("run") and pv.get("job") in ("printing", "paused"):
                 for lab in pv["run"]["labels"]:
                     status[lab] = "printing"
+        # the farm DB knows the queue and the gate's starts; a done cell stays done
+        for lab, st in from_db.items():
+            if status.get(lab) != "done":
+                status[lab] = st
         rows = []
         for row in b["rows"]:
             labels = [f"{row['prefix']}{i:02d}" for i in range(1, row["count"] + 1)]
@@ -277,12 +310,13 @@ def build_action(build_id: int, action: str, body: dict) -> dict:
         elif action == "start-dialog":
             pf = gate.preflight(con, build_id)
             return {"nonce": gate.issue_nonce(build_id), "reasons": pf["reasons"], "spools": pf.get("spools", []),
+                    "all_spools": pf.get("all_spools", []), "colours": b["colours"],
                     "material": pf.get("material"), "viewed": pf.get("viewed"),
                     "printer_status": pf.get("printer_status"), "audit_fails": pf.get("audit_fails", [])}
         elif action == "start":
             remote = gate.start_build(con, build_id, str(body.get("operator", "")).strip()[:80],
                                       body.get("checklist") or {}, body.get("spool_id"), via="ui",
-                                      nonce=body.get("nonce"))
+                                      nonce=body.get("nonce"), later_spools=body.get("later_spools") or [])
             return {"started": remote}
         else:
             raise LookupError(f"unknown action {action}")
@@ -313,7 +347,11 @@ def overview() -> dict:
         r["status"] = h["status"] if h else ("uploaded" if remote else r["result"])
         r.pop("gcode", None)
         shown.append(r)
-    inv = json.loads(INVENTORY.read_text(encoding="utf-8")) if INVENTORY.exists() else {"spools": []}
+    con = db.connect()
+    try:
+        inv = {"spools": spools.all_spools(con)}
+    finally:
+        con.close()
     return {"time": time.time(), "printers": live, "runs": shown[:25], "batches": batch_view(runs, live, hist),
             "builds": builds_view(),
             "inventory": inv, "petg_used_g": round(sum(r["grams"] for r in shown if r["status"] == "completed"), 1)}
@@ -378,16 +416,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, json.dumps({"error": str(e)}).encode())
             except (gate.GateRefused, pipeline.StepFailed, jobs.StateConflict, ValueError, SystemExit) as e:
                 return self._send(409, json.dumps({"error": str(e)}).encode())
-        if path != "/api/inventory":
-            return self._send(404, b"{}")
-        try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-            assert isinstance(body.get("spools"), list)
-        except Exception:
-            return self._send(400, b'{"error":"expected {\\"spools\\": [...]}"}')
-        DATA.mkdir(exist_ok=True)
-        INVENTORY.write_text(json.dumps(body, indent=2), encoding="utf-8")
-        return self._send(200, b'{"ok":true}')
+        if len(parts) in (2, 3) and parts[:2] == ["api", "spools"]:
+            con = db.connect()
+            try:
+                body = self._json_body()
+                if len(parts) == 2:
+                    out = spools.add(con, body)
+                else:
+                    out = spools.patch(con, parts[2], body.pop("version", -1), body)
+                return self._send(200, json.dumps(out).encode())
+            except spools.Conflict as e:
+                return self._send(409, json.dumps({"error": str(e)}).encode())
+            except (LookupError, ValueError, KeyError) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
+            finally:
+                con.close()
+        if path == "/api/inventory":   # the old whole-file save could overwrite a print's deduction
+            return self._send(410, b'{"error":"the inventory moved into the farm DB: POST /api/spools, PATCH-style POST /api/spools/<id> with version"}')
+        return self._send(404, b"{}")
 
     def log_message(self, fmt, *args):  # keep the console quiet; the page polls every few seconds
         pass
@@ -396,5 +442,10 @@ class Handler(BaseHTTPRequestHandler):
 def serve(host: str, port: int):
     if not INVENTORY.exists() and (DATA / "inventory.example.json").exists():
         INVENTORY.write_text((DATA / "inventory.example.json").read_text(encoding="utf-8"), encoding="utf-8")
+    con = db.connect()
+    n = spools.migrate_json(con, INVENTORY)   # once: the inventory now lives in the farm DB (a dated copy is kept)
+    if n:
+        print(f"moved {n} spool(s) from {INVENTORY.name} into the farm DB")
+    con.close()
     print(f"farm control room on http://{host}:{port}  (Ctrl+C to stop)")
     ThreadingHTTPServer((host, port), Handler).serve_forever()

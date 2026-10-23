@@ -11,11 +11,12 @@ import threading
 import time
 import traceback
 
-from . import db, jobs, makers, pipeline
+from . import db, jobs, makers, pipeline, tracker
 
 LEASE_S = {"plan": 300, "slice": 3600, "upload": 900}
 MAX_ATTEMPTS = 5
 IDLE_SLEEP_S = 3
+TRACK_EVERY_S = 20
 
 
 def enqueue(con, kind: str, ref_id: int, delay_s: float = 0) -> int | None:
@@ -133,8 +134,15 @@ def loop(once: bool = False, log=print) -> None:
         log(f"requeued {n} task(s) left running by a previous worker")
     stop = threading.Event()
     threading.Thread(target=_beat_forever, args=(stop,), daemon=True).start()
+    last_track = 0.0
     while True:
         heartbeat(con, "idle")
+        if time.time() - last_track >= TRACK_EVERY_S:
+            last_track = time.time()
+            try:
+                tracker.poll(con, log)
+            except Exception as e:   # tracking is best-effort; it must never stop the pipeline
+                log(f"tracker: pass failed: {type(e).__name__}: {e}")
         did = run_once(con, log)
         if once and not did:
             return

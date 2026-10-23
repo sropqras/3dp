@@ -41,7 +41,9 @@ pipeline.approve(con, b_start, "ui")
 worker.enqueue(con, "upload", b_start)
 while worker.run_once(con, log=lambda x: None):
     pass
-inv = tmp / "inventory.json"
+from farm import spools  # noqa: E402
+spools.add(con, {"id": "SP-T1", "material": "PETG", "colour": "Black", "location": "Ender3MaxNeo", "weight_g": 1000})
+spools.add(con, {"id": "SP-T2", "material": "PETG", "colour": "White", "location": "shelf", "weight_g": 1000})
 env = dict(os.environ, FARM_DB=str(tmp / "farm.db"), FARM_RUNS_DIR=str(tmp / "runs"),
            FARM_MOONRAKER_OVERRIDE=json.dumps(override))
 srv = subprocess.Popen([sys.executable, "-m", "farm", "serve", "--host", "127.0.0.1", "--port", "10199"],

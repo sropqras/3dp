@@ -24,11 +24,20 @@ const [base, reviewId, queuedId, shots] = process.argv.slice(2);
   for (const id of ["sd-viewed", "sd-bed", "sd-colour"]) await p.check(`#${id}`);
   const spools = await p.$$eval("#sd-spool option", (o) => o.map((x) => x.value).filter(Boolean));
   await p.selectOption("#sd-spool", spools.find((s) => s) || "");
+  const later = await p.$$(".sd-later");
+  if (later.length) await later[0].selectOption("SP-T2");
+  console.log("later-colour pickers:", later.length);
   await p.fill("#sd-operator", "UI check");
   await p.locator("#startdlg").screenshot({ path: `${shots}/start.png` });
   await p.click("#sd-go"); await p.waitForTimeout(1500);
   console.log("dialog open after start:", await p.evaluate(() => document.getElementById("startdlg").open),
               "reasons:", JSON.stringify(await p.$$eval("#sd-reasons li", (l) => l.map((x) => x.textContent))));
+  // inventory edit round trip: change remaining on the first spool, save, see it persisted
+  await p.evaluate(() => refresh()); await p.waitForTimeout(800);
+  await p.fill("#spools .sp:first-child input[type=number]", "777");
+  await p.click("text=Save inventory"); await p.waitForTimeout(1200);
+  console.log("inventory after save:", await p.textContent("#invmsg"),
+              JSON.stringify(await p.evaluate(async () => (await (await fetch("/api/overview")).json()).inventory.spools.map((s) => [s.id, s.remaining_g, s.version]))));
   console.log("page errors:", errs.length ? errs : "none");
   await b.close();
 })();

@@ -231,11 +231,18 @@ def slice_build(con, build_id: int, actor: str = "worker") -> dict:
     with db.tx(con):
         jobs.update_build(con, build_id, gcode=str(out), gcode_sha256=sha256(out), project_3mf=str(proj),
                           estimate_s=duration_s(facts.get("estimated printing time (normal mode)")),
-                          grams=float(facts.get("filament used [g]", 0) or 0), error=None)
+                          grams=float(facts.get("filament used [g]", 0) or 0), segments=_segments(out), error=None)
         jobs.transition(con, "build", build_id, "slicing", "review", actor)
     run.manifest["result"] = "ok"
     run.save()
     return facts
+
+
+def _segments(out: Path) -> list:
+    try:
+        return gcode.segments(out)
+    except (AttributeError, ValueError, OSError):   # no diameter/density in the config block: no per-colour grams
+        return []
 
 
 # ---------------------------------------------------------------- upload
