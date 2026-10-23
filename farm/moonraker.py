@@ -24,7 +24,13 @@ def upload(run, printer, gcode: Path, folder: str) -> str:
     return remote
 
 
-def start(run, printer, remote: str) -> None:
+def start(run, printer, remote: str, *, token=None) -> None:
+    """Only farm/gate.py may call this (it passes its token after the full Start checklist)."""
+    from .gate import _Token
+    if not isinstance(token, _Token):
+        raise PermissionError("prints are started through farm/gate.py (the Start button / farm start), not directly")
+    if printer.readonly:
+        raise PermissionError(f"{printer.name} is watch-only")
     st = status(printer)
     run.log(f"printer: {st}")
     if st["klipper"] != "ready" or st["job"] not in STARTABLE or st["paused"]:

@@ -57,6 +57,7 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 
 ## Rules
 
+- **Agents never approve or start prints.** No calls to `/api/builds/*/approve|start`, `farm approve` or `farm start` (the latter two refuse without a terminal anyway). Preparing, slicing and queueing for review is fine. Only `farm/gate.py` can start a print: `moonraker.start` needs its token, and the gate re-checks the approval hash, the 3D view, the audit, printer idle, the uploaded file and the spool.
 - **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has looked at the run's `.3mf` (Farm Control's 3D viewer or PrusaSlicer), confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.
 - **EnderV3SE (enders3dp:7128) is fully hands-off:** no jobs, no config edits, no restarts, no macro changes. Watching it and running its read-only audit is all that's allowed until the user hands it over.
 - **The Charles Wright Bold font is a paid licence.** Never commit it, never serve it publicly (not through Farm Control, not in an artifact), and never fetch it automatically. It is copied by hand into `assets/fonts/`.

@@ -2,7 +2,9 @@
 
   run <job.json> [--upload]   generate (likhan) -> slice -> validate [-> upload]; writes runs/<stamp>_<job>/
   submit <job.json>           queue a job for the worker (generate -> plan -> slice -> review); returns at once
-  start <run-dir>             start an uploaded run on its printer (visual gate: bed clear, base colour loaded)
+  builds [--state S]          list builds (id, state, printer, labels, profile, file)
+  approve <build|run-dir>     visual gate at a terminal: approve a build in review, then upload it (a person only)
+  start <build|run-dir>       start a queued build through the gate (checklist, audit, spool; a person only)
   watch <run-dir>             follow a started run; stops at first layer / colour change / finish / error
   status [printer]            show printer state
   audit [printer]             check live Klipper configs against the farm baseline (read-only)
@@ -18,7 +20,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import audit, db, monitor, moonraker, pipeline, printers, profiles, watch
+from . import audit, db, jobs, monitor, moonraker, pipeline, printers, profiles, watch
 from .runlog import Run
 
 
@@ -65,23 +67,73 @@ def cmd_submit(args):
     print(f"order {order_id}: {len(ids)} job(s) queued for the worker; run folder {run.dir}")
 
 
+def _person_at_terminal(what: str):
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        sys.exit(f"farm {what} is for a person at a terminal; agents never {what} prints (CLAUDE.md)")
+
+
+def _builds_for(con, target: str, state: str) -> list[dict]:
+    if target.isdigit():
+        b = jobs.get(con, "build", int(target))
+        return [b] if b else []
+    run_dir = str(Path(target).resolve())
+    return [b for b in jobs.builds(con, state) if b["run_dir"] and str(Path(b["run_dir"]).resolve()) == run_dir]
+
+
+def cmd_approve(args):
+    """The visual gate at a terminal: look at the .3mf, then approve this exact G-code and upload it."""
+    _person_at_terminal("approve")
+    con = db.connect()
+    builds = _builds_for(con, args.target, "review")
+    if not builds:
+        sys.exit(f"no build in review for {args.target} (python3 -m farm builds to list them)")
+    for b in builds:
+        print(f"build {b['id']}: {b['labels']} on {b['printer']} ({b['profile']})\n  3D: {b['project_3mf']}")
+        if input("Opened that .3mf (or Farm Control's 3D view) and it looks right? [y/N] ").strip().lower() != "y":
+            print("  not approved")
+            continue
+        who = input("Your name: ").strip()
+        try:
+            pipeline.approve(con, b["id"], "cli", note=f"approved at terminal by {who}")
+            print(f"  uploading to {b['printer']} ...")
+            print(f"  queued: {pipeline.upload_build(con, b['id'], actor='cli')}")
+        except pipeline.StepFailed as e:
+            print(f"  refused: {e}")
+
+
 def cmd_start(args):
-    run_dir = Path(args.run_dir)
-    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    job = json.loads((run_dir / "job.json").read_text(encoding="utf-8"))
-    remotes = manifest.get("uploaded") or sys.exit("run was not uploaded (use run --upload)")
-    if len(remotes) != 1:
-        sys.exit(f"{len(remotes)} pieces uploaded; start them one at a time from Fluidd")
-    printer = printers.get(job["printer"])
-    if printer.readonly:
-        sys.exit(f"{printer.name} is watch-only; not starting")
-    run = Run.resume(run_dir)
-    # farm baseline: log every failing rule so a known lesson is never silently missing on this printer
-    fails = [(r, d) for st, r, d in audit.rules(audit._settings(printer), printer) if st != "PASS"]
-    for rule, detail in fails:
-        run.log(f"audit: FAIL {rule} -- {detail}")
-    run.step("audit", fails=fails)
-    moonraker.start(run, printer, remotes[0])
+    """Start a queued build through the gate (farm/gate.py): the same checks as Farm Control's Start button."""
+    from . import gate
+    _person_at_terminal("start")
+    con = db.connect()
+    builds = _builds_for(con, args.target, "queued")
+    if len(builds) != 1:
+        sys.exit(f"{len(builds)} queued build(s) for {args.target}; give one build id (python3 -m farm builds)")
+    b = builds[0]
+    print(f"build {b['id']}: {b['labels']} -> {b['printer']}  ({b['remote_path']})")
+    if input(f"Type the printer name to start it on ({b['printer']}): ").strip() != b["printer"]:
+        sys.exit("printer name didn't match; not starting")
+    ask = lambda q: input(q + " [y/N] ").strip().lower() == "y"
+    checklist = {"viewed_3d": ask("Checked the 3D view / .3mf of THIS build?"),
+                 "bed_clear": ask("Bed clear and clean?"),
+                 "colour_loaded": ask(f"First colour loaded ({', '.join(b['colours'][:1]) or 'as planned'})?")}
+    spools = gate.spools_for(b["printer"])
+    for sp in spools:
+        print(f"  spool {sp['id']}: {sp.get('colour')} {sp.get('material')} ({sp.get('remaining_g')} g)")
+    spool = input("Spool id loaded now: ").strip()
+    who = input("Your name: ").strip()
+    try:
+        remote = gate.start_build(con, b["id"], who, checklist, spool, via="cli")
+    except gate.GateRefused as e:
+        sys.exit(f"not started: {e}")
+    print(f"started {remote} on {b['printer']}")
+
+
+def cmd_builds(args):
+    con = db.connect()
+    for b in jobs.builds(con, args.state):
+        print(f"{b['id']:>4} {b['state']:<10} {b['printer']:<13} {b['labels'] or '':<24} {b['profile'] or '':<24} "
+              f"{(b['remote_path'] or b['gcode'] or '')[-60:]}")
 
 
 def cmd_watch(args):
@@ -159,7 +211,11 @@ def main():
     sb = sub.add_parser("submit")
     sb.add_argument("job")
     s = sub.add_parser("start")
-    s.add_argument("run_dir")
+    s.add_argument("target")
+    ap_ = sub.add_parser("approve")
+    ap_.add_argument("target")
+    bl = sub.add_parser("builds")
+    bl.add_argument("--state")
     t = sub.add_parser("status")
     t.add_argument("printer", nargs="?")
     w = sub.add_parser("watch")
@@ -185,7 +241,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds}[args.cmd](args)
 
 
 if __name__ == "__main__":

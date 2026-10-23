@@ -76,6 +76,15 @@ PRINTERS = {
 }
 
 
+# Tests and the headless UI check point printers at a fake Moonraker: {"Ender3MaxNeo": "http://127.0.0.1:9999"}.
+# Never set in production (the farm-web/farm-worker start scripts don't).
+import json as _json
+import os as _os
+import dataclasses as _dc
+for _name, _url in _json.loads(_os.environ.get("FARM_MOONRAKER_OVERRIDE", "{}")).items():
+    PRINTERS[_name] = _dc.replace(PRINTERS[_name], moonraker=_url)
+
+
 def get(name: str) -> Printer:
     try:
         return PRINTERS[name]

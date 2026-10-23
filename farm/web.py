@@ -7,7 +7,9 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /api/overview          printers + jobs + batch + inventory in one payload (what the page polls)
   GET  /api/cam/<printer>     webcam snapshot proxied from the printer host
   GET  /api/model/<run>/<3mf> a run's project .3mf as viewer geometry (farm/model3mf.py)
-  GET  /api/builds[?state=]   builds from the farm DB (read-only; shadow mode until the queue lands)
+  GET  /api/builds[?state=]   builds from the farm DB
+  POST /api/builds/<id>/<act> approve | reject | cancel | retry | move {printer} | start-dialog | start
+                              (start needs the dialog's nonce + checklist + spool + operator: farm/gate.py)
   POST /api/inventory         replace the spool list (JSON body {"spools": [...]})
 """
 import json
@@ -18,7 +20,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, db, jobs, model3mf, net, printers, watch
+from . import audit, db, gate, jobs, model3mf, net, pipeline, printers, profiles, watch, worker
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -53,6 +55,14 @@ def model_blob(run_name: str, file: str) -> bytes | None:
     if run_dir.parent != RUNS_DIR or not run_dir.is_dir() or file not in project_files(run_dir):
         return None
     path = run_dir / file
+    try:   # the gate checks that the 3D view of a build was actually opened before it can be started
+        con = db.connect()
+        try:
+            gate.record_view(con, path)
+        finally:
+            con.close()
+    except Exception:
+        pass
     return cached(f"model:{path}:{path.stat().st_mtime}", 3600, lambda: model3mf.load(path))
 
 
@@ -147,6 +157,16 @@ def printer_view(p, runs_by_remote: dict) -> dict:
     return v
 
 
+def _safe_view(p, by_remote) -> dict:
+    """One printer answering oddly (a Moonraker hiccup, a missing object) must not take down the whole page."""
+    try:
+        return printer_view(p, by_remote)
+    except Exception as e:
+        return {"name": p.name, "host": urllib.parse.urlparse(p.moonraker).hostname, "online": False,
+                "readonly": p.readonly, "fluidd": p.fluidd, "fluidd_note": p.fluidd_note,
+                "error": f"unexpected answer: {type(e).__name__}: {str(e)[:100]}"}
+
+
 def history(p) -> list[dict]:
     try:
         return net.get_json(f"{p.moonraker}/server/history/list?limit=100", timeout=4)["result"]["jobs"]
@@ -189,11 +209,93 @@ def batch_view(runs, live, hist_by_file) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- builds (review, queue, start)
+
+ACTIVE = ("slicing", "review", "approved", "uploading", "queued", "starting", "printing", "failed")
+
+
+def builds_view() -> list[dict]:
+    con = db.connect()
+    try:
+        rows = [b for b in jobs.builds(con) if b["state"] in ACTIVE][:60]
+        viewed = {r[0] for r in con.execute("SELECT DISTINCT build_id FROM approvals WHERE kind='viewed'")}
+    finally:
+        con.close()
+    out = []
+    for b in rows:
+        prof = profiles.PROFILES.get(b["profile"])
+        g = Path(b["gcode"]) if b["gcode"] else None
+        out.append({
+            "id": b["id"], "state": b["state"], "printer": b["printer"], "labels": b["labels"] or "",
+            "order": b["order_title"], "profile": b["profile"], "profile_name": prof.name if prof else b["profile"],
+            "profile_confirmed": bool(prof and prof.confirmed),
+            "printers": list(prof.printers) if prof else [b["printer"]],
+            "estimate_s": b["estimate_s"], "grams": b["grams"], "error": b["error"], "remote": b["remote_path"],
+            "colours": b["colours"], "viewed": b["id"] in viewed,
+            "run": Path(b["run_dir"]).name if b["run_dir"] else None,
+            "model": g.with_suffix(".3mf").name if g and g.with_suffix(".3mf").is_file() else None,
+        })
+    return out
+
+
+def build_action(build_id: int, action: str, body: dict) -> dict:
+    con = db.connect()
+    try:
+        b = jobs.get(con, "build", build_id)
+        if b is None:
+            raise LookupError(f"no build {build_id}")
+        if action == "approve":
+            # the visual gate is looking at it: the 3D view of this build must have been opened first
+            if not con.execute("SELECT 1 FROM approvals WHERE build_id=? AND kind='viewed'", (build_id,)).fetchone():
+                raise ValueError("open the 3D view of this build before approving it")
+            pipeline.approve(con, build_id, "ui", note=str(body.get("note", ""))[:500])
+            worker.enqueue(con, "upload", build_id)
+        elif action == "reject":
+            with db.tx(con):
+                jobs.transition(con, "build", build_id, "review", "rejected", "ui", note=str(body.get("note", ""))[:500])
+                for (jid,) in con.execute("SELECT job_id FROM build_jobs WHERE build_id=?", (build_id,)).fetchall():
+                    if jobs.get(con, "job", jid)["state"] == "planned":
+                        jobs.transition(con, "job", jid, "planned", "generated", "ui", rejected_build=build_id)
+        elif action == "cancel":
+            jobs.transition(con, "build", build_id, b["state"], "cancelled", "ui")
+        elif action == "retry":
+            jobs.transition(con, "build", build_id, "failed", "slicing", "ui")
+            worker.enqueue(con, "slice", build_id)
+        elif action == "move":
+            target = str(body.get("printer", ""))
+            prof = profiles.get(b["profile"])
+            p = printers.PRINTERS.get(target)
+            if p is None or p.readonly or not prof.allows(target):
+                raise ValueError(f"{target or '?'} can't run this build (profile {prof.id}: {', '.join(prof.printers)})")
+            with db.tx(con):
+                if b["state"] == "queued":
+                    jobs.transition(con, "build", build_id, "queued", "approved", "ui", moved_to=target)
+                elif b["state"] != "approved":
+                    raise ValueError(f"only approved or queued builds can move (this one is {b['state']})")
+                jobs.update_build(con, build_id, printer=target, remote_path=None)
+            worker.enqueue(con, "upload", build_id)
+        elif action == "start-dialog":
+            pf = gate.preflight(con, build_id)
+            return {"nonce": gate.issue_nonce(build_id), "reasons": pf["reasons"], "spools": pf.get("spools", []),
+                    "material": pf.get("material"), "viewed": pf.get("viewed"),
+                    "printer_status": pf.get("printer_status"), "audit_fails": pf.get("audit_fails", [])}
+        elif action == "start":
+            remote = gate.start_build(con, build_id, str(body.get("operator", "")).strip()[:80],
+                                      body.get("checklist") or {}, body.get("spool_id"), via="ui",
+                                      nonce=body.get("nonce"))
+            return {"started": remote}
+        else:
+            raise LookupError(f"unknown action {action}")
+        return {"ok": True, "state": jobs.get(con, "build", build_id)["state"]}
+    finally:
+        con.close()
+
+
 def overview() -> dict:
     runs = load_runs()
     by_remote = {rem: r for r in reversed(runs) for rem in r["uploaded"]}
     plist = list(printers.PRINTERS.values())
-    live = [printer_view(p, by_remote) for p in plist]
+    live = [_safe_view(p, by_remote) for p in plist]
     hist = {}
     for p in plist:
         for h in sorted(cached(f"hist:{p.name}", 30, lambda p=p: history(p)), key=lambda h: h.get("start_time", 0)):
@@ -213,6 +315,7 @@ def overview() -> dict:
         shown.append(r)
     inv = json.loads(INVENTORY.read_text(encoding="utf-8")) if INVENTORY.exists() else {"spools": []}
     return {"time": time.time(), "printers": live, "runs": shown[:25], "batches": batch_view(runs, live, hist),
+            "builds": builds_view(),
             "inventory": inv, "petg_used_g": round(sum(r["grams"] for r in shown if r["status"] == "completed"), 1)}
 
 
@@ -258,8 +361,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, blob, "application/octet-stream") if blob else self._send(404, b"{}")
         return self._send(404, b"{}")
 
+    def _json_body(self) -> dict:
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        if n > 1_000_000:
+            raise ValueError("body too large")
+        return json.loads(self.rfile.read(n) or b"{}")
+
     def do_POST(self):
-        if urllib.parse.urlparse(self.path).path != "/api/inventory":
+        path = urllib.parse.urlparse(self.path).path
+        parts = path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "builds"] and parts[2].isdigit():
+            try:
+                out = build_action(int(parts[2]), parts[3], self._json_body())
+                return self._send(200, json.dumps(out, default=str).encode())
+            except LookupError as e:
+                return self._send(404, json.dumps({"error": str(e)}).encode())
+            except (gate.GateRefused, pipeline.StepFailed, jobs.StateConflict, ValueError, SystemExit) as e:
+                return self._send(409, json.dumps({"error": str(e)}).encode())
+        if path != "/api/inventory":
             return self._send(404, b"{}")
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))

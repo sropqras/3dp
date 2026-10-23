@@ -85,6 +85,14 @@ input[type=number] { width: 78px; } button { background: linear-gradient(90deg, 
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
 .stamp { color: var(--dim); font-size: 12px; }
 button.mini { padding: 3px 9px; font-size: 12px; }
+.chip.s-review { color: var(--amber); border-color: rgba(251,191,36,.5); } .chip.s-queued, .chip.s-approved, .chip.s-uploading { color: var(--violet); }
+.chip.s-printing, .chip.s-starting { color: var(--teal); } .chip.s-failed { color: var(--red); } .chip.s-slicing { color: var(--blue); }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .warn { color: var(--amber); font-size: 12px; } .err { color: var(--red); font-size: 12px; }
+dialog#startdlg { width: min(520px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); }
+dialog#startdlg::backdrop { background: rgba(3,6,12,.72); }
+#startdlg .pad { display: grid; gap: 10px; } #startdlg label { display: flex; gap: 8px; align-items: center; }
+#startdlg ul { margin: 0; padding-left: 18px; color: var(--red); font-size: 13px; }
+.nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
 dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
@@ -114,7 +122,8 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
   <section><h2>Printers</h2><div class="grid" id="printers"></div></section>
   <section class="split">
     <div>
-      <h2>Batches</h2><div id="batches"></div>
+      <h2>Review &amp; queue</h2><div class="card" style="overflow-x:auto"><table id="builds"></table></div>
+      <h2 style="margin-top:22px">Batches</h2><div id="batches"></div>
       <h2 style="margin-top:22px">Jobs</h2><div class="card"><table id="jobs"></table></div>
     </div>
     <div>
@@ -126,6 +135,20 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
     </div>
   </section>
 </main>
+<dialog id="startdlg">
+  <div class="vh"><span class="name" id="sd-title">Start</span><button class="ghost x" onclick="$('startdlg').close()">Close</button></div>
+  <div class="pad">
+    <div id="sd-info" class="stamp"></div>
+    <ul id="sd-reasons"></ul>
+    <label><input type="checkbox" id="sd-viewed"> I checked the 3D view of this build</label>
+    <label><input type="checkbox" id="sd-bed"> Bed is clear and clean</label>
+    <label><input type="checkbox" id="sd-colour"> <span id="sd-colour-lbl">First colour is loaded</span></label>
+    <label>Spool loaded <select id="sd-spool"></select></label>
+    <label>Your name <input id="sd-operator" style="width:160px"></label>
+    <div class="acts"><button id="sd-go" onclick="doStart()">Start print</button><span id="sd-msg" class="stamp"></span></div>
+    <div class="stamp">The server checks everything again (approval, file on the printer, audit, printer idle) before it starts.</div>
+  </div>
+</dialog>
 <dialog id="viewer">
   <div class="vh"><span class="name" id="v-title">Model</span><select id="v-file" onchange="loadModel(viewerRun, this.value)"></select>
     <span class="stamp" id="v-file-note"></span><button class="ghost x" onclick="$('viewer').close()">Close</button></div>
@@ -178,6 +201,9 @@ function printerCard(p) {
   const run = p.run ? `<div class="job">${esc(p.run.job)}</div><div class="labels">${p.run.labels.map((l) => `<span class="chip">${esc(l)}</span>`).join("")} ${modelButton(p.run.dir, p.run.models)}</div>`
                     : `<div class="job">${esc(p.file || "idle")}</div>`;
   const next = p.next ? `<div class="row">Next: <b>${esc(p.next.what)}</b> in <b>${hm(p.next.in_s)}</b></div>` : "";
+  const queued = (data.builds || []).filter((b) => b.printer === p.name && b.state === "queued");
+  const nextq = queued.length ? `<div class="nextq">Queue ${queued.length}: <b style="color:var(--text)">${esc(queued[0].labels || queued[0].order)}</b>
+      ${!["printing", "paused"].includes(p.job) && !p.readonly ? `<button class="mini" onclick="openStart(${queued[0].id})">Start…</button>` : ""}</div>` : "";
   const active = ["printing", "paused"].includes(p.job);
   return `<div class="card">
     <div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span></div>
@@ -190,7 +216,7 @@ function printerCard(p) {
       <div class="facts">
         ${run}
         <div class="row">Elapsed <b>${active ? hm(p.elapsed) : "–"}</b> ETA <b>${active ? hm(p.eta_s) : "–"}</b></div>
-        ${next}
+        ${next}${nextq}
         ${tempRow("Nozzle", p.nozzle)}${tempRow("Bed", p.bed)}
         <div class="row">Speed <b>${Math.round(p.speed * 100)}%</b> Flow <b>${Math.round(p.flow * 100)}%</b></div>
         <div class="row">${spool}</div>
@@ -210,6 +236,77 @@ function batchCard(b) {
     <div class="legend">${["planned","sliced","queued","printing","done","failed"].map((s) => `<span><span class="cell c-${s}"></span>${s}</span>`).join("")}</div>
     <div class="note">${esc(b.note)}</div></div>`;
 }
+
+function buildActions(b) {
+  const view = b.model ? `<button class="mini ghost" onclick="openModel('${esc(b.run)}', ['${esc(b.model)}'])">3D</button>` : "";
+  const cancel = ["review", "approved", "queued", "failed", "slicing"].includes(b.state) ? `<button class="mini ghost" onclick="act(${b.id},'cancel',{},'Cancel build ${b.id}?')">Cancel</button>` : "";
+  if (b.state === "review") {
+    const approve = !b.profile_confirmed ? `<span class="warn">profile unconfirmed</span>`
+      : b.viewed ? `<button class="mini" onclick="act(${b.id},'approve',{},'Approve build ${b.id} for printing? (you checked the 3D view)')">Approve</button>`
+      : `<span class="warn" title="the visual gate">open 3D first</span>`;
+    return view + approve + `<button class="mini ghost" onclick="act(${b.id},'reject',{note: prompt('Why reject?') || ''})">Reject</button>` + cancel;
+  }
+  if (b.state === "queued") return view + `<button class="mini" onclick="openStart(${b.id})">Start…</button>` + cancel;
+  if (b.state === "failed") return `<span class="err" title="${esc(b.error)}">${esc((b.error || "").slice(0, 80))}</span><button class="mini ghost" onclick="act(${b.id},'retry',{})">Retry</button>` + cancel;
+  if (b.state === "approved") return view + `<span class="stamp">uploading soon</span>` + cancel;
+  return view + `<span class="stamp">${esc(b.state)}…</span>`;
+}
+
+function printerSelect(b) {
+  if (!["approved", "queued"].includes(b.state) || b.printers.length < 2) return esc(b.printer);
+  return `<select onchange="act(${b.id},'move',{printer:this.value},'Move build ${b.id} to '+this.value+'? (uploads it there)')">${b.printers.map((p) => `<option ${p === b.printer ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>`;
+}
+
+function buildsTable(bs) {
+  if (!bs.length) return `<tr><td class="stamp">Nothing to review or queued. <code>python3 -m farm submit job.json</code> or the New-job page (coming) adds work.</td></tr>`;
+  return `<tr><th>#</th><th>Order / items</th><th>Printer</th><th>Profile</th><th>Time · filament</th><th>State</th><th></th></tr>` +
+    bs.map((b) => `<tr><td>${b.id}</td><td>${esc(b.order)}<div class="labels">${(b.labels || "").split(" ").filter(Boolean).map((l) => `<span class="chip">${esc(l)}</span>`).join("")}</div></td>
+      <td>${printerSelect(b)}</td><td>${esc(b.profile_name)}${b.profile_confirmed ? "" : ` <span class="warn">unconfirmed</span>`}</td>
+      <td>${b.estimate_s ? hm(b.estimate_s) : "–"} · ${b.grams ? b.grams.toFixed(0) + " g" : "–"}</td>
+      <td><span class="chip s-${esc(b.state)}">${esc(b.state)}</span></td><td><div class="acts">${buildActions(b)}</div></td></tr>`).join("");
+}
+
+async function act(id, action, body, confirmText) {
+  if (confirmText && !confirm(confirmText)) return null;
+  const r = await fetch(`/api/builds/${id}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(out.error || `HTTP ${r.status}`); return null; }
+  refresh();
+  return out;
+}
+
+let startFor = null, startNonce = null;
+async function openStart(id) {
+  const b = (data.builds || []).find((x) => x.id === id);
+  startFor = id; startNonce = null;
+  $("sd-title").textContent = `Start build ${id} on ${b ? b.printer : "?"}`;
+  ["sd-viewed", "sd-bed", "sd-colour"].forEach((k) => ($(k).checked = false));
+  $("sd-colour-lbl").textContent = `First colour is loaded${b && b.colours && b.colours[0] ? ": " + b.colours[0] : ""}`;
+  $("sd-operator").value = localStorageSafe("operator") || "";
+  $("sd-msg").textContent = "checking…"; $("sd-reasons").innerHTML = ""; $("sd-spool").innerHTML = "";
+  $("startdlg").showModal();
+  const r = await fetch(`/api/builds/${id}/start-dialog`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const pf = await r.json().catch(() => ({}));
+  if (!r.ok) { $("sd-msg").textContent = pf.error || `HTTP ${r.status}`; return; }
+  startNonce = pf.nonce;
+  $("sd-info").textContent = `${b ? b.labels : ""} · ${pf.material || ""} · printer ${pf.printer_status ? pf.printer_status.klipper + " / " + pf.printer_status.job : "?"}`;
+  $("sd-reasons").innerHTML = (pf.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("");
+  $("sd-spool").innerHTML = `<option value="">choose…</option>` + (pf.spools || []).map((sp) => `<option value="${esc(sp.id)}">${esc(sp.id)} · ${esc(sp.colour)} ${esc(sp.material)} · ${esc(sp.remaining_g)} g</option>`).join("");
+  $("sd-msg").textContent = (pf.reasons || []).length ? "Start will be refused until these are fixed." : "Ready when you are.";
+}
+
+async function doStart() {
+  const checklist = { viewed_3d: $("sd-viewed").checked, bed_clear: $("sd-bed").checked, colour_loaded: $("sd-colour").checked };
+  const operator = $("sd-operator").value.trim();
+  localStorageSafe("operator", operator);
+  $("sd-msg").textContent = "starting…";
+  const r = await fetch(`/api/builds/${startFor}/start`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nonce: startNonce, checklist, operator, spool_id: $("sd-spool").value }) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) { $("sd-msg").textContent = ""; $("sd-reasons").innerHTML = `<li>${esc(out.error || "HTTP " + r.status)}</li>`; startNonce = null; openStartNonceHint(); return; }
+  $("startdlg").close(); refresh();
+}
+function openStartNonceHint() { $("sd-msg").textContent = "Refused. Fix the reasons, then close and open Start again."; }
 
 function jobsTable(runs) {
   return `<tr><th>Job</th><th>Printer</th><th>Plates</th><th>Estimate</th><th>PETG</th><th>Status</th><th></th></tr>` +
@@ -258,6 +355,9 @@ function render() {
   $("printers").innerHTML = P.map(printerCard).join("");
   $("batches").innerHTML = data.batches.map(batchCard).join("");
   $("jobs").innerHTML = jobsTable(data.runs);
+  // don't redraw under an open printer drop-down (it would close it); anything else re-renders
+  const busy = document.activeElement?.tagName === "SELECT" && document.activeElement.closest("#builds");
+  if (!busy) $("builds").innerHTML = buildsTable(data.builds || []);
   if (!invDirty && !document.activeElement?.closest?.("#spools")) renderSpools();
 }
 
