@@ -26,7 +26,7 @@ python3 -m farm start runs/<stamp>_<job>      # only after the human visual gate
 python3 -m farm watch runs/<stamp>_<job>      # follow until first layer / colour change / finish / error
 python3 -m farm serve --port 10111            # Farm Control web UI (LAN only, no auth)
 python3 -m farm monitor [--state FILE]        # one read-only pass of the serious-error monitor (jobctl farm-monitor runs it)
-python3 -m farm inventory import              # refresh the Inventory from every printer (read-only) + the OMV NAS list
+python3 -m farm inventory import|sync         # refresh the Inventory from every printer (read-only) + the OMV NAS list (jobctl farm-inventory: hourly)
 python3 -m farm inventory nas-import <path>   # fetch ONE NAS model into data/nas/ as an Inventory artefact
 scripts/backup-configs.sh [ssh-host]          # pull configs from enders3dp into printers/
 ```
@@ -81,15 +81,27 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     - A part is made from a New-job template (its label personalises it), re-prints an artefact, or is a bought item.
     - Generate and Send only prepare.
   - **`farm/makers/upload.py`**: takes a person's STL/3MF through the normal gates.
+- **The farm standard** (`farm/standard.py`, `printers/standard/farm_macros.cfg`, `docs/FARM_STANDARD.md`):
+  - One macro library, the same file on every printer, with each printer's numbers in `[gcode_macro _FARM_PRINTER]`.
+  - Installed and upgraded by the audit rule "farm macro library is current" (a WARN with a generated fix: two staged
+    changes, library first; the gate refuses an include whose file another staged change creates).
+  - Change a shared macro in the repo file and bump its `variable_version`, never on one printer.
+  - Fluidd layout (macro groups from the `Group |` description prefix, farm temperature presets) is a person's action
+    in the Printers tab, kept in `ui_pushes` for Undo.
 - **Switched-off printers** (`monitor.powered_off`): the farm switches idle printers off.
   - "Unable to connect" or "Lost communication" while nothing prints is a silent note, not an alarm.
   - **Reconnect** (FIRMWARE_RESTART) is offered only from that state, never on a watch-only printer.
   - Losing the board mid-print stays loud.
+- **Health alerts are debounced** (`monitor.settle`): a problem is told once it has lasted (2 passes loud, ~25 min
+  silent) and "recovered" once it has stayed gone as long, so a crash-looping Telegram bot is one message, not one per
+  pass.
+- **The web API refuses cross-site POSTs**: every POST needs the `X-Farm: 1` header the pages send (and a same-host
+  Origin), and only the page's own viewer counts as "viewed" for the gate. Scripts that POST must send it too.
 - **`farm/net.py`** holds the stdlib HTTP helpers. Use it rather than adding `requests`.
 
 ## Rules
 
-- **Printer configs change only through Farm Control's Printers tab** (`/printers`, `farm/cfgchange.py`). An AI session may *stage* a change with a reason (`python3 -m farm config stage --printer <name> --path printer.cfg --section printer --option max_velocity --value 200 --reason "..." --author agent`), but never applies or rolls one back, and never edits printer files over SSH or the Moonraker file API directly. A person presses Apply. The gate refuses while printing or paused, takes a snapshot, verifies (Klipper ready, no new audit FAIL, no `Unknown command`), rolls back automatically if Klipper doesn't come back, and writes FARM.md's change log.
+- **Printer configs change only through Farm Control's Printers tab** (`/printers`, `farm/cfgchange.py`). An AI session may *stage* a change with a reason (`python3 -m farm config stage --printer <name> --path printer.cfg --section printer --option max_velocity --value 200 --reason "..." --author agent`), but never applies or rolls one back on its own, and never edits printer files over SSH or the Moonraker file API directly. A person presses Apply. The one exception: Amir names the specific change ids in the session and says apply them (as on 2026-10-23 for changes 4 and 7). The session then runs them through the same gate as `cli:Amir`, and that permission covers only those ids. The gate refuses while printing or paused, takes a snapshot, verifies (Klipper ready, no new audit FAIL, no `Unknown command`), rolls back automatically if Klipper doesn't come back, and writes FARM.md's change log.
 - **Agents never approve or start prints.** No calls to `/api/builds/*/approve|start`, `farm approve` or `farm start` (the latter two refuse without a terminal anyway). Preparing, slicing and queueing for review is fine. Only `farm/gate.py` can start a print: `moonraker.start` needs its token, and the gate re-checks the approval hash, the 3D view, the audit, printer idle, the uploaded file and the spool.
 - **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has looked at the run's `.3mf` (Farm Control's 3D viewer or PrusaSlicer), confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.
 - **EnderV3SE (enders3dp:7128) is fully hands-off:** no jobs, no config edits, no restarts, no macro changes. Watching it and running its read-only audit is all that's allowed until the user hands it over.

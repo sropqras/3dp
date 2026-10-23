@@ -11,6 +11,7 @@ Current as of 2026-10-23. aali-cli is the only place work happens: the Windows w
 | Worker (generate, plan, slice, upload after approval, tracker) | jobctl `farm-worker` |
 | Serious-error + health monitor (ops Telegram bot) | jobctl `farm-monitor`, every 2 min |
 | Nightly config snapshots + Inventory refresh + NAS catalogue | jobctl `farm-backup`, 03:10 |
+| Hourly Inventory + NAS sync (new NAS models → one silent Telegram note) | jobctl `farm-inventory`, :25 |
 | Maker apps | likhan :4111, lithophane :5111, namakdani :6111, lamp/plaque :8111, holder :9111 |
 | Slicer | Flathub PrusaSlicer 2.9.6 (the default on Linux; `python3 -m farm doctor` says "ready to produce") |
 
@@ -30,6 +31,10 @@ After a `git pull`: `~/agent_workspace/infrastructure/farm_control/stop.sh && wo
 - **Spools**: spool stock. Prints deduct from it automatically.
 - **Printers** (`/printers`): fleet health, audit with **Stage fix / Stage all fixes**, gated Apply and rollback.
   - Also: Telegram pack, service restarts, maintenance, onboarding (`docs/PRINTERS_TAB.md`).
+  - **Farm standard** (`docs/FARM_STANDARD.md`): the shared macro library (audit WARN "farm macro library is
+    current" → Stage fix) and the **Fluidd layout** panel on each card (Apply / Undo).
+  - Onboarding a printer whose Klipper won't start on a missing `[include]` offers **Stage: comment out the missing
+    include**.
 
 ## Printers
 
@@ -44,27 +49,32 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 
 ## To do (in order)
 
-1. **Apply the staged printer changes** (Printers tab → Changes → Apply, each while that printer is idle and switched on):
-   - enders1plus 1 (`max_velocity` 200) and 3 (tgalarm line), then **Telegram pack**;
-   - Ender3MaxNeo 4 (cold-nozzle heating for LOAD/UNLOAD/PURGE);
-   - s1pro 7 (cold-nozzle heating + the undefined BEEP).
-
-   Each Apply verifies itself and rolls back if Klipper doesn't come back.
-
-   enders1plus also logged `Unknown command: "BEEP"`, and its audit can't run while it is switched off. Once it is
-   on and Reconnected, apply 1 and 3, then **Stage all fixes** for the cold-nozzle and BEEP rules. The MaxNeo's
-   `Extrude below minimum temp` in the console is the problem change 4 fixes.
-2. **3dpnas SSH** for the USB device listing: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@3dpnas.local`.
-3. **Confirm values**:
+1. **Apply the staged changes** (Printers tab → Changes; `FARM.md` "Staged" table). Put your name in the **You**
+   box first: without it Apply stops at "Put your name in the 'You' box first". That is probably why 1/3/4/7
+   didn't go on the first time.
+   - 4 (MaxNeo) and 7 (s1pro) were applied 2026-10-23 by a Claude session on Amir's explicit instruction
+     (actor `cli:Amir`). Both verified: no audit FAIL, console clean.
+   - **Ender3MaxNeo 9 → 10**, **s1pro 11 → 12**: the farm macro library, in that order (the gate refuses the
+     second first). Then type `FARM_INFO` in each console.
+   - **enders1plus**: switch on, **Reconnect**, apply **1** and **3**, then **Telegram pack**, then **Stage all
+     fixes** (cold-nozzle reheat, BEEP, macro library) and apply those.
+   - **Ender3Pro 8**: comments out the missing `moonraker_obico_macros.cfg` include, so Klipper can start. Then the
+     onboarding checklist.
+   - **EnderCR10SE 13 → 14** once it is switched on. Then onboarding.
+2. **Fluidd layout**: on each printer card, *Fluidd layout (farm standard)* → Apply (Undo is there).
+3. **3dpnas SSH** for the USB device listing: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@3dpnas.local`.
+4. **Confirm values**:
    - the Hyper PLA volumetric cap (15 proposed; `neo-hyperpla-028-litho` and `neo-pla-020-supports` stay unconfirmed until then);
    - lithophane t_min/t_max at 0.6;
    - the Qabrastaan plate count (635 listed vs 580 expected).
-4. **First supported print** (holder): `neo-pla-020-supports` slices for review but refuses upload until a person has
+5. **First supported print** (holder): `neo-pla-020-supports` slices for review but refuses upload until a person has
    printed one and confirmed the profile.
-5. **Phase 7 (invtool intake)** and **phase 8 (EnderV3SE onboarding)** in `docs/ARCHITECTURE.md` wait for Amir's
-   go-ahead.
-6. **Telegram bots** for EnderV3SE / Ender3Pro / EnderCR10SE on enders3dp crash-loop (tokens rejected by Telegram).
-7. **Filament** for the full Qabrastaan batch: ~40 kg plate colour + ~16 kg letter colour (+5-10 %).
+6. **Next features** (ranked in `docs/FEATURE_GAPS.md`): cost per print/product, product SKUs with recipes, proven
+   settings as the send default, suggested printer, Spoolman sync. Phase 7 (invtool) and phase 8 (EnderV3SE) still
+   wait for Amir's go-ahead.
+7. **Telegram bots** for EnderV3SE / Ender3Pro / EnderCR10SE on enders3dp crash-loop (tokens rejected by Telegram).
+   The monitor now reports each one once instead of every 2 minutes.
+8. **Filament** for the full Qabrastaan batch: ~40 kg plate colour + ~16 kg letter colour (+5-10 %).
 
 ## Rules
 
