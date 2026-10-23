@@ -1,5 +1,6 @@
 """The Printers tab's data: fleet health (farm/hosts.py), audit per instance, config snapshots and drift
 (farm/configs.py). Read-only towards the printers; the only writes are snapshots and reviews in the farm DB."""
+import posixpath
 import re
 import threading
 import time
@@ -199,7 +200,7 @@ def stage_fix(key: str, rule: str, actor: str) -> list[dict]:
 def stage_all_fixes(key: str, actor: str) -> list[dict]:
     """Every failing audit rule that has a generated fix, one staged change per file."""
     v = _instance(key)
-    rules = [a["rule"] for a in _audit(v) if a["status"] == "FAIL" and a["fixable"]]
+    rules = [a["rule"] for a in (_audit(v) or []) if a["status"] in ("FAIL", "WARN") and a["fixable"]]
     if not rules:
         raise cfgchange.Refused("no failing rule with a generated fix")
     con = db.connect()
@@ -382,10 +383,63 @@ def stage_serial(key: str, port: str, actor: str) -> dict:
         con.close()
 
 
+MISSING_INCLUDE = re.compile(r"Unable to open config file (\S+)")
+INCLUDE_LINE = re.compile(r"^\s*\[include\s+([^\]]+?)\s*\]", re.I)
+
+
+def stage_missing_include(key: str, actor: str) -> list[dict]:
+    """Klipper won't start on an [include] whose file isn't on the host (an uninstalled plugin's macros, e.g.
+    moonraker_obico_macros.cfg): stage commenting that include out, in every file printer.cfg reaches. A staged
+    change like any other - a person Applies it, and the gate's restart shows whether Klipper comes up."""
+    v = _instance(key)
+    if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly:
+        raise cfgchange.Refused(f"{key} is watch-only: no config changes")
+    info = net.get_json(f"{v['url']}/printer/info", timeout=5)["result"]
+    m = MISSING_INCLUDE.search(info.get("state_message") or "")
+    if not m:
+        raise cfgchange.Refused(f"{key} is not failing on a missing config file ({(info.get('state_message') or '')[:120]})")
+    missing = m.group(1).rsplit("/", 1)[-1]
+    todo, seen, out = ["printer.cfg"], set(), []
+    con = db.connect()
+    try:
+        while todo:
+            path = todo.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            try:
+                text = configs.read_file(v["url"], path).decode("utf-8", "replace")
+            except Exception:
+                continue
+            lines, hit = text.splitlines(keepends=True), False
+            for i, line in enumerate(lines):
+                inc = INCLUDE_LINE.match(line)
+                if not inc:
+                    continue
+                target = posixpath.normpath(posixpath.join(posixpath.dirname(path), inc.group(1).strip()))
+                if "*" not in target and not target.startswith(".."):
+                    todo.append(target)
+                if target.rsplit("/", 1)[-1] == missing:
+                    lines[i] = f"# {line.rstrip()}   # farm: {missing} is not on the host (onboarding)\n"
+                    hit = True
+            if hit:
+                c = cfgchange.stage(con, key, v["url"], path, new_content="".join(lines),
+                                    reason=f"onboarding: Klipper can't start - {missing} is included but missing on the host",
+                                    author=actor)
+                out.append({"id": c["id"], "path": path, "summary": c["summary"]})
+    finally:
+        con.close()
+    if not out:
+        raise cfgchange.Refused(f"no [include] of {missing} found in the files printer.cfg reaches")
+    _cache.pop("fleet", None)
+    return out
+
+
 def register_camera(key: str, body: dict, actor: str) -> dict:
     """A webcam entry on the instance's own Moonraker (what Fluidd, Telegram and Farm Control read)."""
     _person(actor)
     v = _instance(key)
+    _not_watch_only(key, v)
     path = str(body.get("path") or "").strip("/")
     if not path.startswith("webcam"):
         raise ValueError("path: the host's web path for the stream, e.g. webcam3")
@@ -395,6 +449,52 @@ def register_camera(key: str, body: dict, actor: str) -> dict:
     _, _, out = net.post_json_body(f"{v['url']}/server/webcams/item", item, timeout=10)
     _cache.pop("fleet", None)
     return {"registered": item["name"], "stream": item["stream_url"]}
+
+
+def _not_watch_only(key: str, v: dict):
+    if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly:
+        raise cfgchange.Refused(f"{key} is watch-only: use its own Fluidd")
+
+
+def fluidd(key: str) -> dict:
+    """What the farm Fluidd layout would make of this printer's macro panel and presets, and the last push."""
+    from . import standard
+    v = _instance(key)
+    out = standard.fluidd_preview(v["url"], standard.live_macros(v["url"]))
+    con = db.connect()
+    try:
+        last = con.execute("SELECT id, actor, at, undone_at FROM ui_pushes WHERE url=? ORDER BY id DESC LIMIT 1",
+                           (v["url"],)).fetchone()
+    finally:
+        con.close()
+    return {**out, "last": db.row(last) if last else None, "watch_only": bool(v.get("readonly"))}
+
+
+def fluidd_apply(key: str, actor: str) -> dict:
+    from . import standard
+    _person(actor)
+    v = _instance(key)
+    _not_watch_only(key, v)
+    con = db.connect()
+    try:
+        return standard.fluidd_apply(con, v.get("registry") or key, v["url"], standard.live_macros(v["url"]), actor)
+    finally:
+        con.close()
+
+
+def fluidd_undo(key: str, push_id: int, actor: str) -> dict:
+    from . import standard
+    _person(actor)
+    v = _instance(key)
+    _not_watch_only(key, v)
+    con = db.connect()
+    try:
+        r = con.execute("SELECT url FROM ui_pushes WHERE id=?", (push_id,)).fetchone()
+        if r is None or r[0] != v["url"]:
+            raise LookupError(f"no Fluidd push {push_id} on {key}")
+        return standard.fluidd_undo(con, push_id, actor)
+    finally:
+        con.close()
 
 
 def reconnect(key: str, actor: str, wait_s: float = 20) -> dict:

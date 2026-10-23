@@ -107,6 +107,25 @@ class Registry(unittest.TestCase):
         self.assertEqual(row["state"], "staged")
         self.assertIn(f"serial: {port}", row["new_content"])
 
+    def test_missing_include_is_a_staged_comment_out(self):
+        with self.assertRaises(cfgchange.Refused):                   # "config error" isn't a missing file
+            fleet.stage_missing_include(self.key, "ui:Amir")
+        self.m.config = {"printer.cfg": b"[include macros.cfg]\n[include sub/extra.cfg]\n[printer]\nkinematics: cartesian\n",
+                         "macros.cfg": b"[gcode_macro X]\ngcode:\n  G28\n",
+                         "sub/extra.cfg": b"[include moonraker_obico_macros.cfg]\n[include ../macros.cfg]\n",
+                         "unused.cfg": b"[include moonraker_obico_macros.cfg]\n"}
+        self.m.klipper = "error"
+        self.m.klipper_msg = "Unable to open config file /home/aali/newone_data/config/moonraker_obico_macros.cfg"
+        out = fleet.stage_missing_include(self.key, "ui:Amir")
+        self.assertEqual([c["path"] for c in out], ["sub/extra.cfg"])   # only what printer.cfg reaches
+        con = db.connect()
+        try:
+            new = con.execute("SELECT new_content FROM config_changes WHERE id=?", (out[0]["id"],)).fetchone()[0]
+        finally:
+            con.close()
+        self.assertTrue(new.startswith("# [include moonraker_obico_macros.cfg]"))
+        self.assertIn(b"[include moonraker", self.m.config["sub/extra.cfg"])   # staged, not applied
+
     def test_camera_registered_on_the_instance(self):
         with self.assertRaises(ValueError):
             fleet.register_camera(self.key, {"path": "../etc"}, "ui:Amir")

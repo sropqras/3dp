@@ -11,6 +11,7 @@ apply()    a person only (Farm Control button, or `farm config apply` at a termi
 rollback() a person only: put back the file as it was before an applied (or failed) change, same gate.
 """
 import json
+import posixpath
 import re
 import tempfile
 import time
@@ -206,6 +207,18 @@ def apply(con, cid: int, actor: str) -> dict:
         live = None
     if (configs.sha(live) if live is not None else None) != c["base_sha"]:
         raise Refused(f"{c['path']} changed on the printer since this was staged - stage it again")
+    # a file this change includes that another staged change creates (the farm macro library): that one goes on
+    # first, or Klipper fails on the missing file and the gate has to roll back
+    incs = re.findall(r"^\s*\[include\s+([^\]*]+?)\s*\]", c["new_content"] or "", re.M | re.I)
+    present = {f["path"] for f in configs.list_files(c["url"])} if incs else set()
+    for inc in incs:
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(c["path"]), inc.strip()))
+        if target in present:
+            continue
+        first = con.execute("SELECT id FROM config_changes WHERE printer=? AND path=? AND state='staged' AND id<>?",
+                            (c["printer"], target, cid)).fetchone()
+        if first:
+            raise Refused(f"apply change {first[0]} ({target}) first - this one includes it")
     jobs.transition(con, "config_change", cid, "staged", "applying", "cfggate", by=actor)
     con.execute("UPDATE config_changes SET applied_by=?, applied_at=? WHERE id=?", (actor, db.now(), cid))
     snap = configs.snapshot(con, c["printer"], c["url"], actor=f"before change {cid}")

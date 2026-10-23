@@ -22,12 +22,27 @@ def sections(text: str) -> list[str]:
 
 def section_span(text: str, name: str):
     head = text.split(SAVE_MARK)[0]
-    m = re.search(r"^\[" + re.escape(name) + r"\][ \t]*\n", head, re.M | re.I)
+    m = re.search(r"^\[" + re.escape(name) + r"\][ \t]*\r?\n", head, re.M | re.I)   # CRLF: configs edited on Windows
     if not m:
         return None
     nxt = re.search(r"^\[", head[m.end():], re.M)
     end = m.end() + (nxt.start() if nxt else len(head) - m.end())
     return m.start(), end
+
+
+def remove_section(text: str, name: str) -> str:
+    """Drop [name] and its body, but keep the comment lines at its end: in these configs a comment written just
+    above the next section (a note about it) is inside this section's span."""
+    span = section_span(text, name)
+    if not span:
+        return text
+    lines = text[span[0]:span[1]].splitlines(keepends=True)
+    keep = []
+    while len(lines) > 1 and (lines[-1].startswith("#") or not lines[-1].strip()):
+        keep.insert(0, lines.pop())
+    while keep and not keep[0].strip():
+        keep.pop(0)
+    return text[:span[0]] + "".join(keep) + text[span[1]:]
 
 
 def replace_section(text: str, name: str, block: str) -> str:
@@ -183,7 +198,7 @@ def fixable(rule: str) -> bool:
     """Has a generated fix (fixes_for knows it) - the Printers tab shows "Stage fix" only for these."""
     return (rule.startswith(("max_velocity", "max_accel", "pause_resume recover_velocity")) or
             rule.endswith(": insert does not resume") or
-            rule in ("LOAD/UNLOAD/PURGE heat a cold nozzle", "no macro calls an undefined BEEP",
+            rule in ("farm macro library is current", "LOAD/UNLOAD/PURGE heat a cold nozzle", "no macro calls an undefined BEEP",
                      "START_PRINT runs CLEAR_PAUSE", "M600 macro exists", "M600 does not auto-unload",
                      "M600 shows the colour-change prompt", "colour change alerts Telegram (tgalarm)",
                      "idle_timeout is finite (<= 4 h)", "idle timeout is pause-aware", "12 h pause safety cap exists"))
@@ -199,7 +214,13 @@ def fixes_for(rule: str, settings: dict, files: dict, printer: str) -> list[dict
         cur = out.get(path, {}).get("content", files.get(path, ""))
         out[path] = {"path": path, "content": fn(cur), "summary": summary}
 
-    if rule.startswith("max_velocity"):
+    if rule == "farm macro library is current":
+        from . import standard
+        for path, text in standard.install(files, _sensor(settings, files)).items():
+            out[path] = {"path": path, "content": text,
+                         "summary": "farm macro library (the same file on every printer)" if path == standard.LIBRARY_FILE
+                         else "use the farm macro library: include it, this printer's values, drop the old copies"}
+    elif rule.startswith("max_velocity"):
         p = _file_with(files, "printer", "printer.cfg")
         edit(p, lambda t: set_option(t, "printer", "max_velocity", "200"), "[printer] max_velocity: 200")
     elif rule.startswith("max_accel"):
@@ -235,7 +256,13 @@ def fixes_for(rule: str, settings: dict, files: dict, printer: str) -> list[dict
 
         def add_missing(t):
             """Add each set member the printer doesn't define anywhere."""
+            lib = set()
+            if any(re.search(r"^\s*\[include\s+farm_macros\.cfg\s*\]", x, re.M) for x in files.values()):
+                from . import standard
+                lib = {f"gcode_macro {n}" for n in standard.library_macros()}   # the library defines these
             for name, block in blocks.items():
+                if name in lib:
+                    continue
                 if not any(section_span(x, name) for pth, x in files.items() if pth != macros) and not section_span(t, name):
                     t = replace_section(t, name, block)
             return t

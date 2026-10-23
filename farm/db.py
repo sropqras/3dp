@@ -151,6 +151,13 @@ MIGRATIONS = [
         artefact_id INTEGER REFERENCES artefacts(id));
     CREATE INDEX IF NOT EXISTS nas_files_design ON nas_files(design)
     """,
+    # 9: Fluidd layout pushes (farm/standard.py) kept for Undo; when a NAS file first appeared (new-file sync)
+    """
+    CREATE TABLE IF NOT EXISTS ui_pushes (
+        id INTEGER PRIMARY KEY, printer TEXT NOT NULL, url TEXT NOT NULL, before TEXT NOT NULL, after TEXT NOT NULL,
+        actor TEXT NOT NULL, at REAL NOT NULL, undone_by TEXT, undone_at REAL);
+    ALTER TABLE nas_files ADD COLUMN first_seen REAL
+    """,
 ]
 
 

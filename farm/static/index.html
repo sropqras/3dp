@@ -172,7 +172,9 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
           <label><input type="checkbox" id="iv-printed" onchange="loadInventory()"> printed OK only</label>
           <label><input type="checkbox" id="iv-products" onchange="loadInventory()"> portfolio only</label></span>
         <span id="iv-nas-ctl" hidden>Folder <select id="nas-folder" onchange="loadNas()"><option value="">all</option></select>
-          <label><input type="checkbox" id="nas-matched" checked onchange="loadNas()"> sent to a printer only</label></span>
+          <label><input type="checkbox" id="nas-matched" checked onchange="loadNas()"> sent to a printer only</label>
+          <label><input type="checkbox" id="nas-new" onchange="loadNas()"> new only</label>
+          <button class="mini ghost" onclick="nasImportSelected()" title="fetch the ticked STL/3MF files (one at a time, at most 50)">Import ticked</button></span>
         <input id="iv-q" placeholder="search" style="width:180px" oninput="clearTimeout(window._ivt); window._ivt = setTimeout(() => ivReload(), 300)">
         <button class="mini ghost" id="iv-refresh" onclick="ivRefresh()">Refresh from printers</button>
         <span class="stamp" id="iv-msg"></span>
@@ -748,17 +750,32 @@ async function saveProduct(del) {
   $("proddlg").close(); loadInventory();
 }
 async function loadNas() {
-  const qs = new URLSearchParams({ q: $("iv-q").value, matched: $("nas-matched").checked ? "1" : "", folder: $("nas-folder").value });
+  const qs = new URLSearchParams({ q: $("iv-q").value, matched: $("nas-matched").checked ? "1" : "", folder: $("nas-folder").value,
+                                   new: $("nas-new").checked ? "1" : "" });
   NAS = await (await fetch("/api/nas?" + qs)).json();
   REF = [];
   const sel = $("nas-folder").value;
   $("nas-folder").innerHTML = `<option value="">all</option>` + NAS.folders.filter((f) => f).map((f) => `<option ${f === sel ? "selected" : ""}>${esc(f)}</option>`).join("");
-  $("iv-msg").textContent = NAS.scanned_at ? `${NAS.total} files on the NAS · ${NAS.matched} shown sent · scanned ${new Date(NAS.scanned_at * 1000).toLocaleString()}` : "not scanned yet - Scan the NAS";
+  $("iv-msg").textContent = NAS.scanned_at ? `${NAS.total} files on the NAS · ${NAS.matched} shown sent · ${NAS.new} new in ${NAS.new_days} days · scanned ${new Date(NAS.scanned_at * 1000).toLocaleString()}` : "not scanned yet - Scan the NAS";
   $("inventory").innerHTML = `<div class="card" style="overflow-x:auto"><table class="nas"><tr><th>NAS file</th><th></th>${NAS.printers.map((p) => `<th>${esc(p)}</th>`).join("")}<th></th></tr>
-    ${NAS.rows.map((r) => `<tr><td class="p">${esc(r.path)}</td><td class="stamp">${esc(r.ext)} · ${(r.size / 1e6).toFixed(1)} MB</td>
+    ${NAS.rows.map((r) => `<tr><td class="p">${r.printable && !r.artefact_id ? `<input type="checkbox" class="nas-tick" data-ref="${ref(r.path)}"> ` : ""}${r.new ? `<span class="chip warn">new</span> ` : ""}${esc(r.path)}</td><td class="stamp">${esc(r.ext)} · ${(r.size / 1e6).toFixed(1)} MB</td>
       ${NAS.printers.map((p) => `<td class="pc">${r.printers[p] ? pcounts(r.printers[p]) : ""}</td>`).join("")}
       <td>${r.artefact_id ? `<span class="stamp">imported ✓</span> <button class="mini" onclick="openSendArtefact(${r.artefact_id}, ${ref(r.path.split("/").pop())})">Send…</button>` : r.printable ? `<button class="mini ghost" onclick="nasImport(${ref(r.path)}, this)">Import</button>` : `<span class="stamp" title="export an STL or 3MF to print it">catalogue only</span>`}</td></tr>`).join("")}
   </table>${NAS.truncated ? `<div class="stamp pad">first ${NAS.rows.length} shown - narrow with the folder or search</div>` : ""}</div>`;
+}
+async function nasImportSelected() {
+  const ticks = [...document.querySelectorAll(".nas-tick:checked")].slice(0, 50);
+  if (!ticks.length) { alert("Tick the STL/3MF files to import first."); return; }
+  if (!confirm(`Fetch ${ticks.length} file(s) from the NAS into the farm (one at a time)? Each becomes an Inventory artefact, ready to Send.`)) return;
+  let ok = 0, bad = [];
+  for (const t of ticks) {
+    const path = REF[+t.dataset.ref];
+    $("iv-msg").textContent = `importing ${ok + bad.length + 1}/${ticks.length}: ${path.split("/").pop()}`;
+    const r = await fetch("/api/nas/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, operator: opName() }) });
+    if (r.ok) ok++; else bad.push(`${path.split("/").pop()}: ${(await r.json().catch(() => ({}))).error || r.status}`);
+  }
+  alert(`${ok} imported${bad.length ? `, ${bad.length} failed:\n` + bad.join("\n") : ""}`);
+  loadNas();
 }
 async function nasImport(i, btn) {
   const path = REF[i];

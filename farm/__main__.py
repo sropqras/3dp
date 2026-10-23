@@ -262,19 +262,28 @@ def cmd_backup(args):
     sys.exit(1 if bad else 0)
 
 
-def _inventory_refresh(con):
+def _inventory_refresh(con) -> list[str]:
+    """Printers' files + history into the Inventory, then the NAS catalogue. Returns the NAS model files that are
+    new since the last scan (the hourly sync tells Amir about them)."""
     from . import inventory, nas
-    inventory.backfill(con, log=lambda m: print("OK   " + m))
     try:
-        nas.scan(con, log=lambda m: print("OK   " + m))
+        inventory.backfill(con, log=lambda m: print("OK   " + m))
+    except Exception as e:   # one printer host down must not stop the NAS sync
+        print(f"WARN inventory: {str(e)[:120]}")
+    try:
+        new = nas.scan(con, log=lambda m: print("OK   " + m))["new"]
     except Exception as e:   # the NAS being down must not fail the config backup
         print(f"WARN nas: {str(e)[:120]}")
+        return []
+    for path in new[:50]:
+        print(f"NEW  {path}")
+    return new
 
 
 def cmd_inventory(args):
     from . import nas
     con = db.connect()
-    if args.action == "import":
+    if args.action in ("import", "sync"):
         _inventory_refresh(con)
     elif args.action == "nas-import":
         print(nas.import_file(con, args.path, "cli:" + os.environ.get("USER", "?")))
@@ -337,7 +346,7 @@ def main():
     d = sub.add_parser("db")
     d.add_argument("action", choices=["init", "import-runs"])
     iv = sub.add_parser("inventory", help="refresh the Inventory from the printers (read-only) and the NAS list")
-    iv.add_argument("action", choices=["import", "nas-import"])
+    iv.add_argument("action", choices=["import", "sync", "nas-import"])
     iv.add_argument("path", nargs="?", help="nas-import: the NAS path as the catalogue shows it")
     m = sub.add_parser("monitor")
     m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))

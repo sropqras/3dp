@@ -113,6 +113,44 @@ class Baseline(unittest.TestCase):
             self.assertEqual(cfgchange.apply(self.con, c["id"], "ui:test")["state"], "applied")
         self.assertEqual([r for r in self.failing() if baseline.fixable(r)], [])
 
+    def test_macro_library_replaces_the_ancestral_copies(self):
+        from farm import standard
+        self.m.config["macros.cfg"] = BAD_MACROS + b"""
+[gcode_macro HEAT]
+gcode:
+    SET_HEATER_TEMPERATURE HEATER=extruder TARGET=230
+    G28
+
+[gcode_macro PID_BED]
+gcode:
+    PID_CALIBRATE HEATER=heater_bed TARGET=65
+    SAVE_CONFIG
+
+[gcode_macro COOL]
+gcode:
+    TURN_OFF_HEATERS
+"""
+        warn = [r for st, r, _ in audit.rules(parse_klipper(self.m.config), printers.PRINTERS["Ender3MaxNeo"]) if st == "WARN"]
+        self.assertIn("farm macro library is current", warn)
+        staged = baseline.stage_fix(self.con, "Ender3MaxNeo", self.m.url, "farm macro library is current",
+                                    parse_klipper(self.m.config), "agent")
+        self.assertEqual([c["path"] for c in staged], ["farm_macros.cfg", "macros.cfg"])   # library first
+        with self.assertRaises(cfgchange.Refused):          # the include can't go on before the file it includes
+            cfgchange.apply(self.con, staged[1]["id"], "ui:test")
+        for c in staged:
+            self.assertEqual(cfgchange.apply(self.con, c["id"], "ui:test")["state"], "applied")
+        s = parse_klipper(self.m.config)
+        self.assertEqual(standard.check(s), (True, standard.version()))
+        macros = self.m.config["macros.cfg"].decode()
+        for name in ("HEAT", "PID_BED", "COOL"):                     # one definition: the library's
+            self.assertNotIn(f"[gcode_macro {name}]", macros)
+        self.assertIn("variable_nozzle_temp: 230", macros)          # the printer's numbers kept
+        self.assertIn("variable_pid_bed: 65", macros)
+        self.assertIn("variable_sensor: 'RunoutSensor'", macros)
+        self.assertTrue(macros.startswith("[include farm_macros.cfg]"))
+        self.assertIn("params.TEMP|default", s["gcode_macro heat"]["gcode"])
+        self.assertEqual(standard.install({p: t.decode() for p, t in self.m.config.items()}, "RunoutSensor"), {})   # idempotent
+
     def test_rules_needing_judgement_have_no_generated_fix(self):
         s = parse_klipper(self.m.config)
         for rule in ("START_PRINT macro exists", "START_PRINT reads EXTRUDER_TEMP and BED_TEMP",

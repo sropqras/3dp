@@ -141,3 +141,12 @@ def legacy(printer, material: str) -> Profile:
                 and p.filament_preset == printer.filament_presets.get(material)):
             return p
     raise SystemExit(f"no profile for {printer.name} + {material}; add one to farm/profiles.py")
+
+
+def temperatures(profile: Profile) -> dict:
+    """The filament preset's print temperatures {nozzle, bed} (Fluidd's farm presets, farm/standard.py)."""
+    import re
+    text = profile.bundle.read_text(encoding="utf-8") if profile.bundle.is_file() else ""
+    m = re.search(r"^\[" + re.escape(f"filament:{profile.filament_preset}") + r"\]\n(.*?)(?=^\[|\Z)", text, re.S | re.M)
+    fi = dict(re.findall(r"^(\w+) = (.*)$", m.group(1), re.M)) if m else {}
+    return {"nozzle": int(float(fi["temperature"].split(",")[0])), "bed": int(float(fi["bed_temperature"].split(",")[0]))}

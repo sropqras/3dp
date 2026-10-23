@@ -67,19 +67,28 @@ def scan(con, log=print, listing: str | None = None) -> dict:
         except Exception as e:      # the photos share is a nice-to-have
             log(f"nas: photos not listed ({str(e)[:80]})")
     t = time.time()
+    first_scan = con.execute("SELECT COUNT(*) FROM nas_files").fetchone()[0] == 0
     with db.tx(con):
+        known = {r[0] for r in con.execute("SELECT path FROM nas_files")}
+        # files catalogued before first_seen existed count as old, not new
+        con.execute("UPDATE nas_files SET first_seen=0 WHERE first_seen IS NULL")
         for f in files:
-            con.execute("INSERT INTO nas_files (path, size, mtime, ext, folder, design, seen_at, gone) "
-                        "VALUES (?,?,?,?,?,?,?,0) ON CONFLICT (path) DO UPDATE SET size=excluded.size, "
+            con.execute("INSERT INTO nas_files (path, size, mtime, ext, folder, design, seen_at, gone, first_seen) "
+                        "VALUES (?,?,?,?,?,?,?,0,?) ON CONFLICT (path) DO UPDATE SET size=excluded.size, "
                         "mtime=excluded.mtime, design=excluded.design, seen_at=excluded.seen_at, gone=0",
-                        (f["path"], f["size"], f["mtime"], f["ext"], f["folder"], f["design"], t))
+                        (f["path"], f["size"], f["mtime"], f["ext"], f["folder"], f["design"], t, 0 if first_scan else t))
         gone = con.execute("UPDATE nas_files SET gone=1 WHERE seen_at < ? AND gone=0", (t,)).rowcount
     models = sum(f["ext"] in MODELS for f in files)
-    log(f"nas: {models} model files and {len(files) - models} images catalogued, {gone} gone")
-    return {"files": models, "images": len(files) - models, "gone": gone}
+    new = [] if first_scan else [f["path"] for f in files if f["path"] not in known and f["ext"] in MODELS]
+    log(f"nas: {models} model files and {len(files) - models} images catalogued, {len(new)} new, {gone} gone")
+    return {"files": models, "images": len(files) - models, "gone": gone, "new": new}
 
 
-def matrix(con, q: str = "", matched_only: bool = False, folder: str = "", limit: int = 3000) -> dict:
+NEW_DAYS = 14
+
+
+def matrix(con, q: str = "", matched_only: bool = False, folder: str = "", limit: int = 3000,
+           new_only: bool = False) -> dict:
     """One row per NAS model file: which onboarded printers have it (sent) and how it printed there."""
     from . import printers
     designs = {d["design"]: d for d in inventory.designs(con)}
@@ -93,13 +102,18 @@ def matrix(con, q: str = "", matched_only: bool = False, folder: str = "", limit
             continue
         if q and q.lower() not in r["path"].lower():
             continue
+        is_new = bool(r.get("first_seen")) and r["first_seen"] > time.time() - NEW_DAYS * 86400
+        if new_only and not is_new:
+            continue
         rows.append({**r, "printers": d["printers"] if d else {}, "ok": d["ok"] if d else 0,
-                     "printable": r["ext"] in PRINTABLE})
+                     "printable": r["ext"] in PRINTABLE, "new": is_new})
     folders = [f for (f,) in con.execute("SELECT DISTINCT folder FROM nas_files WHERE gone=0 AND design <> '' "
                                          "ORDER BY folder")]
     stats = con.execute("SELECT COUNT(*), MAX(seen_at) FROM nas_files WHERE gone=0 AND design <> ''").fetchone()
     return {"printers": list(printers.PRINTERS), "folders": folders, "total": stats[0], "scanned_at": stats[1],
             "matched": sum(1 for r in rows if r["printers"]), "rows": rows[:limit], "truncated": len(rows) > limit,
+            "new": con.execute("SELECT COUNT(*) FROM nas_files WHERE gone=0 AND design <> '' AND first_seen > ?",
+                               (time.time() - NEW_DAYS * 86400,)).fetchone()[0], "new_days": NEW_DAYS,
             "source": NAS_URL}
 
 

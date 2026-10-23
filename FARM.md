@@ -56,6 +56,8 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-23 | s1pro | macros.cfg: edited (macros.cfg): farm baseline: LOAD/UNLOAD/PURGE heat a cold nozzle; no macro calls an undefined BEEP - applied by Amir via Farm Control, change 7 |
+| 2026-10-23 | Ender3MaxNeo | macros.cfg: edited (macros.cfg): farm baseline: LOAD/UNLOAD/PURGE heat a cold nozzle - applied by Amir via Farm Control, change 4 |
 | 2026-10-23 | s1pro | Moved from its own SBC (s1propad) to an instance on enders3dp: own Klipper v0.13.0-770 (matches the board), configs + 135 G-codes + 297-job history + Fluidd settings migrated; farm baseline (paused-safe idle, 12 h cap, guided M600, CLEAR_PAUSE, recover 150, 200/3000 motion limits); audit 15/15 |
 | 2026-10-22 | Ender3MaxNeo | Removed phantom filament sensors (btt_sfs include), CLEAR_PAUSE in START_PRINT, fixed FC_RESUME, removed duplicate screws_tilt_adjust |
 | 2026-10-22 | Ender3MaxNeo | Paused-safe idle timeout, guided M600 colour change |

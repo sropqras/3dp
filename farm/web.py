@@ -16,6 +16,8 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/fleet/<key>/fix {rule} | fix-all | telegram-pack | restart {service}    (farm/baseline.py, farm/ops.py)
   POST /api/fleet/<key>/onboard | registry | serial {port} | camera {name, path}   registry + onboarding (phase 5)
   POST /api/fleet/<key>/reconnect   FIRMWARE_RESTART of a printer that was switched off (board back on)
+  GET  /api/fleet/<key>/fluidd   POST .../fluidd | fluidd-undo {id}   the farm Fluidd layout (farm/standard.py)
+  POST /api/fleet/<key>/missing-include   stage commenting out an [include] whose file is missing (onboarding)
   GET  /api/hosts/<name>/usb  USB serial ports + cameras on a host and who uses them (read-only, ssh)
   POST /api/scripts {kind: camera|instance, ...}   root-only host steps as a script to run with sudo
   POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
@@ -25,7 +27,7 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/templates         save the New-job form as a template
   GET  /api/inventory?by=printer|project|maker&q=&printed=1&products=1   artefacts folded into designs (farm/inventory.py)
   GET  /api/inventory/design?d=   a design's prints     GET /api/artefacts/<id>/thumb   G-code thumbnail from its printer
-  GET  /api/nas?q=&matched=1&folder=   the OMV project-files catalogue vs the printers (farm/nas.py)
+  GET  /api/nas?q=&matched=1&folder=&new=1   the OMV project-files catalogue vs the printers (farm/nas.py)
   POST /api/inventory/refresh | /api/nas/scan | /api/nas/import {path} | /api/prints/<id>/mark {quality, note}
   POST /api/artefacts/<id>/send {printer, profile, layer_height}   onto a printer via Review & queue
   POST /api/artefacts/<id>/product {name, description, printer, profile, layer_height, photo}   the portfolio (a person)
@@ -600,6 +602,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.changes(key), default=str).encode())
                 if parts[1:] == ["maintenance"]:
                     return self._send(200, json.dumps(fleet.maint(key), default=str).encode())
+                if parts[1:] == ["fluidd"]:
+                    return self._send(200, json.dumps(fleet.fluidd(key), default=str).encode())
                 if parts[1:] == ["diff"]:
                     return self._send(200, fleet.diff(key, q["path"][0]).encode(), "text/plain; charset=utf-8")
             except (LookupError, KeyError, IndexError) as e:
@@ -619,7 +623,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/api/inventory/design":
                     out = {"prints": inventory.prints_of(con, q.get("d", ""))}
                 else:
-                    out = nas.matrix(con, q.get("q", ""), q.get("matched") == "1", q.get("folder", ""))
+                    out = nas.matrix(con, q.get("q", ""), q.get("matched") == "1", q.get("folder", ""),
+                                     new_only=q.get("new") == "1")
                 return self._send(200, json.dumps(out, default=str).encode())
             finally:
                 con.close()
@@ -732,6 +737,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.register_camera(key, body, who)).encode())
                 if parts[3] == "registry":
                     return self._send(200, json.dumps(fleet.update_registry(key, body, who)).encode())
+                if parts[3] == "fluidd":
+                    return self._send(200, json.dumps(fleet.fluidd_apply(key, who)).encode())
+                if parts[3] == "fluidd-undo":
+                    return self._send(200, json.dumps(fleet.fluidd_undo(key, int(body["id"]), who)).encode())
+                if parts[3] == "missing-include":
+                    return self._send(200, json.dumps(fleet.stage_missing_include(key, who)).encode())
                 if parts[3] == "reconnect":
                     return self._send(200, json.dumps(fleet.reconnect(key, who)).encode())
                 if parts[3] == "maintenance":

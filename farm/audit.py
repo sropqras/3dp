@@ -94,6 +94,11 @@ def rules(s: dict, printer) -> list[tuple]:
           "while paused only the nozzle may cool; bed + motors must hold the print")
     check("delayed_gcode _pause_hard_stop" in s, "12 h pause safety cap exists", "_PAUSE_HARD_STOP")
 
+    # 2026-10-23: one shared macro library instead of six copies of the ancestor file drifting apart
+    from . import standard
+    ok, detail = standard.check(s)
+    check(ok, "farm macro library is current", detail, warn=True)
+
     if printer.has_m600_prompt is False and m600:
         check(False, "pipeline registry matches", "printer has an M600 but has_m600_prompt=False", warn=True)
     return out

@@ -206,7 +206,12 @@ function onboardBlock(v) {
   const steps = [
     ["reachable", v.reachable, ""],
     ["board connected (Klipper ready)", v.klippy_state === "ready",
-      `<button class="ghost" onclick='findSerial(${k}, ${JSON.stringify(v.host)}, this.parentNode)'>Find the board's USB port</button>`],
+      `<div class="dim">${esc((v.state_message || "").split("\n")[0].slice(0, 160))}</div>` +
+      (/Unable to open config file/.test(v.state_message || "")
+        ? `<button class="ghost" onclick='stageMissingInclude(${k})'>Stage: comment out the missing include</button>`
+        : v.off ? `<button class="ghost" onclick='reconnectPrinter(${k})'>Reconnect (after switching it on)</button> `
+                + `<button class="ghost" onclick='findSerial(${k}, ${JSON.stringify(v.host)}, this.parentNode)'>Find the board's USB port</button>`
+        : `<button class="ghost" onclick='findSerial(${k}, ${JSON.stringify(v.host)}, this.parentNode)'>Find the board's USB port</button>`)],
     ["farm baseline audit passes", v.audit && !fails, fails ? `<span class="dim">Stage fix on the ${fails} failing rule(s) above, then Apply</span>` : ""],
     ["camera registered and working", (v.cameras || []).some((c) => c.ok),
       `<input placeholder="webcam3" style="width:90px"> <button class="ghost" onclick='registerCam(${k}, this.previousElementSibling.value)'>Register</button>
@@ -242,6 +247,28 @@ function farmSettings(v) {
       <div class="row"><label><input type="checkbox" name="readonly" ${e.readonly ? "checked" : ""}> watch-only</label><button class="ghost">Save</button></div>
     </form></details>`;
 }
+async function fluiddPreview(key, el) {
+  const box = el.querySelector("div");
+  const r = await (await fetch(`/api/fleet/${encodeURIComponent(key)}/fluidd`)).json();
+  if (r.error) { box.textContent = r.error; return; }
+  const k = JSON.stringify(key);
+  box.innerHTML = `<div class="dim">Macro panel grouped by each macro's description; farm temperature presets first. Only the macro panel and presets change; Undo puts back what was there.</div>
+    <table>${Object.entries(r.groups).map(([g, ms]) => `<tr><td>${esc(g)}</td><td class="dim">${ms.map(esc).join(", ")}</td></tr>`).join("")}
+      <tr><td>Presets</td><td class="dim">${r.presets.map(esc).join(", ")}</td></tr></table>
+    <button onclick='fluiddApply(${k})'>Apply farm layout</button>
+    ${r.last && !r.last.undone_at ? `<button class="ghost" onclick='fluiddUndo(${k}, ${r.last.id})'>Undo last (${esc(r.last.actor)})</button>` : ""}`;
+}
+async function fluiddApply(key) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  if (!confirm(`Write the farm Fluidd layout into ${key}'s Fluidd settings? (no printer config, no restart)`)) return;
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/fluidd`);
+  if (r) { alert(`Done (push ${r.id}). Reload Fluidd to see it.`); refresh(); }
+}
+async function fluiddUndo(key, id) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/fluidd-undo`, { id });
+  if (r) { alert(`Restored: ${r.restored.join(", ")}`); refresh(); }
+}
 async function reconnectPrinter(key) {
   if (!operator()) { alert("Put your name in the 'You' box first."); return; }
   if (!confirm(`Reconnect ${key}? Switch it on first; Klipper restarts to find the board.`)) return;
@@ -250,6 +277,11 @@ async function reconnectPrinter(key) {
   document.body.style.cursor = "";
   if (r) alert(`${key}: ${r.state}${r.hint ? " - " + r.hint : ""}`);
   refresh();
+}
+async function stageMissingInclude(key) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/missing-include`);
+  if (r) { alert(r.map((c) => `Staged change ${c.id}: ${c.summary}`).join("\n") + "\n\nLook at the Diff, then Apply it under Changes."); refresh(); }
 }
 async function findSerial(key, host, td) {
   const r = await (await fetch(`/api/hosts/${encodeURIComponent(host)}/usb`)).json();
@@ -308,6 +340,7 @@ function card(v) {
     ${changesBlock(v)}
     ${maintBlock(v)}
     ${onboardBlock(v)}
+    ${v.reachable && v.klippy_state === "ready" && !v.readonly ? `<details ontoggle='if (this.open) fluiddPreview(${JSON.stringify(v.key)}, this)'><summary>Fluidd layout (farm standard)</summary><div class="dim">loading…</div></details>` : ""}
     <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div style="margin-top:6px">${vers}</div></details>
   </div>`;
 }
