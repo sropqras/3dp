@@ -1,11 +1,12 @@
 """The Printers tab's data: fleet health (farm/hosts.py), audit per instance, config snapshots and drift
 (farm/configs.py). Read-only towards the printers; the only writes are snapshots and reviews in the farm DB."""
+import re
 import threading
 import time
 import urllib.parse
 from types import SimpleNamespace
 
-from . import audit, baseline, cfgchange, configs, db, hosts, jobs, maintenance, ops, printers
+from . import audit, baseline, cfgchange, configs, db, hosts, jobs, maintenance, net, ops, printers
 
 _cache, _lock = {}, threading.Lock()
 
@@ -31,6 +32,8 @@ def _audit(v: dict) -> list[dict] | None:
 
 
 def overview() -> dict:
+    if printers.refresh():
+        _cache.pop("fleet", None)
     fl = _cached("fleet", 20, hosts.fleet)
     con = db.connect()
     try:
@@ -59,8 +62,11 @@ def overview() -> dict:
     by_host = {}
     for v in out:   # services are a host's, not an instance's: merge what each Moonraker may see
         by_host.setdefault(v["host"], {}).update(v.get("services") or {})
+    from . import profiles as _profiles
     return {"time": time.time(), "instances": out, "host_services": by_host,
-            "hosts": hosts.load_hosts()}
+            "hosts": hosts.load_hosts(), "registry": printers.registry_entries(),
+            "profiles": [{"id": x.id, "name": x.name, "nozzle": x.nozzle, "confirmed": x.confirmed}
+                         for x in _profiles.PROFILES.values()]}
 
 
 def _instance(key: str) -> dict:
@@ -246,6 +252,134 @@ def maint_log(key: str, body: dict, actor: str) -> dict:
         return maintenance.log(con, key, str(body["kind"]), str(body.get("note") or ""), actor, v.get("print_hours"))
     finally:
         con.close()
+
+
+# ---------------------------------------------------------------- registry + onboarding (phase 5)
+
+NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,31}$")
+
+
+def _person(actor: str):
+    if not actor.startswith(("ui:", "cli:")):
+        raise cfgchange.Refused("only a person changes the farm's printer registry")
+
+
+def _farm_md_row(printer: str, change: str):
+    """Registry edits land in FARM.md's change log, like applied config changes."""
+    try:
+        t = cfgchange.FARM_MD.read_text(encoding="utf-8")
+        marker = "| Date | Printer | Change |\n|---|---|---|\n"
+        if marker in t:
+            clean = lambda x: re.sub(r"[|\r\n]+", " ", str(x)).strip()
+            i = t.index(marker) + len(marker)
+            row = f"| {time.strftime('%Y-%m-%d')} | {clean(printer)} | {clean(change)} |\n"
+            cfgchange.FARM_MD.write_text(t[:i] + row + t[i:], encoding="utf-8")
+    except OSError:
+        pass
+
+
+def onboard(key: str, body: dict, actor: str) -> dict:
+    """Add an instance (a not-onboarded card) to printers/registry.json: name, usable bed, max Z, the profiles it may
+    use, watch-only or not. The hardware facts are the person's to confirm - the form says so."""
+    from . import profiles as _profiles
+    _person(actor)
+    v = _instance(key)
+    name = str(body.get("name") or "").strip()
+    if not NAME_RE.match(name):
+        raise ValueError("name: a letter, then letters/digits/_/- (2-32)")
+    entries = printers.registry_entries()
+    if any(e["name"] == name for e in entries):
+        raise ValueError(f"{name} is already in the registry")
+    if v.get("registry"):
+        raise ValueError(f"that Moonraker is already in the registry as {v['registry']}")
+    bed_min = [float(x) for x in body["bed_min"]]
+    bed_max = [float(x) for x in body["bed_max"]]
+    if not (bed_max[0] > bed_min[0] >= 0 and bed_max[1] > bed_min[1] >= 0 and 50 <= float(body["max_z"]) <= 1000):
+        raise ValueError("bed: min < max (mm), max Z 50..1000")
+    profs = [str(p) for p in body.get("profiles") or []]
+    unknown = [p for p in profs if p not in _profiles.PROFILES]
+    if unknown:
+        raise ValueError(f"unknown profile(s): {', '.join(unknown)}")
+    first = _profiles.PROFILES[profs[0]] if profs else None
+    entry = {"name": name, "note": str(body.get("note") or "")[:300], "moonraker": v["url"], "fluidd": v.get("fluidd", ""),
+             "fluidd_note": str(body.get("fluidd_note") or "")[:200], "bed_min": bed_min, "bed_max": bed_max,
+             "max_z": float(body["max_z"]), "has_m600_prompt": bool(body.get("has_m600_prompt")),
+             "readonly": bool(body.get("readonly")), "profiles": profs,
+             "legacy_presets": {"bundle": first.bundle.name, "printer": first.printer_preset, "print": first.print_preset,
+                                "filament": {first.material: first.filament_preset}} if first else {}}
+    printers.save_registry(entries + [entry])
+    bad = {p: _profiles.check(_profiles.PROFILES[p]) for p in profs}
+    bad = {p: x for p, x in bad.items() if x}
+    if bad:   # e.g. a profile's bed doesn't fit this printer: undo, nothing half-saved
+        printers.save_registry(entries)
+        raise ValueError("; ".join(f"{p}: {', '.join(x)}" for p, x in bad.items()))
+    _farm_md_row(name, f"Onboarded in Farm Control ({v['host']}:{v['port']}, bed {bed_min}-{bed_max}, Z {entry['max_z']}, "
+                       f"profiles {', '.join(profs) or 'none'}{', watch-only' if entry['readonly'] else ''}) "
+                       f"by {actor.split(':', 1)[-1]}")
+    _cache.pop("fleet", None)
+    return entry
+
+
+def update_registry(name: str, body: dict, actor: str) -> dict:
+    """Change an onboarded printer's farm settings: watch-only, profiles, Fluidd note, note."""
+    from . import profiles as _profiles
+    _person(actor)
+    entries = printers.registry_entries()
+    e = next((x for x in entries if x["name"] == name), None)
+    if e is None:
+        raise LookupError(f"{name} is not in the registry")
+    changed = []
+    if "readonly" in body and bool(body["readonly"]) != bool(e.get("readonly")):
+        e["readonly"] = bool(body["readonly"])
+        changed.append("watch-only" if e["readonly"] else "no longer watch-only")
+    if "profiles" in body:
+        profs = [str(p) for p in body["profiles"]]
+        unknown = [p for p in profs if p not in _profiles.PROFILES]
+        if unknown:
+            raise ValueError(f"unknown profile(s): {', '.join(unknown)}")
+        if profs != e.get("profiles"):
+            e["profiles"] = profs
+            changed.append(f"profiles {', '.join(profs) or 'none'}")
+    for k in ("fluidd_note", "note"):
+        if k in body and body[k] != e.get(k):
+            e[k] = str(body[k])[:300]
+            changed.append(k)
+    if changed:
+        printers.save_registry(entries)
+        _farm_md_row(name, f"Farm settings: {'; '.join(changed)} (Farm Control, {actor.split(':', 1)[-1]})")
+        _cache.pop("fleet", None)
+    return {"name": name, "changed": changed}
+
+
+def stage_serial(key: str, port: str, actor: str) -> dict:
+    """Set [mcu] serial to a USB port read from the host (a staged change: a person Applies it like any other)."""
+    if not port.startswith("/dev/serial/by-path/"):
+        raise ValueError("use the board's /dev/serial/by-path/... port (stable across reboots, unlike by-id for CH340s)")
+    v = _instance(key)
+    con = db.connect()
+    try:
+        files = {f["path"]: configs.read_file(v["url"], f["path"]).decode("utf-8", "replace") for f in configs.list_files(v["url"])}
+        path = next((p for p, t in files.items() if baseline.section_span(t, "mcu")), "printer.cfg")
+        c = cfgchange.stage(con, key, v["url"], path, section="mcu", option="serial", value=port,
+                            reason=f"onboarding: the board is on {port}", author=actor)
+        return {"id": c["id"], "summary": c["summary"]}
+    finally:
+        con.close()
+
+
+def register_camera(key: str, body: dict, actor: str) -> dict:
+    """A webcam entry on the instance's own Moonraker (what Fluidd, Telegram and Farm Control read)."""
+    _person(actor)
+    v = _instance(key)
+    path = str(body.get("path") or "").strip("/")
+    if not path.startswith("webcam"):
+        raise ValueError("path: the host's web path for the stream, e.g. webcam3")
+    item = {"name": str(body.get("name") or v.get("registry") or v["name"])[:40], "service": "mjpegstreamer",
+            "stream_url": f"/{path}/?action=stream", "snapshot_url": f"/{path}/?action=snapshot",
+            "target_fps": 15, "target_fps_idle": 5}
+    _, _, out = net.post_json_body(f"{v['url']}/server/webcams/item", item, timeout=10)
+    _cache.pop("fleet", None)
+    return {"registered": item["name"], "stream": item["stream_url"]}
 
 
 def unquote_key(part: str) -> str:

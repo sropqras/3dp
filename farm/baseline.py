@@ -183,7 +183,8 @@ def fixable(rule: str) -> bool:
     """Has a generated fix (fixes_for knows it) - the Printers tab shows "Stage fix" only for these."""
     return (rule.startswith(("max_velocity", "max_accel", "pause_resume recover_velocity")) or
             rule.endswith(": insert does not resume") or
-            rule in ("START_PRINT runs CLEAR_PAUSE", "M600 macro exists", "M600 does not auto-unload",
+            rule in ("LOAD/UNLOAD/PURGE heat a cold nozzle", "no macro calls an undefined BEEP",
+                     "START_PRINT runs CLEAR_PAUSE", "M600 macro exists", "M600 does not auto-unload",
                      "M600 shows the colour-change prompt", "colour change alerts Telegram (tgalarm)",
                      "idle_timeout is finite (<= 4 h)", "idle timeout is pause-aware", "12 h pause safety cap exists"))
 
@@ -269,6 +270,50 @@ def fixes_for(rule: str, settings: dict, files: dict, printer: str) -> list[dict
                 line = f'    RESPOND PREFIX=tgalarm MSG="{printer}: colour change - load the next colour, then RESUME"'
                 return t[:span[0]] + body + "\n" + line + "\n\n" + t[span[1]:]
             edit(pp, add_alarm, f"colour change alerts Telegram (tgalarm line in {target})")
+    elif rule == "LOAD/UNLOAD/PURGE heat a cold nozzle":
+        helper = """[gcode_macro _FARM_HEAT_FOR_FILAMENT]
+description: the colour-change buttons need a hot nozzle - after a long pause the idle timeout has turned it off
+variable_temp: 0
+gcode:
+    {% set t = printer["gcode_macro _FARM_HEAT_FOR_FILAMENT"].temp|float %}
+    {% set t = t if t > 170 else 240 %}
+    {% if printer.extruder.temperature < t - 10 %}
+      RESPOND TYPE=echo MSG="Heating the nozzle to {t} C for the filament change"
+      M109 S{t}
+    {% endif %}
+"""
+
+        def first_line(t, macro, line):
+            span = section_span(t, f"gcode_macro {macro}")
+            if span is None:
+                return t
+            body = t[span[0]:span[1]]
+            if line.split()[0] in body:
+                return t
+            m = re.search(r"^gcode:[ \t]*\n", body, re.M)
+            if not m:
+                return t
+            return t[:span[0]] + body[:m.end()] + f"    {line}\n" + body[m.end():] + t[span[1]:]
+
+        for path in sorted(files):
+            text = files[path]
+            if not any(section_span(text, f"gcode_macro {x}") for x in ("LOAD_FILAMENT", "UNLOAD_FILAMENT", "PURGE", "M600")):
+                continue
+
+            def heat(t, path=path):
+                for macro in ("LOAD_FILAMENT", "UNLOAD_FILAMENT", "PURGE"):
+                    t = first_line(t, macro, "_FARM_HEAT_FOR_FILAMENT")
+                t = first_line(t, "M600", "SET_GCODE_VARIABLE MACRO=_FARM_HEAT_FOR_FILAMENT VARIABLE=temp "
+                                           "VALUE={printer.extruder.target}")
+                if path == _file_with(files, "gcode_macro M600", macros) and not section_span(t, "gcode_macro _FARM_HEAT_FOR_FILAMENT"):
+                    t = replace_section(t, "gcode_macro _FARM_HEAT_FOR_FILAMENT", helper)
+                return t
+            edit(path, heat, "LOAD/UNLOAD/PURGE reheat a cold nozzle (to the print temperature remembered at M600)")
+    elif rule == "no macro calls an undefined BEEP":
+        for path in sorted(files):
+            if re.search(r"^[ \t]+BEEP\b", files[path].split(SAVE_MARK)[0], re.M):
+                edit(path, lambda t: re.sub(r"^([ \t]+)(BEEP\b.*)$", r"\1# \2   # no BEEP macro on this printer", t, flags=re.M),
+                     "comment out BEEP (not defined on this printer)")
     elif rule.endswith(": insert does not resume"):
         sec = rule.split(":")[0]
         p = _file_with(files, sec, "printer.cfg")

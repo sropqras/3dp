@@ -1,6 +1,6 @@
-"""Headless check of the Printers tab against a fake Moonraker only: snapshot, stage a change, apply, roll back.
+"""Headless check of the Printers tab against fake Moonrakers only: snapshot, stage a change, apply, roll back, onboard.
     python3 tests/ui_printers.py   -> prints READY <url>; tests/ui_printers.cjs drives it."""
-import copy, json, os, subprocess, sys, tempfile, time
+import copy, json, os, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tests.fakes import FakeMoonraker  # noqa: E402
@@ -12,9 +12,15 @@ m = FakeMoonraker(copy.deepcopy(GOOD))
 m.config = {"printer.cfg": PRINTER_CFG, "macros.cfg": b"[gcode_macro M600]\ngcode:\n  PAUSE\n"}
 m.settings_from_config = True   # the audit reads the config text, so a generated fix really changes it
 port = m.server.server_address[1]
-(tmp / "hosts.json").write_text(json.dumps({"hosts": [{"name": "fakehost", "address": "127.0.0.1", "ports": [port]}]}))
+m2 = FakeMoonraker(copy.deepcopy(GOOD))          # a second instance nobody has onboarded yet
+m2.config = {"printer.cfg": PRINTER_CFG}
+m2.config_file = "/home/aali/printer_newone_data/config/printer.cfg"
+(tmp / "hosts.json").write_text(json.dumps({"hosts": [{"name": "fakehost", "address": "127.0.0.1",
+                                                       "ports": [port, m2.server.server_address[1]]}]}))
+shutil.copy(Path(__file__).resolve().parent.parent / "printers" / "registry.json", tmp / "registry.json")
 env = dict(os.environ, FARM_DB=str(tmp / "farm.db"), FARM_RUNS_DIR=str(tmp / "runs"), FARM_HOSTS_FILE=str(tmp / "hosts.json"),
-           FARM_MOONRAKER_OVERRIDE=json.dumps({"Ender3MaxNeo": m.url}), FARM_INVENTORY=str(tmp / "inventory.json"))
+           FARM_MOONRAKER_OVERRIDE=json.dumps({"Ender3MaxNeo": m.url}), FARM_INVENTORY=str(tmp / "inventory.json"),
+           FARM_REGISTRY=str(tmp / "registry.json"))
 code = ("import sys; from farm import configs, cfgchange; from pathlib import Path; configs.STORE = Path(sys.argv[1]); "
         "cfgchange.FARM_MD = Path(sys.argv[2]); cfgchange.SETTLE_S = 0; cfgchange.POLL_S = 0.1; "
         "from farm import web; web.serve('127.0.0.1', 10197)")

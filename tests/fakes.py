@@ -103,6 +103,8 @@ class FakeMoonraker:
         self.after_restart = "ready"   # Klipper's state after FIRMWARE_RESTART (tests set "error")
         self.console = []           # gcode_store entries [{"message", "time", "type"}]
         self.on_restart = None      # callable(fake) run at FIRMWARE_RESTART (e.g. change settings)
+        self.config_file = "/home/aali/Ender3MaxNeo_data/config/printer.cfg"   # names the instance
+        self.webcams = []           # what /server/webcams/item registered
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -144,7 +146,7 @@ class FakeMoonraker:
                     return self._json(200, {"result": {"state": outer.klipper, "state_message": "Printer is ready"
                                                        if outer.klipper == "ready" else "config error",
                                                        "software_version": "v0.13.0-fake",
-                                                       "config_file": "/home/aali/Ender3MaxNeo_data/config/printer.cfg"}})
+                                                       "config_file": outer.config_file}})
                 if u.path == "/server/info":
                     return self._json(200, {"result": {"klippy_state": outer.klipper, "failed_components": [],
                                                        "warnings": [], "moonraker_version": "v0.9.3-fake"}})
@@ -163,7 +165,7 @@ class FakeMoonraker:
                 if u.path == "/server/gcode_store":
                     return self._json(200, {"result": {"gcode_store": outer.console}})
                 if u.path == "/server/webcams/list":
-                    return self._json(200, {"result": {"webcams": []}})
+                    return self._json(200, {"result": {"webcams": outer.webcams}})
                 if u.path == "/server/history/list":
                     return self._json(200, {"result": {"jobs": []}})
                 if u.path == "/server/files/metadata":
@@ -199,6 +201,9 @@ class FakeMoonraker:
                         outer.on_restart(outer)
                     outer.klipper = outer.after_restart
                     return self._json(200, {"result": "ok"})
+                if u.path == "/server/webcams/item":
+                    outer.webcams.append(_json.loads(body))
+                    return self._json(200, {"result": {"webcam": outer.webcams[-1]}})
                 if u.path == "/printer/print/start":
                     outer.starts.append(up.parse_qs(u.query)["filename"][0])
                     outer.state = "printing"

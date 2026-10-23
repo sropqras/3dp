@@ -1,0 +1,119 @@
+{
+  "_note": "The farm's printers (farm/printers.py loads this; Farm Control's Printers tab edits it with a person's confirmation). Hardware facts must match FARM.md. readonly = watch-only: shown and audited, never sent jobs or config changes. profiles = the print profiles (farm/profiles.py) this printer may use. legacy_presets = what a job JSON without a profile slices with.",
+  "printers": [
+    {
+      "name": "Ender3MaxNeo",
+      "note": "Ender 3 Max Neo with S1 Plus-like V4.2.7 board, Sprite Pro 0.6, CR Touch, no runout sensor (FARM.md).",
+      "moonraker": "http://192.168.1.184:7125",
+      "fluidd": "http://192.168.1.184/",
+      "fluidd_note": "",
+      "bed_min": [
+        5.0,
+        5.0
+      ],
+      "bed_max": [
+        295.0,
+        295.0
+      ],
+      "max_z": 300.0,
+      "has_m600_prompt": true,
+      "readonly": false,
+      "profiles": [
+        "neo-petg-036",
+        "neo-hyperpla-028-litho"
+      ],
+      "legacy_presets": {
+        "bundle": "MaxNeo_PETG_0.6_profiles.ini",
+        "printer": "Ender3MaxNeo (S1Plus HW, Sprite Pro 0.6) - PETG",
+        "print": "0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
+        "filament": {
+          "petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"
+        }
+      }
+    },
+    {
+      "name": "enders1plus",
+      "note": "Ender 3 S1 Plus on 3dpnas: same bed and Sprite Pro 0.6 as the MaxNeo (G-code shared), filament sensor, Klipper v0.13.",
+      "moonraker": "http://3dpnas.local:7125",
+      "fluidd": "http://192.168.1.68/",
+      "fluidd_note": "",
+      "bed_min": [
+        5.0,
+        5.0
+      ],
+      "bed_max": [
+        295.0,
+        295.0
+      ],
+      "max_z": 300.0,
+      "has_m600_prompt": true,
+      "readonly": false,
+      "profiles": [
+        "neo-petg-036",
+        "neo-hyperpla-028-litho"
+      ],
+      "legacy_presets": {
+        "bundle": "MaxNeo_PETG_0.6_profiles.ini",
+        "printer": "Ender3MaxNeo (S1Plus HW, Sprite Pro 0.6) - PETG",
+        "print": "0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
+        "filament": {
+          "petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"
+        }
+      }
+    },
+    {
+      "name": "s1pro",
+      "note": "Ender 3 S1 Pro, moved off its SBC onto enders3dp 2026-10-23 (printers/s1pro/MIGRATION.md): own Klipper v0.13.0-770, 0.4 nozzle, CR Touch, RunoutSensor.",
+      "moonraker": "http://192.168.1.184:7129",
+      "fluidd": "http://192.168.1.184/",
+      "fluidd_note": "shared Fluidd: choose s1pro (:7129) in its printer menu",
+      "bed_min": [
+        5.0,
+        5.0
+      ],
+      "bed_max": [
+        215.0,
+        215.0
+      ],
+      "max_z": 270.0,
+      "has_m600_prompt": true,
+      "readonly": false,
+      "profiles": [
+        "s1pro-petg-020"
+      ],
+      "legacy_presets": {
+        "bundle": "farm_profiles.ini",
+        "printer": "Farm S1 Pro 0.4",
+        "print": "Farm 0.20 PETG 0.4 (S1 Pro)",
+        "filament": {
+          "petg": "Farm PETG 0.4 (S1 Pro)"
+        }
+      }
+    },
+    {
+      "name": "EnderV3SE",
+      "note": "The user's own production printer: WATCH ONLY (no jobs, no config changes) until handed over. Hardware mostly unconfirmed; filament sensor + Meross plug confirmed.",
+      "moonraker": "http://192.168.1.184:7128",
+      "fluidd": "http://192.168.1.184/",
+      "fluidd_note": "shared Fluidd: choose EnderV3SE (:7128) in its printer menu",
+      "bed_min": [
+        5.0,
+        5.0
+      ],
+      "bed_max": [
+        215.0,
+        215.0
+      ],
+      "max_z": 250.0,
+      "has_m600_prompt": false,
+      "readonly": true,
+      "profiles": [],
+      "legacy_presets": {
+        "bundle": "PrusaSlicer_config_bundle.ini",
+        "printer": "Ender 3 V3 SE (Klipper)",
+        "print": "",
+        "filament": {}
+      }
+    }
+  ]
+}

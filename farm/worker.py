@@ -11,7 +11,7 @@ import threading
 import time
 import traceback
 
-from . import db, jobs, makers, pipeline, tracker
+from . import db, jobs, makers, pipeline, printers, tracker
 
 LEASE_S = {"plan": 300, "slice": 3600, "upload": 900}
 MAX_ATTEMPTS = 5
@@ -137,6 +137,7 @@ def loop(once: bool = False, log=print) -> None:
     last_track = 0.0
     while True:
         heartbeat(con, "idle")
+        printers.refresh()                  # an onboarding saved in Farm Control applies without a restart
         if time.time() - last_track >= TRACK_EVERY_S:
             last_track = time.time()
             try:

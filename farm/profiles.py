@@ -20,7 +20,7 @@ FARM_BUNDLE = PRUSA_DIR / "farm_profiles.ini"
 class Profile:
     id: str
     name: str
-    printers: tuple
+    base_printers: tuple      # printers named in code; the registry adds more (printers/registry.json "profiles")
     nozzle: float
     bundle: Path
     printer_preset: str
@@ -35,6 +35,12 @@ class Profile:
     note: str = ""
     tags: tuple = field(default_factory=tuple)
 
+    @property
+    def printers(self) -> tuple:
+        """Every printer that may use this profile: named here, or listing it in printers/registry.json."""
+        reg = tuple(n for n, p in printers.PRINTERS.items() if self.id in p.profiles and n not in self.base_printers)
+        return tuple(self.base_printers) + reg
+
     def allows(self, printer_name: str) -> bool:
         return printer_name in self.printers
 
@@ -44,21 +50,21 @@ _NEO = printers.PRINTERS["Ender3MaxNeo"]
 PROFILES = {p.id: p for p in (
     # Today's production profile (grave plates). Must stay byte-identical: tests/golden.py proves it.
     Profile(
-        id="neo-petg-036", name="PETG 0.6 chunky (13 mm³/s)", printers=("Ender3MaxNeo", "enders1plus"),
+        id="neo-petg-036", name="PETG 0.6 chunky (13 mm³/s)", base_printers=("Ender3MaxNeo", "enders1plus"),
         nozzle=0.6, bundle=_NEO.bundle, printer_preset=_NEO.printer_preset, print_preset=_NEO.print_preset,
         filament_preset=_NEO.filament_presets["petg"], material="petg",
         layer_heights=(0.28, 0.32, 0.36, 0.4, 0.44), max_volumetric=13, tags=("plates", "parts")),
     # S1 Pro (0.4 nozzle): the user's own S1 Pro 0.4 preset with START_PRINT placeholders + autoemit off, the farm's
     # proven Sprite PETG (13 mm³/s), the user's 0.20 NORMAL SPEEDY GON print preset.
     Profile(
-        id="s1pro-petg-020", name="PETG 0.4 (S1 Pro)", printers=("s1pro",), nozzle=0.4,
+        id="s1pro-petg-020", name="PETG 0.4 (S1 Pro)", base_printers=("s1pro",), nozzle=0.4,
         bundle=FARM_BUNDLE, printer_preset="Farm S1 Pro 0.4", print_preset="Farm 0.20 PETG 0.4 (S1 Pro)",
         filament_preset="Farm PETG 0.4 (S1 Pro)", material="petg",
         layer_heights=(0.16, 0.2, 0.24, 0.28), max_volumetric=13, first_layer=(0.15, 0.3),
         tags=("plates", "parts")),
     # Large lithophanes / lamp shades in Hyper PLA on the 0.6 Sprites (the user has printed these).
     Profile(
-        id="neo-hyperpla-028-litho", name="Hyper PLA 0.6 lithophane", printers=("Ender3MaxNeo", "enders1plus"),
+        id="neo-hyperpla-028-litho", name="Hyper PLA 0.6 lithophane", base_printers=("Ender3MaxNeo", "enders1plus"),
         nozzle=0.6, bundle=FARM_BUNDLE, printer_preset="Farm Sprite 0.6 (MaxNeo + S1 Plus)",
         print_preset="Farm 0.28 Litho 0.6", filament_preset="Farm Hyper PLA 0.6", material="pla",
         layer_heights=(0.2, 0.24, 0.28, 0.32), max_volumetric=15, confirmed=False,
@@ -95,7 +101,7 @@ def check(profile: Profile) -> list[str]:
         for name in profile.printers:
             hw = printers.PRINTERS.get(name)
             if hw is None:
-                problems.append(f"printer {name} is not in farm/printers.py")
+                problems.append(f"printer {name} is not in printers/registry.json")
                 continue
             (x0, y0), (x1, y1) = hw.bed_min, hw.bed_max
             if not bed or any(not (x0 - 1e-6 <= x <= x1 + 1e-6 and y0 - 1e-6 <= y <= y1 + 1e-6) for x, y in bed):

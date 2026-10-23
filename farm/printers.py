@@ -1,4 +1,8 @@
-"""Printer registry. Hardware facts here must match FARM.md - don't add a printer without confirming its hardware."""
+"""Printer registry: printers/registry.json (edited from Farm Control's Printers tab, with a person's confirmation).
+Hardware facts must match FARM.md - don't add a printer without confirming its hardware."""
+import dataclasses
+import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,84 +25,68 @@ class Printer:
     readonly: bool = False    # watch-only: shown in Farm Control and audited, never sent jobs
     fluidd: str = ""          # Fluidd web UI for this printer (IP, not .local: phones on Tailscale can't resolve mDNS)
     fluidd_note: str = ""     # Fluidd can't pick an instance from the URL; say which one to choose when it's shared
+    profiles: tuple = ()      # print profiles (farm/profiles.py) this printer may use
+    note: str = ""
 
     @property
     def bed_center(self):
         return ((self.bed_min[0] + self.bed_max[0]) / 2, (self.bed_min[1] + self.bed_max[1]) / 2)
 
 
-PRINTERS = {
-    "Ender3MaxNeo": Printer(
-        name="Ender3MaxNeo",
-        moonraker="http://192.168.1.184:7125",
-        fluidd="http://192.168.1.184/",       # enders3dp's one Fluidd; with no saved choice it opens this instance
-        bed_min=(5.0, 5.0),
-        bed_max=(295.0, 295.0),
-        max_z=300.0,
-        has_m600_prompt=True,
-        bundle=PRUSA_DIR / "MaxNeo_PETG_0.6_profiles.ini",
-        printer_preset="Ender3MaxNeo (S1Plus HW, Sprite Pro 0.6) - PETG",
-        print_preset="0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
-        filament_presets={"petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"},
-    ),
-    # Ender 3 S1 Plus on 3dpnas: same bed and Sprite Pro 0.6 hotend as the MaxNeo (user: G-code is shared
-    # between them), so it uses the MaxNeo presets. Has a filament sensor; Klipper v0.13.
-    "enders1plus": Printer(
-        name="enders1plus",
-        moonraker="http://3dpnas.local:7125",
-        fluidd="http://192.168.1.68/",        # 3dpnas
-        bed_min=(5.0, 5.0),
-        bed_max=(295.0, 295.0),
-        max_z=300.0,
-        has_m600_prompt=True,    # guided M600 deployed 2026-10-22 (FARM.md)
-        bundle=PRUSA_DIR / "MaxNeo_PETG_0.6_profiles.ini",
-        printer_preset="Ender3MaxNeo (S1Plus HW, Sprite Pro 0.6) - PETG",
-        print_preset="0.36 mm CHUNKY PETG (0.6 mm nozzle) @MaxNeo 13mm3",
-        filament_presets={"petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"},
-    ),
-    # Ender 3 S1 Pro, moved off its own SBC onto enders3dp (printers/s1pro/MIGRATION.md, 2026-10-23): its own
-    # Klipper v0.13.0-770 (matches the board), 0.4 nozzle, CR Touch, RunoutSensor, farm baseline (audit 15/15).
-    "s1pro": Printer(
-        name="s1pro",
-        moonraker="http://192.168.1.184:7129",
-        fluidd="http://192.168.1.184/",
-        fluidd_note="shared Fluidd: choose s1pro (:7129) in its printer menu",
-        bed_min=(5.0, 5.0),
-        bed_max=(215.0, 215.0),
-        max_z=270.0,
-        has_m600_prompt=True,
-        bundle=PRUSA_DIR / "farm_profiles.ini",
-        printer_preset="Farm S1 Pro 0.4",
-        print_preset="Farm 0.20 PETG 0.4 (S1 Pro)",
-        filament_presets={"petg": "Farm PETG 0.4 (S1 Pro)"},
-    ),
-    # Ender 3 V3 SE on enders3dp: the user's own production printer - WATCH ONLY (no jobs, no config changes)
-    # until they hand it over. Hardware mostly unconfirmed (FARM.md); filament sensor + Meross plug confirmed.
-    "EnderV3SE": Printer(
-        name="EnderV3SE",
-        moonraker="http://192.168.1.184:7128",
-        fluidd="http://192.168.1.184/",
-        fluidd_note="shared Fluidd: choose EnderV3SE (:7128) in its printer menu",
-        bed_min=(5.0, 5.0),
-        bed_max=(215.0, 215.0),
-        max_z=250.0,
-        has_m600_prompt=False,
-        bundle=PRUSA_DIR / "PrusaSlicer_config_bundle.ini",
-        printer_preset="Ender 3 V3 SE (Klipper)",
-        print_preset="",
-        filament_presets={},
-        readonly=True,
-    ),
-}
+REGISTRY = Path(os.environ.get("FARM_REGISTRY", REPO / "printers" / "registry.json"))
+PRINTERS: dict = {}
+_loaded = {"mtime": None}
 
 
-# Tests and the headless UI check point printers at a fake Moonraker: {"Ender3MaxNeo": "http://127.0.0.1:9999"}.
-# Never set in production (the farm-web/farm-worker start scripts don't).
-import json as _json
-import os as _os
-import dataclasses as _dc
-for _name, _url in _json.loads(_os.environ.get("FARM_MOONRAKER_OVERRIDE", "{}")).items():
-    PRINTERS[_name] = _dc.replace(PRINTERS[_name], moonraker=_url)
+def _from_json(e: dict) -> "Printer":
+    lp = e.get("legacy_presets") or {}
+    return Printer(
+        name=e["name"], moonraker=e["moonraker"], bed_min=tuple(e["bed_min"]), bed_max=tuple(e["bed_max"]),
+        max_z=float(e["max_z"]), has_m600_prompt=bool(e.get("has_m600_prompt")),
+        bundle=PRUSA_DIR / lp.get("bundle", "farm_profiles.ini"), printer_preset=lp.get("printer", ""),
+        print_preset=lp.get("print", ""), filament_presets=dict(lp.get("filament") or {}),
+        readonly=bool(e.get("readonly")), fluidd=e.get("fluidd", ""), fluidd_note=e.get("fluidd_note", ""),
+        profiles=tuple(e.get("profiles") or ()), note=e.get("note", ""))
+
+
+def refresh(force: bool = False) -> bool:
+    """(Re)load printers/registry.json when it changed - in place, so every `printers.PRINTERS` user sees it.
+    The web server and the worker call this, so an onboarding saved in Farm Control takes effect without a restart."""
+    try:
+        mtime = REGISTRY.stat().st_mtime
+    except OSError:
+        return False
+    if not force and mtime == _loaded["mtime"]:
+        return False
+    data = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    fresh = {e["name"]: _from_json(e) for e in data["printers"]}
+    for name, url in json.loads(os.environ.get("FARM_MOONRAKER_OVERRIDE", "{}")).items():
+        if name in fresh:
+            fresh[name] = dataclasses.replace(fresh[name], moonraker=url)
+    PRINTERS.clear()
+    PRINTERS.update(fresh)
+    _loaded["mtime"] = mtime
+    return True
+
+
+def registry_entries() -> list[dict]:
+    return json.loads(REGISTRY.read_text(encoding="utf-8"))["printers"]
+
+
+def save_registry(entries: list[dict]) -> None:
+    data = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    data["printers"] = entries
+    tmp = REGISTRY.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(REGISTRY)
+    refresh(force=True)
+
+
+refresh(force=True)
+
+
+# Tests and the headless UI check point printers at a fake Moonraker with FARM_MOONRAKER_OVERRIDE
+# ({"Ender3MaxNeo": "http://127.0.0.1:9999"}), applied in refresh(). Never set in production.
 
 
 def get(name: str) -> Printer:

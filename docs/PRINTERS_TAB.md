@@ -152,6 +152,7 @@ What's available to build on:
 3. **Remediation and operations:** `farm/baseline.py` fix templates per audit rule; the Telegram pack via the API; service restarts with gates; root-script generators; SSH device listing.
 4. **Health monitor + maintenance:** monitor checks; `maintenance` table (migration 6) and reminders.
 5. **Registry as data + onboarding checklist.** Once this phase lands, first use: finish s1pro through it.
+   *Done 2026-10-23:* `printers/registry.json` (reloaded on change by the web server and the worker); `fleet.onboard` / `update_registry` (person-only, profile bed-fit check, undone on failure, FARM.md row); `stage_serial` (an `[mcu] serial` key edit, applied through the gate); `register_camera` (`/server/webcams/item` on the instance). Tests `tests/test_registry.py`; UI check onboards a fake second instance. s1pro was already moved into the registry by hand before this phase, so the first real use is the next instance (Ender3Pro / EnderCR10SE on enders3dp).
 
 ## Tests
 

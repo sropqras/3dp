@@ -68,6 +68,19 @@ def rules(s: dict, printer) -> list[tuple]:
     check(not bad_names, "no macro named letter+digits (Klipper parses them as classic commands)",
           ", ".join(bad_names) or "none")
 
+    # 2026-10-23: the MaxNeo's colour change waited past the 30 min pause timeout, the nozzle went cold, and the
+    # prompt's UNLOAD/LOAD answered "!! Extrude below minimum temp"
+    if m600:
+        cold = [m for m in ("LOAD_FILAMENT", "UNLOAD_FILAMENT", "PURGE") if _gcode(s, m) and not re.search(
+            r"_FARM_HEAT_FOR_FILAMENT|M109|TEMPERATURE_WAIT", _gcode(s, m))]
+        check(not cold, "LOAD/UNLOAD/PURGE heat a cold nozzle",
+              ", ".join(cold) or "after a long pause the nozzle is off: the buttons must reheat it first")
+
+    # a macro calling BEEP on a printer without one: "Unknown command" in the console at every print end (S1 Plus)
+    beepers = [k[len("gcode_macro "):] for k, sec in s.items() if k.startswith("gcode_macro ") and
+               any(l.split()[0] == "BEEP" for l in _code_lines(sec.get("gcode", "")) if l.split())]
+    check(not beepers or "gcode_macro beep" in s, "no macro calls an undefined BEEP", ", ".join(beepers) or "none")
+
     for key, sec in s.items():
         if key.startswith(("filament_switch_sensor", "filament_motion_sensor")):
             ins = _code_lines(sec.get("insert_gcode", "") or "")

@@ -14,6 +14,7 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /api/fleet[/<key>/files|file?path=|diff?path=]   fleet overview / a printer's config files
   POST /api/fleet/<key>/snapshot | review {snapshot, operator} | changes {path, section/option/value | content, reason}
   POST /api/fleet/<key>/fix {rule} | telegram-pack | restart {service}    (farm/baseline.py, farm/ops.py)
+  POST /api/fleet/<key>/onboard | registry | serial {port} | camera {name, path}   registry + onboarding (phase 5)
   GET  /api/hosts/<name>/usb  USB serial ports + cameras on a host and who uses them (read-only, ssh)
   POST /api/scripts {kind: camera|instance, ...}   root-only host steps as a script to run with sudo
   POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
@@ -471,6 +472,7 @@ def build_action(build_id: int, action: str, body: dict) -> dict:
 
 
 def overview() -> dict:
+    printers.refresh()
     runs = load_runs()
     by_remote = {rem: r for r in reversed(runs) for rem in r["uploaded"]}
     plist = list(printers.PRINTERS.values())
@@ -612,6 +614,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.review(key, int(body["snapshot"]), who)).encode())
                 if parts[3] == "changes":
                     return self._send(200, json.dumps(fleet.stage_change(key, body, who)).encode())
+                if parts[3] == "onboard":
+                    return self._send(200, json.dumps(fleet.onboard(key, body, who)).encode())
+                if parts[3] == "serial":
+                    return self._send(200, json.dumps(fleet.stage_serial(key, str(body["port"]), who)).encode())
+                if parts[3] == "camera":
+                    return self._send(200, json.dumps(fleet.register_camera(key, body, who)).encode())
+                if parts[3] == "registry":
+                    return self._send(200, json.dumps(fleet.update_registry(key, body, who)).encode())
                 if parts[3] == "maintenance":
                     return self._send(200, json.dumps(fleet.maint_log(key, body, who), default=str).encode())
                 if parts[3] == "fix":

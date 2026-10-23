@@ -1,6 +1,6 @@
 "use strict";
 // Printers tab: fleet health, farm-baseline audit, config snapshots and drift. Read-only towards the printers;
-// the only actions are "snapshot now" and "mark reviewed" (farm DB). Staged changes come in phase 2.
+// changes to printers are staged and applied through the gate; onboarding writes printers/registry.json.
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
@@ -191,14 +191,83 @@ async function maintInterval(key, kind, cur) {
 }
 
 function onboardBlock(v) {
-  if (v.registry) return "";
-  const items = [
-    ["reachable", v.reachable], ["Klipper ready (board connected)", v.klippy_state === "ready"],
-    ["farm baseline audit passes", v.audit && !v.audit.some((a) => a.status === "FAIL")],
-    ["camera works", (v.cameras || []).some((c) => c.ok)], ["config reviewed", v.snapshot && v.snapshot.reference],
-    ["in the farm registry (farm/printers.py)", false]];
-  return `<details><summary class="warn">Not onboarded — ${items.filter((i) => !i[1]).length} step(s) left</summary>
-    <table>${items.map(([t, ok]) => `<tr><td class="${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"}</td><td>${esc(t)}</td></tr>`).join("")}</table></details>`;
+  if (v.registry) return farmSettings(v);
+  const k = JSON.stringify(v.key);
+  const fails = (v.audit || []).filter((a) => a.status === "FAIL").length;
+  const steps = [
+    ["reachable", v.reachable, ""],
+    ["board connected (Klipper ready)", v.klippy_state === "ready",
+      `<button class="ghost" onclick='findSerial(${k}, ${JSON.stringify(v.host)}, this.parentNode)'>Find the board's USB port</button>`],
+    ["farm baseline audit passes", v.audit && !fails, fails ? `<span class="dim">Stage fix on the ${fails} failing rule(s) above, then Apply</span>` : ""],
+    ["camera registered and working", (v.cameras || []).some((c) => c.ok),
+      `<input placeholder="webcam3" style="width:90px"> <button class="ghost" onclick='registerCam(${k}, this.previousElementSibling.value)'>Register</button>
+       <span class="dim">the host's web path (USB devices &amp; host scripts → Camera service makes one)</span>`],
+    ["config reviewed", v.snapshot && v.snapshot.reference, `<span class="dim">Config → Snapshot, look, Mark reviewed</span>`]];
+  const left = steps.filter((s) => !s[1]).length + 1;
+  const profs = data.profiles.map((p) => `<label title="${esc(p.name)}"><input type="checkbox" name="profiles" value="${esc(p.id)}"> ${esc(p.id)}${p.confirmed ? "" : " (unconfirmed)"}</label>`).join(" ");
+  return `<details class="onboard"><summary class="warn">Not onboarded — ${left} step(s) left</summary>
+    <table>${steps.map(([t, ok, act]) => `<tr><td class="${ok ? "ok" : "bad"}">${ok ? "✓" : "✗"}</td><td>${esc(t)}</td><td>${ok ? "" : act}</td></tr>`).join("")}
+      <tr><td class="bad">✗</td><td>in the farm registry</td><td></td></tr></table>
+    <form onsubmit='onboard(${k}, this, ${left - 1});return false' style="display:grid;gap:6px;margin-top:8px">
+      <div class="row">Name <input name="name" value="${esc(v.name)}" style="width:130px" required>
+        Note <input name="note" style="flex:1;min-width:160px" placeholder="hardware, nozzle, quirks"></div>
+      <div class="row">Usable bed X <input name="x0" value="0" style="width:52px">–<input name="x1" placeholder="220" style="width:52px" required>
+        Y <input name="y0" value="0" style="width:52px">–<input name="y1" placeholder="220" style="width:52px" required>
+        max Z <input name="z" placeholder="250" style="width:56px" required> mm</div>
+      <div class="row">Profiles ${profs}</div>
+      <div class="row"><label><input type="checkbox" name="m600"> M600 shows a prompt</label>
+        <label><input type="checkbox" name="readonly"> watch-only (no jobs, no changes)</label>
+        <button>Add to the farm</button></div>
+      <div class="dim">Bed and Z are what you measured, not what a copied config says. Each profile's bed must fit, or nothing is saved.</div>
+    </form></details>`;
+}
+function farmSettings(v) {
+  const e = (data.registry || []).find((x) => x.name === v.registry);
+  if (!e) return "";
+  const k = JSON.stringify(v.registry);
+  const profs = data.profiles.map((p) => `<label><input type="checkbox" name="profiles" value="${esc(p.id)}" ${e.profiles.includes(p.id) ? "checked" : ""}> ${esc(p.id)}</label>`).join(" ");
+  return `<details><summary>Farm settings · ${e.profiles.length ? esc(e.profiles.join(", ")) : "no profiles"}</summary>
+    <form onsubmit='saveSettings(${k}, this);return false' style="display:grid;gap:6px;margin-top:6px">
+      <div class="row">Bed ${esc(e.bed_min.join(","))} – ${esc(e.bed_max.join(","))} · Z ${e.max_z}${e.note ? " · " + esc(e.note) : ""}</div>
+      <div class="row">Profiles ${profs}</div>
+      <div class="row"><label><input type="checkbox" name="readonly" ${e.readonly ? "checked" : ""}> watch-only</label><button class="ghost">Save</button></div>
+    </form></details>`;
+}
+async function findSerial(key, host, td) {
+  const r = await (await fetch(`/api/hosts/${encodeURIComponent(host)}/usb`)).json();
+  if (r.error) { td.innerHTML = `<span class="warn">${esc(r.error)}</span>`; return; }
+  const free = r.serial.filter((d) => !d.used_by);
+  td.innerHTML = free.length ? free.map((d) => `<div><code>${esc(d.path.replace("/dev/serial/by-path/", ""))}</code> <span class="dim">${esc(d.target)}</span>
+      <button class="ghost" onclick='setSerial(${JSON.stringify(key)}, ${JSON.stringify(d.path)})'>Use this</button></div>`).join("")
+    : `<span class="warn">no unused serial device on ${esc(host)} — is the board plugged in?</span>`;
+}
+async function setSerial(key, port) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/serial`, { port });
+  if (r) { alert(`Staged change ${r.id}: ${r.summary}. Apply it under Changes (Klipper restarts and should then find the board).`); refresh(); }
+}
+async function registerCam(key, path) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  if (!path.trim()) { alert("The web path, e.g. webcam3"); return; }
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/camera`, { path: path.trim() });
+  if (r) { alert(`Registered ${r.registered} (${r.stream}).`); refresh(); }
+}
+async function onboard(key, form, left) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const f = new FormData(form), n = (x) => +f.get(x);
+  const body = { name: f.get("name").trim(), note: f.get("note"), bed_min: [n("x0"), n("y0")], bed_max: [n("x1"), n("y1")], max_z: n("z"),
+    profiles: f.getAll("profiles"), has_m600_prompt: !!f.get("m600"), readonly: !!f.get("readonly") };
+  if (!confirm(`Add ${body.name} to the farm: bed ${body.bed_min}–${body.bed_max}, Z ${body.max_z}, profiles ${body.profiles.join(", ") || "none"}${body.readonly ? ", watch-only" : ""}?` +
+    (left ? `\n\n${left} checklist step(s) are still open.` : "") + `\n\nThe monitor and the pipeline pick it up at once; FARM.md's change log records it.`)) return;
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/onboard`, body);
+  if (r) { alert(`${r.name} is in the farm. Commit printers/registry.json and FARM.md in the next development session.`); refresh(); }
+}
+async function saveSettings(name, form) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const f = new FormData(form), body = { profiles: f.getAll("profiles"), readonly: !!f.get("readonly") };
+  if (!confirm(`Save ${name}: profiles ${body.profiles.join(", ") || "none"}${body.readonly ? ", watch-only" : ""}?`)) return;
+  const r = await post(`/api/fleet/${encodeURIComponent(name)}/registry`, body);
+  if (r) { alert(r.changed.length ? `Saved: ${r.changed.join("; ")}` : "Nothing changed."); refresh(); }
 }
 
 function card(v) {

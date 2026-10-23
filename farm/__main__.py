@@ -33,7 +33,7 @@ def cmd_run(args):
     job = json.loads(job_path.read_text(encoding="utf-8"))
     printer = printers.get(job["printer"])
     if printer.readonly:
-        sys.exit(f"{printer.name} is watch-only (readonly in farm/printers.py); no jobs are sent to it")
+        sys.exit(f"{printer.name} is watch-only (readonly in printers/registry.json); no jobs are sent to it")
     con = db.connect()
     order_id, run = pipeline.submit_job_file(con, job, job_path)
     with run.guard():

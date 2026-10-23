@@ -29,7 +29,21 @@ switch_pin: !PC15
 #*# [bltouch]
 #*# z_offset = 3.340
 """
-BAD_MACROS = b"""[gcode_macro START_PRINT]
+BAD_MACROS = b"""[gcode_macro PRINT_END]
+gcode:
+    TURN_OFF_HEATERS
+    BEEP
+
+[gcode_macro LOAD_FILAMENT]
+gcode:
+    G91
+    G1 E50 F300
+
+[gcode_macro PURGE]
+gcode:
+    G1 E45 F300
+
+[gcode_macro START_PRINT]
 gcode:
     {% set BED_TEMP = params.BED_TEMP|default(60)|float %}
     {% set EXTRUDER_TEMP = params.EXTRUDER_TEMP|default(190)|float %}
@@ -69,6 +83,7 @@ class Baseline(unittest.TestCase):
     def test_every_generated_fix_applied_makes_the_audit_pass(self):
         before = self.failing()
         self.assertGreaterEqual(len(before), 9, before)
+        self.assertIn("no macro calls an undefined BEEP", before)
         for _ in range(12):                 # one rule at a time, as a person would from the tab
             fails = self.failing()
             if not fails:
@@ -85,6 +100,9 @@ class Baseline(unittest.TestCase):
         macros = self.m.config["macros.cfg"].decode()
         self.assertIn("SET_FILAMENT_SENSOR SENSOR=RunoutSensor ENABLE=0", macros)   # the printer's own sensor name
         self.assertNotIn("UNLOAD_FILAMENT\n", macros.split("[gcode_macro M600]")[1].split("[")[0])
+        self.assertIn("[gcode_macro LOAD_FILAMENT]\ngcode:\n    _FARM_HEAT_FOR_FILAMENT\n", macros)
+        self.assertIn("VARIABLE=temp VALUE={printer.extruder.target}", macros)
+        self.assertIn("# BEEP", macros)
 
     def test_rules_needing_judgement_have_no_generated_fix(self):
         s = parse_klipper(self.m.config)
