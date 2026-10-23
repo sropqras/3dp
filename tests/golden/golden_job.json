@@ -1,6 +1,6 @@
 {
-  "slicer": "2.7.2+UNKNOWN",
+  "slicer": "2.9.6+flathub.org",
   "gcode": {
-    "T02+T11_0.4mm_petg_Ender3MaxNeo.gcode": "1575de9c062884e01389818a9f6bc46b8e1fea3bc6ec7e9d6ad6c96502faf577"
+    "T02+T11_0.4mm_petg_Ender3MaxNeo.gcode": "8f0a44b3f3a770018638428674e0a955982321364f9b004a44fd7907b5ffa572"
   }
 }

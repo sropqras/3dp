@@ -1,6 +1,6 @@
 {
-  "slicer": "2.7.2+UNKNOWN",
+  "slicer": "2.9.6+flathub.org",
   "gcode": {
-    "P1_0.28mm_pla_enders1plus.gcode": "ca23a556759ef5aa7e1ace3e1c16445d65e38c1c1104e9d1dc76c1dd3d11820b"
+    "P1_0.28mm_pla_enders1plus.gcode": "9094d535c6dc9219fe83e032f96aeb45c79584d1862389bed53b7386e32711ee"
   }
 }

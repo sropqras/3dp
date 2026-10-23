@@ -34,7 +34,7 @@ Golden G-code: `python3 tests/golden.py check`. It needs likhan and the slicer b
 The plan being implemented, phase by phase, is in `docs/ARCHITECTURE.md`.
 
 Host settings come from env vars in `farm/config.py`. The defaults suit the user's Windows workstation, so on aali-cli set:
-`FARM_PRUSASLICER="flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer"` and `FARM_LIKHAN_URL=http://127.0.0.1:4111`. `FARM_FONTS_DIR` defaults to `assets/fonts/`. Licensed fonts are gitignored and never committed.
+`FARM_PRUSASLICER="flatpak run --command=prusa-slicer com.prusa3d.PrusaSlicer"` and `FARM_LIKHAN_URL=http://127.0.0.1:4111`. `FARM_FONTS_DIR` defaults to `assets/fonts/`. Licensed fonts are gitignored and never committed.
 
 ## Architecture
 

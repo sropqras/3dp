@@ -39,7 +39,9 @@ def normalised_hash(gcode: Path) -> str:
 
 
 def run_job(job: Path) -> dict:
-    with tempfile.TemporaryDirectory() as tmp:
+    # inside the repo: the Flathub PrusaSlicer has a private /tmp and only sees the repo (flatpak override)
+    (REPO / "data" / "tmp").mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=REPO / "data" / "tmp") as tmp:
         env = dict(os.environ, FARM_RUNS_DIR=tmp, FARM_DB=str(Path(tmp) / "farm.db"))
         proc = subprocess.run([sys.executable, "-m", "farm", "run", str(job)], cwd=REPO, env=env,
                               capture_output=True, text=True)

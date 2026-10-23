@@ -22,7 +22,7 @@ Python 3.10+, standard library only.
 git clone https://github.com/sropqras/3dp.git && cd 3dp
 # PrusaSlicer 2.9.6 CLI (Linux = Flathub)
 flatpak install -y flathub com.prusa3d.PrusaSlicer
-export FARM_PRUSASLICER="flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer"
+export FARM_PRUSASLICER="flatpak run --command=prusa-slicer com.prusa3d.PrusaSlicer"
 export FARM_LIKHAN_URL="http://127.0.0.1:4111"          # likhan-maker on this host
 # licensed font, NOT in git: copy from the workstation D:\repos\sropqras\3dp\assets\fonts\CharlesWright-Bold.otf
 mkdir -p assets/fonts && cp /path/to/CharlesWright-Bold.otf assets/fonts/

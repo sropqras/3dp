@@ -37,7 +37,7 @@ slicer inputs), `slicer.log`, and the G-code.
 
 | Variable | Default | Example on aali-cli |
 |---|---|---|
-| `FARM_PRUSASLICER` | `C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe` | `flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer` |
+| `FARM_PRUSASLICER` | `C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe` | `flatpak run --command=prusa-slicer com.prusa3d.PrusaSlicer` |
 | `FARM_LIKHAN_URL` | `http://192.168.1.107:4111` | `http://127.0.0.1:4111` |
 | `FARM_FONTS_DIR` | `assets/fonts/` (gitignored, licensed fonts) | same |
 

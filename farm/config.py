@@ -1,5 +1,5 @@
 """Host-specific settings. Defaults suit this Windows workstation; override with env vars on other hosts
-(e.g. aali-cli: FARM_PRUSASLICER="flatpak run --command=PrusaSlicer com.prusa3d.PrusaSlicer")."""
+(e.g. aali-cli: FARM_PRUSASLICER="flatpak run --command=prusa-slicer com.prusa3d.PrusaSlicer")."""
 import os
 import shlex
 from pathlib import Path
