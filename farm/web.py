@@ -13,7 +13,7 @@ the server is the only thing that talks to the printers, so the browser never ne
   GET  /printers               the Printers tab (fleet health, audit, config snapshots/drift) - farm/fleet.py
   GET  /api/fleet[/<key>/files|file?path=|diff?path=]   fleet overview / a printer's config files
   POST /api/fleet/<key>/snapshot | review {snapshot, operator} | changes {path, section/option/value | content, reason}
-  POST /api/fleet/<key>/fix {rule} | telegram-pack | restart {service}    (farm/baseline.py, farm/ops.py)
+  POST /api/fleet/<key>/fix {rule} | fix-all | telegram-pack | restart {service}    (farm/baseline.py, farm/ops.py)
   POST /api/fleet/<key>/onboard | registry | serial {port} | camera {name, path}   registry + onboarding (phase 5)
   POST /api/fleet/<key>/reconnect   FIRMWARE_RESTART of a printer that was switched off (board back on)
   GET  /api/hosts/<name>/usb  USB serial ports + cameras on a host and who uses them (read-only, ssh)
@@ -736,6 +736,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.reconnect(key, who)).encode())
                 if parts[3] == "maintenance":
                     return self._send(200, json.dumps(fleet.maint_log(key, body, who), default=str).encode())
+                if parts[3] == "fix-all":
+                    return self._send(200, json.dumps(fleet.stage_all_fixes(key, who)).encode())
                 if parts[3] == "fix":
                     return self._send(200, json.dumps(fleet.stage_fix(key, str(body["rule"]), who)).encode())
                 if parts[3] == "telegram-pack":

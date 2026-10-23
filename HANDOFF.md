@@ -1,88 +1,72 @@
-# Handoff: run the farm pipeline + control room on aali-cli (192.168.1.107)
+# Handoff: the farm on aali-cli (192.168.1.107)
 
-Written 2026-10-22 by the Claude session that built it on the user's Windows workstation. For the Claude/operator on
-aali-cli. Branch: `main` of `sropqras/3dp` (same as `farm-config-backup`).
+Current as of 2026-10-23. aali-cli is the only place work happens: the Windows workstation no longer pushes and must
+`git pull` before any use. Branch `main` of `sropqras/3dp`.
 
-## What's here
+## What runs
 
-| Path | What |
+| What | Where |
 |---|---|
-| `farm/` | `python -m farm` - production pipeline (likhan -> PrusaSlicer -> M600 -> checks -> Moonraker), `watch`, `audit`, `serve` |
-| `farm/web.py`, `farm/static/index.html` | **Farm Control** web UI: live printers + cameras, spool inventory, jobs, batch progress grid |
-| `jobs/qabrastaan/` | Qabrastaan grave-plate jobs and `batch.json` (rows A-R + children, 635 plates) |
-| `prusa/MaxNeo_PETG_0.6_profiles.ini` | PrusaSlicer presets the pipeline slices with (MaxNeo + S1 Plus, Sprite 0.6, PETG 13 mm3/s) |
-| `printers/<Name>/` | Klipper config backups per printer (secrets excluded) |
-| `FARM.md`, `PIPELINE.md` | Printer list, feature matrix, change log; pipeline stages and quirks |
+| **Farm Control** (web UI) | http://192.168.1.107:10111 (Tailscale http://100.75.3.107:10111). LAN only, no auth. jobctl `farm-web` keeps it up |
+| Worker (generate, plan, slice, upload after approval, tracker) | jobctl `farm-worker` |
+| Serious-error + health monitor (ops Telegram bot) | jobctl `farm-monitor`, every 2 min |
+| Nightly config snapshots + Inventory refresh + NAS catalogue | jobctl `farm-backup`, 03:10 |
+| Maker apps | likhan :4111, lithophane :5111, namakdani :6111, lamp/plaque :8111, holder :9111 |
+| Slicer | Flathub PrusaSlicer 2.9.6 (the default on Linux; `python3 -m farm doctor` says "ready to produce") |
 
-Python 3.10+, standard library only.
+After a `git pull`: `~/agent_workspace/infrastructure/farm_control/stop.sh && worker_stop.sh`, then
+`jobctl run farm-web` and `jobctl run farm-worker` (or wait 5 min for the keep-alive jobs).
 
-## Setup on aali-cli
+## The tabs
 
-```bash
-git clone https://github.com/sropqras/3dp.git && cd 3dp
-# PrusaSlicer 2.9.6 CLI (Linux = Flathub)
-flatpak install -y flathub com.prusa3d.PrusaSlicer
-export FARM_PRUSASLICER="flatpak run --command=prusa-slicer com.prusa3d.PrusaSlicer"
-export FARM_LIKHAN_URL="http://127.0.0.1:4111"          # likhan-maker on this host
-# licensed font, NOT in git: copy from the workstation D:\repos\sropqras\3dp\assets\fonts\CharlesWright-Bold.otf
-mkdir -p assets/fonts && cp /path/to/CharlesWright-Bold.otf assets/fonts/
-python3 -m farm status && python3 -m farm audit           # both printers reachable, see baseline gaps
-```
+- **Dashboard**: live printers and cameras, Review & queue (3D view → Approve → Start checklist), jobs.
+  - A switched-off printer shows "switched off", not an error. **Reconnect** after switching it on.
+- **Projects**: large orders as groups → parts × qty (`docs/FARM_PROJECTS.md`).
+  - The Qabrastaan batch is the first project.
+  - Select parts, then **Generate** (from a template) or **Send to printer**. Both only prepare: every bed waits in Review & queue.
+- **Inventory**: every design the farm has made or holds, grouped by printer, project or maker.
+  - Shows each design's prints (with Good/Bad marks) and its portfolio product.
+  - The **NAS catalogue** matrix lists `\\OMV\3dprinting\3dprinting\Project Files` against the printers, with a one-file **Import**.
+- **Spools**: spool stock. Prints deduct from it automatically.
+- **Printers** (`/printers`): fleet health, audit with **Stage fix / Stage all fixes**, gated Apply and rollback.
+  - Also: Telegram pack, service restarts, maintenance, onboarding (`docs/PRINTERS_TAB.md`).
 
-likhan-maker must run `main` (merged from `add-charles-wright-font`) (fixed plate size + font option) - see that repo's HANDOFF.md.
-Until then, jobs with `base_width_mm` fail at likhan with a 400.
+## Printers
 
-## Control room as a service
-
-**DEPLOYED 2026-10-22** the aali-cli way (not systemd): `~/agent_workspace/infrastructure/farm_control/start.sh`
-(idempotent, `GET /health`) kept alive by the jobctl job `farm-web` every 5 min. Open http://192.168.1.107:10111
-(Tailscale http://100.75.3.107:10111). After a `git pull` here: `farm_control/stop.sh && farm_control/start.sh`.
-Port 10111 = next in aali-cli's x111 series (SERVER.md).
-
-LAN only, no authentication: don't expose port 10111 outside the network. The spool inventory is stored in
-`data/inventory.json` (gitignored; seeded from `data/inventory.example.json` on first start).
-
-## Printers it talks to
-
-| Printer | Moonraker |
-|---|---|
-| Ender3MaxNeo | http://192.168.1.184:7125 (host enders3dp) |
-| enders1plus | http://3dpnas.local:7125 (192.168.1.68) |
-
-`scripts/backup-configs.sh` needs SSH to enders3dp (key `~/.ssh/enders3dp`, alias in `~/.ssh/config`); set that up
-on aali-cli the same way if backups should run from there.
-
-## Rules (from FARM.md / the session)
-
-- Never restart Klipper or edit configs on a printer that is printing or paused.
-- Run `python -m farm audit` before onboarding or switching a printer; add a rule to `farm/audit.py` for every new lesson.
-- `farm start` only after the human visual gate (open the run's `.3mf`, bed clear, first colour loaded).
-
-## State at handoff (2026-10-22 23:15) and what's next
-
-Printing when the workstation session closed (printers run independently; nothing below needs the workstation):
-
-| Printer | Job | Next event |
+| Printer | Moonraker | Notes |
 |---|---|---|
-| Ender3MaxNeo | CH02+A11 (black SP-003), started 23:06, ~3 h 40 m | colour change ~01:00: Fluidd prompt + Telegram tgalarm_photo |
-| enders1plus | R50+Q52 (black SP-001), started 22:25, ~3 h 56 m | first layer done 23:15; colour change ~00:45: Fluidd prompt + its own 3dpnas Telegram bot (working) sends the standard pause status; the loud farm alarm (tgalarm_photo) is staged, not live |
-| EnderV3SE | user's own job | watch-only, never touched |
+| Ender3MaxNeo | 192.168.1.184:7125 (enders3dp) | 0.6 Sprite, PETG plates |
+| s1pro | 192.168.1.184:7129 (enders3dp) | own Klipper v0.13 instance, 0.4 nozzle (moved off its SBC 2026-10-23) |
+| enders1plus | 192.168.1.68:7125 (3dpnas) | 0.6 Sprite, shares G-code with the MaxNeo |
+| EnderV3SE | 192.168.1.184:7128 (enders3dp) | Amir's own production printer: **watch-only, hands-off** |
 
-Letter-colour spool SP-002 is on the shelf, shared by both colour changes. A pause is safe overnight on both printers:
-nozzle off after 30 min, bed + motors hold, 12 h cap, RESUME reheats.
+The registry is `printers/registry.json`, edited from the Printers tab only.
 
-The run folders for these jobs (`runs/...`) exist only on the workstation, so a Farm Control started on aali-cli shows
-the printers live but cannot link these two jobs to their runs (no colour-change countdown for them). New runs made
-on aali-cli link normally. `data/inventory.example.json` holds the real spool stock as of the handoff.
+## To do (in order)
 
-### To do (in order)
+1. **Apply the staged printer changes** (Printers tab → Changes → Apply, each while that printer is idle and switched on):
+   - enders1plus 1 (`max_velocity` 200) and 3 (tgalarm line), then **Telegram pack**;
+   - Ender3MaxNeo 4 (cold-nozzle heating for LOAD/UNLOAD/PURGE);
+   - s1pro 7 (cold-nozzle heating + the undefined BEEP).
 
-1. **enders1plus after its print**: deploy the staged config (FARM.md "Staged, not yet on the printer") via Moonraker's
-   file API (no SSH to 3dpnas), FIRMWARE_RESTART, check the console shows the prompt, then `python -m farm audit enders1plus`
-   must pass. Then apply `farm/telegram_pack.conf` to its bot (telegram.conf via the file API, keep [bot]).
-2. **likhan-maker on aali-cli**: deploy likhan-maker `main` + the licensed font (its HANDOFF.md). Until then
-   jobs with fixed plates / monospace fail at likhan.
-3. **Confirm with the user**: plate count (635 listed vs 580 expected), letter colour, colours of sealed spool SP-004.
-4. **Telegram tokens** for EnderV3SE / Ender3Pro / EnderCR10SE bots on enders3dp (rejected by Telegram; crash-looping).
-5. **Filament**: the full batch needs ~40 kg plate colour + ~16 kg letter colour (+5-10 %); 3.8 kg on hand.
-6. **Spool auto-deduction** in Farm Control (split grams at the M600: plate colour before, letter colour after).
+   Each Apply verifies itself and rolls back if Klipper doesn't come back.
+2. **3dpnas SSH** for the USB device listing: `ssh-copy-id -i ~/.ssh/enders3dp.pub aali@3dpnas.local`.
+3. **Confirm values**:
+   - the Hyper PLA volumetric cap (15 proposed; `neo-hyperpla-028-litho` and `neo-pla-020-supports` stay unconfirmed until then);
+   - lithophane t_min/t_max at 0.6;
+   - the Qabrastaan plate count (635 listed vs 580 expected).
+4. **First supported print** (holder): `neo-pla-020-supports` slices for review but refuses upload until a person has
+   printed one and confirmed the profile.
+5. **Phase 7 (invtool intake)** and **phase 8 (EnderV3SE onboarding)** in `docs/ARCHITECTURE.md` wait for Amir's
+   go-ahead.
+6. **Telegram bots** for EnderV3SE / Ender3Pro / EnderCR10SE on enders3dp crash-loop (tokens rejected by Telegram).
+7. **Filament** for the full Qabrastaan batch: ~40 kg plate colour + ~16 kg letter colour (+5-10 %).
+
+## Rules
+
+`CLAUDE.md` is the authority. In short:
+- agents never approve or start prints;
+- printer configs change only through the Printers tab's gated Apply (agents may stage);
+- EnderV3SE is hands-off;
+- the Charles Wright font is never committed or served;
+- read `gcode_store` after any macro change.

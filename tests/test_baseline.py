@@ -104,6 +104,15 @@ class Baseline(unittest.TestCase):
         self.assertIn("VARIABLE=temp VALUE={printer.extruder.target}", macros)
         self.assertIn("# BEEP", macros)
 
+    def test_stage_all_fixes_one_change_per_file_then_the_audit_passes(self):
+        fixable = [r for r in self.failing() if baseline.fixable(r)]
+        staged = baseline.stage_fixes(self.con, "Ender3MaxNeo", self.m.url, fixable, parse_klipper(self.m.config), "agent")
+        self.assertEqual(sorted(c["path"] for c in staged), ["macros.cfg", "printer.cfg"])   # not one per rule
+        self.assertIn("; ", staged[0]["reason"])
+        for c in staged:                                                # both apply: neither is stale
+            self.assertEqual(cfgchange.apply(self.con, c["id"], "ui:test")["state"], "applied")
+        self.assertEqual([r for r in self.failing() if baseline.fixable(r)], [])
+
     def test_rules_needing_judgement_have_no_generated_fix(self):
         s = parse_klipper(self.m.config)
         for rule in ("START_PRINT macro exists", "START_PRINT reads EXTRUDER_TEMP and BED_TEMP",

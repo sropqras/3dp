@@ -1,5 +1,9 @@
 # Farm Control: Spools, Inventory (artefacts + portfolio), Farm Projects
 
+**Status 2026-10-23: all three phases and the OMV catalogue shipped and deployed** (commits `ddd4f04`,
+`98b7fc0`, `021d4dd`). Live: 693 artefacts, 1,100 prints from four printers, 1,668 NAS model files (391 matched to
+printer files), the Qabrastaan project with 5 of 635 plates found printed.
+
 ## Context
 
 The last pass got the tabs wrong:

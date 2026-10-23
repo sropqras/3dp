@@ -9,7 +9,7 @@ Two things for a Klipper 3D-print farm:
 1. **`farm/`**, a production pipeline and a web control room, run as `python -m farm`. It uses Python 3.10+ and the **standard library only**, so don't add dependencies.
 2. **Config backups and farm docs.** `printers/<Name>/` holds Klipper/Moonraker configs pulled from the printer hosts, `prusa/` holds the PrusaSlicer 2.9.6 profiles, and `FARM.md` has the printer list, feature matrix, staged changes and change log.
 
-Read `HANDOFF.md` for current state, and work from its **"To do (in order)"** list. The next job is deploying the staged enders1plus (S1 Plus) config once its current print finishes. It is described in FARM.md under "Staged, not yet on the printer" and must end with `python -m farm audit enders1plus` passing.
+Read `HANDOFF.md` for current state, and work from its **"To do (in order)"** list. The first items are Amir's: applying the changes staged in the Printers tab (an agent never applies them), then `python -m farm audit <printer>` must pass.
 
 aali-cli is now the only place work continues. The Windows workstation no longer pushes, and must `git pull` before any use. Read `PIPELINE.md` for the stages and the human visual gates.
 
@@ -26,6 +26,8 @@ python3 -m farm start runs/<stamp>_<job>      # only after the human visual gate
 python3 -m farm watch runs/<stamp>_<job>      # follow until first layer / colour change / finish / error
 python3 -m farm serve --port 10111            # Farm Control web UI (LAN only, no auth)
 python3 -m farm monitor [--state FILE]        # one read-only pass of the serious-error monitor (jobctl farm-monitor runs it)
+python3 -m farm inventory import              # refresh the Inventory from every printer (read-only) + the OMV NAS list
+python3 -m farm inventory nas-import <path>   # fetch ONE NAS model into data/nas/ as an Inventory artefact
 scripts/backup-configs.sh [ssh-host]          # pull configs from enders3dp into printers/
 ```
 
@@ -52,7 +54,7 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
   5. `moonraker.upload`/`start` handle the printer side. `start` refuses unless Klipper is ready and not printing or paused, and it logs audit failures first.
 - **A job with `"plates"`** puts several labels on one bed. Without it, one design is auto-split into pieces, and each piece gets its own bed. `"base_top"` in `colour_changes` resolves to `base_thickness_mm`.
 - **`farm/audit.py`** encodes every lesson learned on any printer as a rule run against the **live** config (`/printer/objects/query?configfile=settings`). Each rule states why it exists. When a new printer problem is found, add a rule here so it's checked farm-wide.
-- **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and the spool inventory lives in `data/inventory.json` (gitignored, seeded from `inventory.example.json`). The 3D viewer is hand-written WebGL2 in the page, with no libraries. It fetches `/api/model/<run>/<file>`, which `farm/model3mf.py` builds from the run's project `.3mf` (bed-space meshes plus the file's own colour changes, layer heights and bed shape). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
+- **`farm/web.py`** + `static/index.html` make up the control room. The server alone talks to the printers. The page polls `/api/overview`, cameras are proxied through `/api/cam/<printer>`, and spools live in the farm DB (Spools tab; `data/inventory.json` was only the seed). The 3D viewer is hand-written WebGL2 in the page, with no libraries. It fetches `/api/model/<run>/<file>`, which `farm/model3mf.py` builds from the run's project `.3mf` (bed-space meshes plus the file's own colour changes, layer heights and bed shape). Jobs link to printers by matching uploaded remote paths in `runs/`, so runs made on another host don't link.
 - **`farm/monitor.py`** is the serious-error watch. It alerts on Klipper error/shutdown, a print in the error state, Moonraker down two polls running, and new console `!!`/`Unknown command` lines. It's stateful, so it reports only new problems (loud) and recoveries (silent). On aali-cli the jobctl job `farm-monitor` runs it every 2 min and sends alerts through the ops Telegram bot. Each `Printer` carries its `fluidd` URL. Fluidd can't choose an instance from the URL, so a shared Fluidd gets a `fluidd_note`.
 - **The Printers tab** (`/printers`; `farm/hosts.py`, `farm/fleet.py`, `farm/configs.py`, `farm/cfgchange.py`, `farm/baseline.py`, `farm/ops.py`) is how printers are maintained without an AI session:
   - fleet health per host (`printers/hosts.json`);
@@ -65,6 +67,24 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
   - root-only host steps as scripts for a person to run with sudo.
 
   Plan: `docs/PRINTERS_TAB.md`.
+- **Inventory, Projects, NAS** (`docs/FARM_PROJECTS.md`):
+  - **`farm/inventory.py`**:
+    - Artefacts are maker jobs, printer G-code, NAS imports and items.
+    - Prints come from Moonraker history (read-only, every registry printer) and the tracker.
+    - Everything is folded into designs by `design_key()`, which maps PrusaSlicer's `<name>_<time>_<layer>mm_...gcode` back to `<name>`.
+    - Good/Bad marks and portfolio products are a person's.
+  - **`farm/nas.py`**:
+    - Catalogues `\\OMV\3dprinting\3dprinting\Project Files` (and `ProductImages`) with `rsync --list-only` over the OMV rsync daemon.
+    - Never copies in bulk; Import fetches one file.
+  - **`farm/projects.py`**:
+    - A large order is groups → parts × qty.
+    - A part is made from a New-job template (its label personalises it), re-prints an artefact, or is a bought item.
+    - Generate and Send only prepare.
+  - **`farm/makers/upload.py`**: takes a person's STL/3MF through the normal gates.
+- **Switched-off printers** (`monitor.powered_off`): the farm switches idle printers off.
+  - "Unable to connect" or "Lost communication" while nothing prints is a silent note, not an alarm.
+  - **Reconnect** (FIRMWARE_RESTART) is offered only from that state, never on a watch-only printer.
+  - Losing the board mid-print stays loud.
 - **`farm/net.py`** holds the stdlib HTTP helpers. Use it rather than adding `requests`.
 
 ## Rules
@@ -79,7 +99,8 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - After any printer config change, `python -m farm audit <printer>` must pass. Record the change in FARM.md's change log and feature matrix.
 - In the feature matrix, `?` means unconfirmed. Configs contain copy-pasted sections, so don't infer hardware from them.
 - `printers/` backups exclude secrets (`telegram.conf`, `moonraker-obico.cfg`, `octoeverywhere.conf`), and `.gitignore` excludes them too. Keep it that way. Symlinked upstream code (KAMP, fluidd.cfg, timelapse) is recorded in `SYMLINKS.txt`, not copied.
-- enders1plus (3dpnas) has no SSH from here, so deploy to it through Moonraker's file API. `scripts/telegram_pack.sh` only works for instances on enders3dp.
+- enders1plus (3dpnas) is changed like every printer, through the Printers tab (Moonraker's file API). aali-cli's key isn't authorised on 3dpnas yet, so its USB device listing doesn't work until Amir runs `ssh-copy-id`.
+- **Never edit a DB migration that may have run.** The every-2-min `farm-monitor` job runs straight from the working tree, so a migration is applied to the live DB the moment it's saved. Add a new numbered migration instead, with `IF NOT EXISTS` if a draft got out.
 - Macro names like letter+digits (e.g. `_A1`) get parsed by Klipper as classic G-code commands, and the audit flags them.
 - aali-cli has the apt `prusa-slicer` **2.7.2** at `/usr/bin/prusa-slicer`. It's fine for testing, but production G-code needs 2.9.6 (Flathub).
 - Known PrusaSlicer 2.9.6 CLI quirk: it segfaults on `*_extruder = 0` keys. `slicer.extract_preset` strips them.

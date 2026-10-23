@@ -258,7 +258,11 @@ class SwitchedOff(unittest.TestCase):
     def test_off_is_only_unable_to_connect_while_idle(self):
         self.assertTrue(monitor.powered_off("error", self.MSG, "standby"))
         self.assertFalse(monitor.powered_off("error", self.MSG, "printing"))
-        self.assertFalse(monitor.powered_off("error", "Lost communication with MCU 'mcu'", "standby"))
+        lost = "Lost communication with MCU 'mcu'\nOnce the underlying issue is corrected, use the"
+        self.assertTrue(monitor.powered_off("shutdown", lost, "standby"))       # switched off with Klipper running
+        self.assertTrue(monitor.powered_off("shutdown", lost, "complete"))
+        self.assertFalse(monitor.powered_off("shutdown", lost, "error"))        # lost mid-print: loud
+        self.assertFalse(monitor.powered_off("shutdown", "MCU 'mcu' shutdown: Thermal runaway", "standby"))
         self.assertFalse(monitor.powered_off("error", "Unable to open config file x.cfg", "standby"))
         self.assertFalse(monitor.powered_off("ready", "Printer is ready"))
 

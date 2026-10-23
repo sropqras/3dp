@@ -161,62 +161,69 @@ Research found the following (four survey agents plus a design agent):
 
 ## Phased checklist (each phase ships alone; `farm run jobs/qabrastaan/*.json` must keep producing identical G-code throughout)
 
+**Status 2026-10-23:** phases 0-6 shipped and deployed on aali-cli (verified against the code: `farm doctor`,
+`Run.guard`, golden G-code, DB + state machine, profiles + `presets check`, all five maker adapters + the upload
+maker, worker with leases, the start gate, tracker + spool ledger, the New-job page). Deviations from the text below:
+the test registry is `FARM_REGISTRY` / `FARM_MOONRAKER_OVERRIDE` rather than `FARM_PRINTERS_FILE`; the batch grid
+became **Farm Projects** (`docs/FARM_PROJECTS.md`, the Qabrastaan batch imported as the first project); holder runs
+on the unconfirmed `neo-pla-020-supports` profile. Phase 7 (invtool) and phase 8 (EnderV3SE) wait for Amir.
+
 **Phase 0: prerequisites and safety net**
-- [ ] Amir runs `sudo apt-get install -y flatpak`, then the user-level Flathub install of PrusaSlicer 2.9.6, plus `flatpak override --user --filesystem=/home/aali/repos/3dp`. Then set `FARM_PRUSASLICER` in `farm_control/farm.conf`. Today's apt 2.7.2 is for testing only.
-- [ ] Add a `farm doctor` command that reports the slicer version (refuses <2.9.6 for production), each maker's health, and whether the font is present. It never reads or serves the font.
-- [ ] likhan-maker: pull `c5658a6` → `94efc97` (fixed plate size and font option), then restart it through its own `stop.sh && start.sh` while idle. Amir copies the Charles Wright font into `assets/fonts/` by hand. Then dry-run A01 with no upload.
-- [ ] `runlog`: add a `Run.guard()` so every exit writes a `result`, and keep slice/validate/project steps per bed. Make run folder names unique.
-- [ ] Create `tests/` with stdlib unittest (`python -m unittest discover -s tests`) for `align_first_layer`, `insert_colour_changes`, `gcode.validate`, `layout_bed`, `watch.milestones`, `audit.rules` and `model3mf.load`. Add a **golden G-code diff for A01** (ignoring timestamp lines).
+- [x] Amir runs `sudo apt-get install -y flatpak`, then the user-level Flathub install of PrusaSlicer 2.9.6, plus `flatpak override --user --filesystem=/home/aali/repos/3dp`. Then set `FARM_PRUSASLICER` in `farm_control/farm.conf`. Today's apt 2.7.2 is for testing only.
+- [x] Add a `farm doctor` command that reports the slicer version (refuses <2.9.6 for production), each maker's health, and whether the font is present. It never reads or serves the font.
+- [x] likhan-maker: pull `c5658a6` → `94efc97` (fixed plate size and font option), then restart it through its own `stop.sh && start.sh` while idle. Amir copies the Charles Wright font into `assets/fonts/` by hand. Then dry-run A01 with no upload.
+- [x] `runlog`: add a `Run.guard()` so every exit writes a `result`, and keep slice/validate/project steps per bed. Make run folder names unique.
+- [x] Create `tests/` with stdlib unittest (`python -m unittest discover -s tests`) for `align_first_layer`, `insert_colour_changes`, `gcode.validate`, `layout_bed`, `watch.milestones`, `audit.rules` and `model3mf.load`. Add a **golden G-code diff for A01** (ignoring timestamp lines).
 
 **Phase 1: DB and state machine in shadow mode**
-- [ ] Add `farm/db.py` (schema and migrations) and `farm/jobs.py` (transitions, create functions, derived Job state).
-- [ ] Add `farm db init` and `farm import-runs`, which backfills from the manifests.
-- [ ] `cmd_run` also writes rows. Add `GET /api/builds`, read-only. The UI is unchanged.
-- [ ] Tests: legal and illegal transitions, two connections racing the same compare-and-set with exactly one winning, idempotent migrations.
+- [x] Add `farm/db.py` (schema and migrations) and `farm/jobs.py` (transitions, create functions, derived Job state).
+- [x] Add `farm db init` and `farm import-runs`, which backfills from the manifests.
+- [x] `cmd_run` also writes rows. Add `GET /api/builds`, read-only. The UI is unchanged.
+- [x] Tests: legal and illegal transitions, two connections racing the same compare-and-set with exactly one winning, idempotent migrations.
 
 **Phase 2: profiles and presets**
-- [ ] `farm/profiles.py` with `maxneo-petg-036` identical to today's setup (the golden diff must still match). The slicer and validate read their first-layer limits and flow cap from the profile.
-- [ ] Add a farm-owned bundle, `prusa/farm_profiles.ini`. The user's own bundle is untouched. It holds:
+- [x] `farm/profiles.py` with `maxneo-petg-036` identical to today's setup (the golden diff must still match). The slicer and validate read their first-layer limits and flow cap from the profile.
+- [x] Add a farm-owned bundle, `prusa/farm_profiles.ini`. The user's own bundle is untouched. It holds:
   - a 0.6 PLA printer preset: `START_PRINT EXTRUDER_TEMP={first_layer_temperature[0]} BED_TEMP={first_layer_bed_temperature[0]}`, `autoemit_temperature_commands = 0`, and the bed matching the registry;
   - `Creality Hyper PLA 0.6 (farm)` with a real volumetric cap. **The value is for Amir to confirm** (about 15 proposed);
   - `0.28 Litho 0.6 (farm)`.
 
   These make up profile `neo-hyperpla-028-litho` for MaxNeo and S1 Plus.
-- [ ] Add `farm presets check` with a test. For each profile it checks that the presets exist, autoemit is off, both placeholders are present, the cap is >0 and within the limit, no `*_extruder=0` lines remain, and the bed shape is within the registry.
-- [ ] Add a validate check that START_PRINT carries numeric temperatures, and a read-only audit rule that the `START_PRINT` macro reads `EXTRUDER_TEMP` and `BED_TEMP`.
+- [x] Add `farm presets check` with a test. For each profile it checks that the presets exist, autoemit is off, both placeholders are present, the cap is >0 and within the limit, no `*_extruder=0` lines remain, and the bed shape is within the registry.
+- [x] Add a validate check that START_PRINT carries numeric temperatures, and a read-only audit rule that the `START_PRINT` macro reads `EXTRUDER_TEMP` and `BED_TEMP`.
 
 **Phase 3: maker contract, likhan adapter and worker**
-- [ ] Add `farm/makers/{__init__,base,likhan}.py`, `farm/pipeline.py` (`generate_job`, `slice_build` and `upload_build`, extracted from `cmd_run`), and `net` timeouts.
-- [ ] `farm/worker.py`: claim tasks with leases, per-maker semaphores, one slicer at a time, a heartbeat, and `--once`.
-- [ ] Ops:
+- [x] Add `farm/makers/{__init__,base,likhan}.py`, `farm/pipeline.py` (`generate_job`, `slice_build` and `upload_build`, extracted from `cmd_run`), and `net` timeouts.
+- [x] `farm/worker.py`: claim tasks with leases, per-maker semaphores, one slicer at a time, a heartbeat, and `--once`.
+- [x] Ops:
   - `agent_workspace/infrastructure/farm_control/worker_start.sh` and a jobctl job `farm-worker`;
   - a SERVER.md entry and `farm_control/PROJECT.md`;
   - CLAUDE.md and PIPELINE.md updated.
-- [ ] Tests: the contract test against a fake likhan built on `http.server`, and a lease reclaimed after the worker is killed. The golden diff still matches.
+- [x] Tests: the contract test against a fake likhan built on `http.server`, and a lease reclaimed after the worker is killed. The golden diff still matches.
 
 **Phase 4: review, queue and the Start gate in the UI**
-- [ ] `web.py`:
+- [x] `web.py`:
   - a route table;
   - `POST /api/builds/<id>/approve|reject|cancel|move`, `start-dialog` (which issues the nonce) and `start`;
   - `/api/model` records a "viewed" event.
-- [ ] Upload becomes a worker task on approve, using the build-id remote name.
-- [ ] Add `farm/gate.py` as above. `moonraker.start` requires the gate's token, and `cmd_start` goes through the gate.
-- [ ] `index.html`:
+- [x] Upload becomes a worker task on approve, using the build-id remote name.
+- [x] Add `farm/gate.py` as above. `moonraker.start` requires the gate's token, and `cmd_start` goes through the gate.
+- [x] `index.html`:
   - a Review list (3D, Approve, Reject);
   - a queue on each printer card (order, Move, Cancel);
   - a Start dialog with the three checks, the spool picker and the audit status. The server re-checks everything.
-- [ ] Test harness: `FARM_PRINTERS_FILE` points the registry at `tests/fake_moonraker.py` (http.server).
-- [ ] `tests/test_gate.py` covers every refusal reason, plus a race where exactly one of two starts wins. Run a headless Chromium pass on a second port against the fake. **No real printer is called.**
+- [x] Test harness: `FARM_PRINTERS_FILE` points the registry at `tests/fake_moonraker.py` (http.server).
+- [x] `tests/test_gate.py` covers every refusal reason, plus a race where exactly one of two starts wins. Run a headless Chromium pass on a second port against the fake. **No real printer is called.**
 
 **Phase 5: tracker and spool deduction**
-- [ ] Add the tracker to the worker, sharing helpers with `monitor.py` and making no Moonraker writes. Add `gcode.segments()`.
-- [ ] `farm/spools.py`:
+- [x] Add the tracker to the worker, sharing helpers with `monitor.py` and making no Moonraker writes. Add `gcode.segments()`.
+- [x] `farm/spools.py`:
   - a one-time move of `inventory.json` into the DB, with a backup;
   - the ledger;
   - `PATCH /api/spools/<id>` with a version check;
   - the UI saves one spool at a time.
-- [ ] The batch grid reads Job states from the DB. Qabrastaan becomes one Order whose Jobs are labelled A01…, and label matching stays as a fallback.
-- [ ] Tests:
+- [x] The batch grid reads Job states from the DB. Qabrastaan becomes one Order whose Jobs are labelled A01…, and label matching stays as a fallback.
+- [x] Tests:
   - segment sums match the `filament used [g]` header within 0.5 %;
   - partial deduction from a history fixture;
   - replays are idempotent;
@@ -224,15 +231,15 @@ Research found the following (four survey agents plus a design agent):
   - tracker replays from recorded Moonraker JSON.
 
 **Phase 6: New-job page and the other makers**
-- [ ] New-job view, in this order:
+- [x] New-job view, in this order:
   1. choose a maker; the form is rendered from its spec and defaults;
   2. upload files (`data/uploads/`, size-capped, gitignored);
   3. pick a profile valid for that maker, then a layer height, then the printer;
   4. set colours and colour changes, then qty.
 
   It creates the Order and Jobs, which enqueues generation. Fonts are chosen by name only.
-- [ ] Adapters, in this order: lithophane, lamp + plaque, namakdani, holder (experimental).
-- [ ] For each adapter:
+- [x] Adapters, in this order: lithophane, lamp + plaque, namakdani, holder (experimental).
+- [x] For each adapter:
   - contract tests for timeout, 4xx (not retryable) and 5xx (retryable);
   - one live generate against the local maker, with no printer;
   - a 2.9.6 dry slice that passes validate;

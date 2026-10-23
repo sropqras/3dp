@@ -68,11 +68,16 @@ def check(p, prev: dict) -> tuple[dict, list[tuple[str, str]]]:
     return now, out
 
 
+IDLE_JOBS = (None, "", "standby", "complete", "cancelled")
+
+
 def powered_off(klippy: str | None, message: str | None, job: str | None = None) -> bool:
-    """Klipper couldn't reach the board at start-up and nothing was printing: the printer is switched off (or its
-    USB is out), which the farm does to idle printers. Losing the board mid-print is NOT this - that stays loud."""
-    return klippy == "error" and job not in ("printing", "paused") and bool(
-        re.search(r"mcu '[^']*': Unable to connect", message or ""))
+    """The board is gone while nothing was printing: the printer was switched off (or its USB pulled), which the farm
+    does to idle printers. Klipper says "Unable to connect" if it started without the board, "Lost communication"
+    (shutdown) if the board went away under it. Losing the board mid-print leaves the print in "error" (or printing/
+    paused), and that is NOT this - it stays loud."""
+    return klippy in ("error", "shutdown") and job in IDLE_JOBS and bool(
+        re.search(r"mcu '[^']*': Unable to connect|Lost communication with MCU", message or ""))
 
 
 # ---------------------------------------------------------------- fleet health (Printers tab, phase 4)

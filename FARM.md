@@ -48,7 +48,9 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Printer | Staged in repo | Apply when |
 |---|---|---|
-| enders1plus | max_velocity 300 -> 200 (KAMP move); Telegram tgalarm on colour change; then the Telegram pack. Now from Farm Control → Printers: **Stage fix** on its two failing rules, Apply while idle, then **Telegram pack** | after the R50+Q52 print (~02:20 on 2026-10-23); then `python -m farm audit enders1plus` must pass |
+| enders1plus | Farm Control changes **1** (max_velocity 300 -> 200, KAMP move) and **3** (tgalarm on colour change, one line); then **Telegram pack** | when it is switched on and idle; then `python -m farm audit enders1plus` must pass |
+| Ender3MaxNeo | change **4**: LOAD/UNLOAD/PURGE reheat a nozzle the paused idle timeout cooled (`_FARM_HEAT_FOR_FILAMENT`) | when idle; then read `gcode_store` and `farm audit Ender3MaxNeo` |
+| s1pro | change **7**: the same reheat + comment out the undefined `BEEP` in PRINT_END (one change, macros.cfg) | when idle; then read `gcode_store` and `farm audit s1pro` |
 
 ## Change log
 

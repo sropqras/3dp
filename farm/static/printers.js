@@ -34,6 +34,13 @@ async function stageFix(key, rule) {
   alert(`Staged ${r.length} change(s): ${r.map((c) => c.id + " " + c.path + " (" + c.summary + ")").join(", ")}. Review the diff on the card, then Apply when ${key} is idle.`);
   refresh();
 }
+async function stageAllFixes(key, n) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  if (!confirm(`Stage the generated fixes for ${n} failing rules on ${key}? Nothing reaches the printer until you Apply.`)) return;
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/fix-all`);
+  if (r) alert(`Staged ${r.length} change(s): ${r.map((c) => c.id + " " + c.path).join(", ")}. Review the diff on the card, then Apply when ${key} is idle.`);
+  refresh();
+}
 async function telegramPack(key) {
   if (!operator()) { alert("Put your name in the 'You' box first."); return; }
   if (!confirm(`Apply the farm Telegram pack to ${key}'s bot? [bot] (token, chat) is kept; a copy of the old telegram.conf stays on the printer; only the bot restarts.`)) return;
@@ -83,7 +90,9 @@ function auditBlock(v) {
   if (!v.audit) return `<div class="dim">audit needs Klipper ready (now ${esc(v.klippy_state)})</div>`;
   const fails = v.audit.filter((a) => a.status === "FAIL"), warns = v.audit.filter((a) => a.status === "WARN");
   const head = fails.length ? `<span class="bad">✗ ${fails.length} baseline gap${fails.length > 1 ? "s" : ""}</span>` : `<span class="ok">✓ farm baseline</span>`;
+  const nfix = v.readonly ? 0 : fails.filter((a) => a.fixable).length;
   return `<details><summary>${head}${warns.length ? ` <span class="warn">· ${warns.length} warning</span>` : ""} — ${v.audit.length} rules</summary>
+    ${nfix > 1 ? `<div class="row" style="margin:6px 0"><button class="ghost" onclick='stageAllFixes(${JSON.stringify(v.key)}, ${nfix})'>Stage all ${nfix} fixes (one change per file)</button></div>` : ""}
     <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td>
       <td>${a.status === "FAIL" && !v.readonly && !a.fixable ? `<span class="dim" title="needs judgement: use + Stage change">edit manually</span>` : ""}${a.status === "FAIL" && !v.readonly && a.fixable ? `<button class="ghost" onclick='stageFix(${JSON.stringify(v.key)}, ${JSON.stringify(a.rule)})'>Stage fix</button>` : ""}</td></tr>`).join("")}</table></details>`;
 }

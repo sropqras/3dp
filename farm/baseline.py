@@ -337,3 +337,20 @@ def stage_fix(con, printer: str, url: str, rule: str, settings: dict, author: st
     if not staged:
         raise cfgchange.Refused(f"no generated fix for '{rule}' - open the editor (Stage change) for this one")
     return staged
+
+
+def stage_fixes(con, printer: str, url: str, rules: list[str], settings: dict, author: str) -> list[dict]:
+    """Several rules' fixes as ONE change per file (staged separately they would share a base and the second
+    would be refused as stale once the first is applied)."""
+    live = {f["path"]: configs.read_file(url, f["path"]).decode("utf-8", "replace") for f in configs.list_files(url)}
+    files, why = dict(live), {}
+    for rule in rules:
+        for f in fixes_for(rule, settings, files, printer):
+            files[f["path"]] = f["content"]
+            why.setdefault(f["path"], []).append(rule)
+    staged = [cfgchange.stage(con, printer, url, path, new_content=files[path],
+                              reason="farm baseline: " + "; ".join(rs), author=author)
+              for path, rs in why.items() if files[path] != live.get(path)]
+    if not staged:
+        raise cfgchange.Refused("none of these rules has a generated fix - open the editor (Stage change)")
+    return staged

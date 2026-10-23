@@ -196,6 +196,21 @@ def stage_fix(key: str, rule: str, actor: str) -> list[dict]:
         con.close()
 
 
+def stage_all_fixes(key: str, actor: str) -> list[dict]:
+    """Every failing audit rule that has a generated fix, one staged change per file."""
+    v = _instance(key)
+    rules = [a["rule"] for a in _audit(v) if a["status"] == "FAIL" and a["fixable"]]
+    if not rules:
+        raise cfgchange.Refused("no failing rule with a generated fix")
+    con = db.connect()
+    try:
+        staged = baseline.stage_fixes(con, key, v["url"], rules, cfgchange._settings(v["url"]), actor)
+        _cache.pop(f"audit:{key}", None)
+        return [{"id": c["id"], "path": c["path"], "summary": c["summary"], "reason": c["reason"]} for c in staged]
+    finally:
+        con.close()
+
+
 def telegram_pack(key: str, actor: str) -> dict:
     v = _instance(key)
     con = db.connect()
@@ -392,7 +407,9 @@ def reconnect(key: str, actor: str, wait_s: float = 20) -> dict:
     if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly:
         raise cfgchange.Refused(f"{key} is watch-only: use its own Fluidd")
     info = net.get_json(f"{v['url']}/printer/info", timeout=5)["result"]
-    if not powered_off(info.get("state"), info.get("state_message")):
+    job = ((net.get_json(f"{v['url']}/printer/objects/query?print_stats=state", timeout=5)["result"]["status"]
+            .get("print_stats") or {}).get("state"))
+    if not powered_off(info.get("state"), info.get("state_message"), job):
         raise cfgchange.Refused(f"{key} is {info.get('state')}, not waiting for its board - nothing to reconnect")
     net.post_json(f"{v['url']}/printer/firmware_restart", timeout=10)
     deadline = time.time() + wait_s

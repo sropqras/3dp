@@ -72,8 +72,6 @@ def health(host: dict, port: int, reg: dict) -> dict:
     v["state"] = pinfo.get("state")
     v["state_message"] = (pinfo.get("state_message") or "").strip().splitlines()[0][:200] if pinfo.get("state_message") else ""
     v["klipper_version"] = pinfo.get("software_version")
-    from .monitor import powered_off
-    v["off"] = powered_off(pinfo.get("state"), pinfo.get("state_message"))
     v["name"] = instance_name(pinfo.get("config_file", ""), host["name"])
     p = reg.get((_ip(host["address"]), port))
     v["registry"] = p.name if p else None
@@ -85,6 +83,8 @@ def health(host: dict, port: int, reg: dict) -> dict:
     v["job"] = (s.get("print_stats") or {}).get("state")
     v["file"] = (s.get("print_stats") or {}).get("filename")
     v["paused"] = bool((s.get("pause_resume") or {}).get("is_paused"))
+    from .monitor import powered_off
+    v["off"] = powered_off(pinfo.get("state"), pinfo.get("state_message"), v["job"])
     upd = _get(f"{base}/machine/update/status")
     vi = (upd or {}).get("version_info", {}) if isinstance(upd, dict) else {}
     v["versions"] = {k: (vi[k].get("version") or vi[k].get("full_version_string") or "?")
