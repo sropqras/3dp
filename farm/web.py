@@ -18,6 +18,8 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/fleet/<key>/reconnect   FIRMWARE_RESTART of a printer that was switched off (board back on)
   GET  /api/fleet/<key>/fluidd   POST .../fluidd | fluidd-undo {id}   the farm Fluidd layout (farm/standard.py)
   POST /api/fleet/<key>/missing-include   stage commenting out an [include] whose file is missing (onboarding)
+  GET  /api/fleet/<key>/restore-points | restore-diff?snapshot=   POST .../restore {snapshot, reason} | origin
+       restore points (farm/restore.py): the original config, snapshots, the prints each ran; a restore is staged
   GET  /api/hosts/<name>/usb  USB serial ports + cameras on a host and who uses them (read-only, ssh)
   POST /api/scripts {kind: camera|instance, ...}   root-only host steps as a script to run with sudo
   POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
@@ -653,6 +655,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.fluidd(key), default=str).encode())
                 if parts[1:] == ["diff"]:
                     return self._send(200, fleet.diff(key, q["path"][0]).encode(), "text/plain; charset=utf-8")
+                if parts[1:] == ["restore-points"]:
+                    return self._send(200, json.dumps(fleet.restore_points(key), default=str).encode())
+                if parts[1:] == ["restore-diff"]:
+                    return self._send(200, fleet.restore_diff(key, int(q["snapshot"][0])).encode(), "text/plain; charset=utf-8")
             except (LookupError, KeyError, IndexError) as e:
                 return self._send(404, json.dumps({"error": str(e)}).encode())
             except PermissionError as e:
@@ -846,6 +852,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.fluidd_undo(key, int(body["id"]), who)).encode())
                 if parts[3] == "missing-include":
                     return self._send(200, json.dumps(fleet.stage_missing_include(key, who)).encode())
+                if parts[3] == "restore":
+                    return self._send(200, json.dumps(fleet.stage_restore(key, int(body["snapshot"]), str(body.get("reason") or ""), who)).encode())
+                if parts[3] == "origin":
+                    return self._send(200, json.dumps(fleet.pin_origin(key, who)).encode())
                 if parts[3] == "reconnect":
                     return self._send(200, json.dumps(fleet.reconnect(key, who)).encode())
                 if parts[3] == "maintenance":

@@ -22,6 +22,7 @@ import argparse
 import os
 import json
 import sys
+import time
 from pathlib import Path
 
 from . import audit, db, jobs, monitor, moonraker, pipeline, printers, profiles, watch
@@ -219,6 +220,46 @@ def cmd_config(args):
             sys.exit(f"not staged: {e}")
         print(f"staged change {c['id']}: {c['summary']} - review and apply it in Farm Control -> Printers")
         return
+    if args.action in ("origin", "archive"):
+        # pin each printer's original config (once) and copy its host-side history into printers/_archive (git)
+        from . import hosts, restore
+        for v in hosts.fleet(cameras=False):
+            if not v["reachable"] or (args.printer and args.printer not in (v.get("key"), v.get("registry"), v.get("name"))):
+                continue
+            try:
+                if args.action == "origin":
+                    o = restore.capture_origin(con, v["key"], v["url"], actor=args.author or "cli")
+                    m = o.get("meta") or {}
+                    print(f"{v['key']}: origin {'already pinned' if o.get('unchanged') else 'pinned'} (snapshot {o['id']}, "
+                          f"{len(o['files'])} files; from .bak: {', '.join(m.get('edited_before_first_snapshot') or []) or 'none'})")
+                h = restore.archive_history(v["key"], v["url"])
+                print(f"{v['key']}: history {h['written']} new, {h['kept']} kept"
+                      + (f", skipped {len(h['skipped'])}: {'; '.join(h['skipped'][:4])}" if h["skipped"] else ""))
+            except Exception as e:
+                print(f"{v['key']}: FAILED {type(e).__name__}: {str(e)[:200]}")
+        if args.kiauh:
+            h = restore.archive_kiauh()
+            print(f"kiauh: {h['written']} new, {h['kept']} kept, skipped {len(h['skipped'])}")
+        return
+    if args.action == "points":
+        from . import restore
+        v = fleet._instance(args.printer)
+        for p in restore.points(con, v["key"], v["url"]):
+            d = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else "?"
+            pr = p["prints"]
+            print(f"{p['id']:>5} {p['kind']:<6} {d(p['since'])} -> {'now' if p['current'] else d(p['until'])}  "
+                  f"{pr['completed']} completed, {pr['failed']} failed ({p['evidence']})  {', '.join(p['labels'])}")
+        return
+    if args.action == "restore":
+        from . import restore
+        v = fleet._instance(args.printer)
+        try:
+            r = restore.stage_restore(con, v["key"], v["url"], args.id, author=args.author or "cli", reason=args.reason)
+        except (cfgchange.Refused, LookupError) as e:
+            sys.exit(f"not staged: {e}")
+        print(f"staged restore {r['batch']}: changes {r['changes']} ({', '.join(r['files'])}) - applied together by a "
+              f"person in Farm Control -> Printers" + (f"; left in place: {', '.join(r['left_in_place'])}" if r["left_in_place"] else ""))
+        return
     if args.action == "cancel":
         c = cfgchange.get(con, args.id)
         jobs.transition(con, "config_change", args.id, c["state"], "cancelled", "agent" if args.author == "agent" else "cli")
@@ -255,6 +296,16 @@ def cmd_backup(args):
                  "no drift" if not (d["changed"] or d["added"] or d["removed"]) else
                  f"DRIFT changed={d['changed']} added={d['added']} removed={d['removed']}")
         print(f"OK   {v['key']}: {len(snap['files'])} files, {what}; {drift}")
+        try:   # a printer's original config is pinned the first time the farm sees it; its host history archived
+            from . import restore
+            if not configs.origin(con, v["key"]):
+                o = restore.capture_origin(con, v["key"], v["url"], actor="backup")
+                print(f"OK   {v['key']}: original config pinned (snapshot {o['id']})")
+            h = restore.archive_history(v["key"], v["url"])
+            if h["written"]:
+                print(f"OK   {v['key']}: {h['written']} host history file(s) archived into printers/_archive")
+        except Exception as e:
+            print(f"WARN {v['key']}: origin/history: {str(e)[:120]}")
         if args.to_repo:
             dest = Path(__file__).resolve().parent.parent / "printers" / (v.get("registry") or v["name"])
             written = configs.to_repo(con, v["key"], dest)
@@ -346,7 +397,8 @@ def main():
     a.add_argument("printer", nargs="?")
     sub.add_parser("doctor")
     cf = sub.add_parser("config")
-    cf.add_argument("action", choices=["list", "show", "stage", "apply", "rollback", "cancel"])
+    cf.add_argument("action", choices=["list", "show", "stage", "apply", "rollback", "cancel",
+                                       "origin", "points", "restore", "archive"])
     cf.add_argument("id", nargs="?", type=int)
     cf.add_argument("--printer")
     cf.add_argument("--path", default="printer.cfg")
@@ -356,6 +408,7 @@ def main():
     cf.add_argument("--file", help="stage this whole file as the new content")
     cf.add_argument("--reason", default="")
     cf.add_argument("--author", help="who stages it (an AI session: --author agent)")
+    cf.add_argument("--kiauh", action="store_true", help="archive: also KIAUH's printer-data-backups over read-only SSH")
     bk = sub.add_parser("backup")
     bk.add_argument("printer", nargs="?")
     bk.add_argument("--to-repo", action="store_true")

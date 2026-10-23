@@ -178,6 +178,15 @@ MIGRATIONS = [
     CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT, at REAL);
     ALTER TABLE nas_files ADD COLUMN category_id INTEGER
     """,
+    # 11: restore points (farm/restore.py): a printer's pinned original state next to its live snapshots, the file
+    # times that date a config (so a print can be matched to the config it ran on), changes applied as one set
+    """
+    ALTER TABLE config_snapshots ADD COLUMN kind TEXT NOT NULL DEFAULT 'live';
+    ALTER TABLE config_snapshots ADD COLUMN mtimes TEXT;
+    ALTER TABLE config_snapshots ADD COLUMN meta TEXT;
+    ALTER TABLE config_changes ADD COLUMN batch TEXT;
+    CREATE INDEX IF NOT EXISTS config_changes_batch ON config_changes(batch)
+    """,
 ]
 
 
@@ -244,7 +253,7 @@ def row(r: sqlite3.Row | None) -> dict | None:
         return None
     d = dict(r)
     for k in ("params", "inputs", "colours", "colour_hex", "colour_changes", "colour_zs", "change_zs", "bbox",
-              "segments", "detail", "checklist", "payload", "files"):
+              "segments", "detail", "checklist", "payload", "files", "mtimes", "meta"):
         if isinstance(d.get(k), str):
             try:
                 d[k] = json.loads(d[k])

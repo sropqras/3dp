@@ -100,6 +100,22 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
   - Change a shared macro in the repo file and bump its `variable_version`, never on one printer.
   - Fluidd layout (macro groups from the `Group |` description prefix, farm temperature presets) is a person's action
     in the Printers tab, kept in `ui_pushes` for Undo.
+- **Restore points** (`farm/restore.py`, Printers tab → Restore points; `farm config origin|points|restore|archive`):
+  - Each printer's **original** config (before the farm's first change) is pinned once as a `config_snapshots` row of
+    kind `origin` and never re-taken. Files edited before the first farm snapshot come from the host's own
+    `<file>.bak-YYYYMMDD-HHMM` copies. It is also kept in git under `printers/_archive/<printer>/origin/` + `ORIGIN.md`.
+  - `printers/_archive/<printer>/host|kiauh/` holds the hosts' own history (`.bak`, SAVE_CONFIG `printer-*.cfg`,
+    Fluidd zips, KIAUH 2024-25 backups). Secrets are left out by name (`configs.secret`, which covers copies like
+    `telegram.conf.bak-*`) and by content. Tarballs are never archived.
+  - Snapshots keep file times (`mtimes`), so each config has a live window. Prints that started and finished
+    inside it are its evidence ("exact" / "likely"); **last known good** = the newest config with completed prints
+    and none marked bad.
+  - A restore stages one change per differing file as a **batch** (`config_changes.batch`, kind `restore`). The gate
+    applies a batch together: one snapshot, one restart, all put back if Klipper doesn't load. Audit FAILs the old
+    config had are reported, not counted as failure. Rollback and Cancel act on the whole set. The gate also takes
+    an "after change" snapshot so the new config is dated from the moment it's on.
+  - The nightly `farm backup` pins an origin for any printer without one and archives new history files.
+    Committing `printers/_archive` is a development session's job (git is the copy off aali-cli).
 - **Switched-off printers** (`monitor.powered_off`): the farm switches idle printers off.
   - "Unable to connect" or "Lost communication" while nothing prints is a silent note, not an alarm.
   - **Reconnect** (FIRMWARE_RESTART) is offered only from that state, never on a watch-only printer.

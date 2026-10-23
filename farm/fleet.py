@@ -61,7 +61,7 @@ def overview() -> dict:
                 if v.get("registry"):
                     v["maintenance"] = [s for s in maintenance.status(con, v["registry"], v.get("print_hours"))]
                 v["changes"] = [{k: c[k] for k in ("id", "state", "path", "summary", "reason", "author", "error",
-                                                   "applied_by", "created_at")}
+                                                   "applied_by", "created_at", "batch")}
                                 for c in cfgchange.listing(con, v["key"], 8)]
             out.append(v)
     finally:
@@ -181,14 +181,63 @@ def change_action(cid: int, action: str, actor: str) -> dict:
         elif action == "rollback":
             c = cfgchange.rollback(con, cid, actor)
         elif action in ("cancel", "reject"):
-            c = cfgchange.get(con, cid)
-            jobs.transition(con, "config_change", cid, c["state"], "cancelled" if action == "cancel" else "rejected", "ui")
+            for m in cfgchange.batch(con, cid):     # a set (a restore) is cancelled whole: half of one is no config
+                jobs.transition(con, "config_change", m["id"], m["state"], "cancelled" if action == "cancel" else "rejected", "ui")
             c = cfgchange.get(con, cid)
         else:
             raise LookupError(action)
         _cache.pop(f"audit:{c['printer']}", None)
         _cache.pop("fleet", None)
         return {k: v for k, v in c.items() if k != "new_content"}
+    finally:
+        con.close()
+
+
+def restore_points(key: str) -> dict:
+    """The printer's original config, its snapshots and the prints each one ran (farm/restore.py)."""
+    from . import restore
+    v = _instance(key)
+    con = db.connect()
+    try:
+        return {"key": key, "points": restore.points(con, key, v["url"]), "origin": bool(configs.origin(con, key))}
+    finally:
+        con.close()
+
+
+def restore_diff(key: str, snap_id: int) -> str:
+    from . import restore
+    v = _instance(key)
+    con = db.connect()
+    try:
+        return restore.diff(con, key, v["url"], snap_id)
+    finally:
+        con.close()
+
+
+def stage_restore(key: str, snap_id: int, reason: str, actor: str) -> dict:
+    """Stage putting a restore point back (one batch, applied together by a person through the gate)."""
+    from . import restore
+    _person(actor)
+    v = _instance(key)
+    _not_watch_only(key, v)
+    con = db.connect()
+    try:
+        out = restore.stage_restore(con, key, v["url"], snap_id, author=actor, reason=reason)
+        _cache.pop("fleet", None)
+        return out
+    finally:
+        con.close()
+
+
+def pin_origin(key: str, actor: str) -> dict:
+    """Pin a printer's original config now (the nightly backup does it for any printer that has none)."""
+    from . import restore
+    _person(actor)
+    v = _instance(key)
+    con = db.connect()
+    try:
+        o = restore.capture_origin(con, key, v["url"], actor=actor)
+        return {"id": o["id"], "already": bool(o.get("unchanged")), "files": len(o["files"])}
     finally:
         con.close()
 

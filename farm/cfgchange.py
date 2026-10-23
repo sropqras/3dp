@@ -203,48 +203,72 @@ def _farm_md(c: dict, actor: str):
         pass
 
 
+def batch(con, cid: int) -> list[dict]:
+    """The changes applied together with this one (a restore stages one change per file as a set): staged ones of
+    the same batch, this one first. A change outside a batch is a set of one."""
+    c = get(con, cid)
+    if not c or not c.get("batch"):
+        return [c] if c else []
+    rest = [db.row(r) for r in con.execute("SELECT * FROM config_changes WHERE batch=? AND state='staged' AND id<>? "
+                                           "ORDER BY id", (c["batch"], cid))]
+    return [c] + rest
+
+
 def apply(con, cid: int, actor: str) -> dict:
     c = get(con, cid)
     if c is None:
         raise Refused(f"no change {cid}")
     if c["state"] != "staged":
         raise Refused(f"change {cid} is {c['state']}, not staged")
+    group = batch(con, cid)
     st = _gate(con, c, actor)
-    try:
-        live = configs.read_file(c["url"], c["path"])
-    except Exception:
-        live = None
-    if (configs.sha(live) if live is not None else None) != c["base_sha"]:
-        raise Refused(f"{c['path']} changed on the printer since this was staged - stage it again")
+    lives = {}
+    for m in group:
+        try:
+            live = configs.read_file(m["url"], m["path"])
+        except Exception:
+            live = None
+        if (configs.sha(live) if live is not None else None) != m["base_sha"]:
+            raise Refused(f"{m['path']} changed on the printer since this was staged - stage it again")
+        lives[m["id"]] = live
     # a file this change includes that another staged change creates (the farm macro library): that one goes on
-    # first, or Klipper fails on the missing file and the gate has to roll back
-    incs = re.findall(r"^\s*\[include\s+([^\]*]+?)\s*\]", c["new_content"] or "", re.M | re.I)
+    # first, or Klipper fails on the missing file and the gate has to roll back. A file the same set creates is fine.
+    ours = {m["path"] for m in group}
+    incs = [(m, inc) for m in group
+            for inc in re.findall(r"^\s*\[include\s+([^\]*]+?)\s*\]", m["new_content"] or "", re.M | re.I)]
     present = {f["path"] for f in configs.list_files(c["url"])} if incs else set()
-    for inc in incs:
-        target = posixpath.normpath(posixpath.join(posixpath.dirname(c["path"]), inc.strip()))
-        if target in present:
+    for m, inc in incs:
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(m["path"]), inc.strip()))
+        if target in present or target in ours:
             continue
-        first = con.execute("SELECT id FROM config_changes WHERE printer=? AND path=? AND state='staged' AND id<>?",
-                            (c["printer"], target, cid)).fetchone()
+        first = con.execute("SELECT id FROM config_changes WHERE printer=? AND path=? AND state='staged' AND id NOT IN "
+                            f"({','.join('?' * len(group))})", (c["printer"], target, *[g["id"] for g in group])).fetchone()
         if first:
             raise Refused(f"apply change {first[0]} ({target}) first - this one includes it")
-    jobs.transition(con, "config_change", cid, "staged", "applying", "cfggate", by=actor)
-    con.execute("UPDATE config_changes SET applied_by=?, applied_at=? WHERE id=?", (actor, db.now(), cid))
+    for m in group:      # the clicked change first: of two people pressing Apply, one wins here
+        jobs.transition(con, "config_change", m["id"], "staged", "applying", "cfggate", by=actor,
+                        **({"batch": c["batch"]} if c.get("batch") else {}))
+        con.execute("UPDATE config_changes SET applied_by=?, applied_at=? WHERE id=?", (actor, db.now(), m["id"]))
     try:
-        return _apply(con, c, cid, st, live, actor)
+        _apply(con, group, st, lives, actor)
+        return get(con, cid)
     except Exception as e:
         # anything unexpected (printer gone mid-verify, ...) must not leave the change "applying"/"verifying": that
         # would block every later change to this printer. Failed = a person looks (the snapshot is there to restore)
-        cur = get(con, cid)
-        if cur["state"] in ("applying", "verifying"):
-            con.execute("UPDATE config_changes SET error=? WHERE id=?", (f"{type(e).__name__}: {str(e)[:500]}", cid))
-            jobs.transition(con, "config_change", cid, cur["state"], "failed", "cfggate", error=str(e)[:300])
+        for m in group:
+            cur = get(con, m["id"])
+            if cur["state"] in ("applying", "verifying"):
+                con.execute("UPDATE config_changes SET error=? WHERE id=?", (f"{type(e).__name__}: {str(e)[:500]}", m["id"]))
+                jobs.transition(con, "config_change", m["id"], cur["state"], "failed", "cfggate", error=str(e)[:300])
         raise
 
 
-def _apply(con, c: dict, cid: int, st: dict, live, actor: str) -> dict:
-    snap = configs.snapshot(con, c["printer"], c["url"], actor=f"before change {cid}")
-    con.execute("UPDATE config_changes SET before_snapshot=? WHERE id=?", (snap["id"], cid))
+def _apply(con, group: list[dict], st: dict, lives: dict, actor: str):
+    c = group[0]
+    ids = [m["id"] for m in group]
+    snap = configs.snapshot(con, c["printer"], c["url"], actor=f"before change {', '.join(map(str, ids))}")
+    for m in group:
+        con.execute("UPDATE config_changes SET before_snapshot=? WHERE id=?", (snap["id"], m["id"]))
     # switched off at the wall: the host is up, Klipper loads the config and only the board is missing - the
     # change is verified as far as it can be (config loads, audit) and the console is read when it's next on
     off = _board_off(st)
@@ -252,56 +276,75 @@ def _apply(con, c: dict, cid: int, st: dict, live, actor: str) -> dict:
     before_fails = _fails(c["url"], c["printer"]) if comparable else set()
     t0 = time.time() - 1
     try:
-        _upload(c["url"], c["path"], c["new_content"].encode())
+        for m in group:
+            _upload(m["url"], m["path"], m["new_content"].encode())
         after = _restart_and_wait(c["url"])
     except Exception as e:
         after = {"klippy": "unreachable", "message": str(e)[:300]}
     loaded = after.get("klippy") == "ready" or (off and _board_off(after))
     if not loaded:
-        # Klipper didn't come back with the new config: put the old file back straight away
+        # Klipper didn't come back with the new config: put the old files back straight away
         result = {"klipper": after, "auto_rollback": True}
         try:
-            if live is not None:
-                _upload(c["url"], c["path"], live)
+            for m in group:
+                if lives[m["id"]] is not None:
+                    _upload(m["url"], m["path"], lives[m["id"]])
             result["after_rollback"] = _restart_and_wait(c["url"])
         except Exception as e:
             result["rollback_error"] = str(e)[:300]
-        con.execute("UPDATE config_changes SET result=?, error=? WHERE id=?",
-                    (json.dumps(result), f"Klipper {after.get('klippy')}: {after.get('message', '')[:300]}", cid))
-        jobs.transition(con, "config_change", cid, "applying", "failed", "cfggate", **result)
-        jobs.transition(con, "config_change", cid, "failed", "rolled_back", "cfggate", automatic=True)
-        return get(con, cid)
-    jobs.transition(con, "config_change", cid, "applying", "verifying", "cfggate")
+        for m in group:
+            con.execute("UPDATE config_changes SET result=?, error=? WHERE id=?",
+                        (json.dumps(result), f"Klipper {after.get('klippy')}: {after.get('message', '')[:300]}", m["id"]))
+            jobs.transition(con, "config_change", m["id"], "applying", "failed", "cfggate", **result)
+            jobs.transition(con, "config_change", m["id"], "failed", "rolled_back", "cfggate", automatic=True)
+        return
+    for m in group:
+        jobs.transition(con, "config_change", m["id"], "applying", "verifying", "cfggate")
     after_fails = _fails(c["url"], c["printer"])
     # a printer that wasn't ready before (being onboarded, a broken config) has no "before" to compare with:
-    # only its console counts then
+    # only its console counts then. A restore puts an older config back on purpose: the audit FAILs that config
+    # had come back with it and are reported, not counted against it
+    restoring = all(m["kind"] == "restore" for m in group)
     new_fails = sorted(after_fails - before_fails) if comparable else []
     console = _console_since(c["url"], t0)
     result = {"klipper": after, "new_audit_fails": new_fails, "console_errors": console,
               **({"board_off": True, "note": "applied with the printer switched off: the config loads and the audit "
                   "ran; macros first run when it is on - read its console after Reconnect"} if off else {}),
+              **({"files": [m["path"] for m in group]} if len(group) > 1 else {}),
               "fixed_audit_fails": sorted(before_fails - after_fails), "audit_fails_now": sorted(after_fails)}
-    con.execute("UPDATE config_changes SET result=? WHERE id=?", (json.dumps(result), cid))
-    if new_fails or console:
-        con.execute("UPDATE config_changes SET error=? WHERE id=?",
-                    ("; ".join([f"new audit FAIL: {f}" for f in new_fails] + console)[:1000], cid))
-        jobs.transition(con, "config_change", cid, "verifying", "failed", "cfggate", **result)
-    else:
-        jobs.transition(con, "config_change", cid, "verifying", "applied", "cfggate", **result)
-        _farm_md(get(con, cid), actor)
-    return get(con, cid)
+    bad = ([] if restoring else [f"new audit FAIL: {f}" for f in new_fails]) + console
+    if not bad:   # the new config dated from now on: prints on it count as its evidence (farm/restore.py)
+        try:
+            configs.snapshot(con, c["printer"], c["url"], actor=f"after change {', '.join(map(str, ids))}")
+        except Exception:
+            pass
+    for m in group:
+        con.execute("UPDATE config_changes SET result=? WHERE id=?", (json.dumps(result), m["id"]))
+        if bad:
+            con.execute("UPDATE config_changes SET error=? WHERE id=?", ("; ".join(bad)[:1000], m["id"]))
+            jobs.transition(con, "config_change", m["id"], "verifying", "failed", "cfggate", **result)
+        else:
+            jobs.transition(con, "config_change", m["id"], "verifying", "applied", "cfggate", **result)
+            _farm_md(get(con, m["id"]), actor)
 
 
 def rollback(con, cid: int, actor: str) -> dict:
+    """Put back the files as they were before an applied (or failed) change - every file of its set together."""
     c = get(con, cid)
     if c is None or c["state"] not in ("applied", "failed"):
         raise Refused(f"change {cid} is {c and c['state']}: only an applied or failed change can be rolled back")
     _gate(con, c, actor)
+    group = [c] + ([db.row(r) for r in con.execute(
+        "SELECT * FROM config_changes WHERE batch=? AND id<>? AND state IN ('applied','failed') ORDER BY id",
+        (c["batch"], cid))] if c.get("batch") else [])
     snap = configs.get(con, c["before_snapshot"]) if c["before_snapshot"] else None
-    digest = (snap or {}).get("files", {}).get(c["path"])
-    if not digest:
+    put = [(m, (snap or {}).get("files", {}).get(m["path"])) for m in group]
+    if not any(d for _, d in put):
         raise Refused(f"no copy of {c['path']} from before change {cid} (it was a new file?)")
-    _upload(c["url"], c["path"], configs.blob(c["printer"], digest))
+    for m, digest in put:
+        if digest:        # a file the change created stays; nothing the old config loads refers to it
+            _upload(m["url"], m["path"], configs.blob(m["printer"], digest))
     after = _restart_and_wait(c["url"])
-    jobs.transition(con, "config_change", cid, c["state"], "rolled_back", "cfggate", by=actor, klipper=after)
+    for m, _ in put:
+        jobs.transition(con, "config_change", m["id"], m["state"], "rolled_back", "cfggate", by=actor, klipper=after)
     return get(con, cid)

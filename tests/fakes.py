@@ -95,6 +95,7 @@ class FakeMoonraker:
         self.settings, self.state, self.paused, self.klipper = settings, "standby", False, "ready"
         self.files, self.starts = {}, []
         self.config = {}            # path -> bytes: the printer's config root
+        self.mtimes = {}            # config path -> modified time (0 when not set)
         self.settings_from_config = False   # True: configfile settings are parsed from self.config, like Klipper
         self.services = {"klipper": "active/running"}   # name -> "active/sub" (what /machine/system_info reports)
         self.service_restarts = []
@@ -137,7 +138,7 @@ class FakeMoonraker:
                         "extruder": {"temperature": 25.0, "target": 0.0},
                         "heater_bed": {"temperature": 24.0, "target": 0.0}}}})
                 if u.path == "/server/files/list" and q.get("root") == ["config"]:
-                    return self._json(200, {"result": [{"path": p, "size": len(b), "modified": 0}
+                    return self._json(200, {"result": [{"path": p, "size": len(b), "modified": outer.mtimes.get(p, 0)}
                                                        for p, b in outer.config.items()]})
                 if u.path == "/server/files/list" and q.get("root") == ["gcodes"]:
                     return self._json(200, {"result": [{"path": p, "size": n, "modified": 1000.0}

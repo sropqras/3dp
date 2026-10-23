@@ -123,12 +123,55 @@ function changesBlock(v) {
   const cls = { staged: "warn", applying: "warn", verifying: "warn", applied: "ok", failed: "bad", rolled_back: "dim", cancelled: "dim", rejected: "dim" };
   const row = (c) => `<tr><td>${c.id}</td><td class="${cls[c.state] || ""}">${esc(c.state)}</td><td>${esc(c.summary)}<div class="dim">${esc(c.reason)} · ${esc(c.author)}${c.applied_by ? " · applied by " + esc(c.applied_by) : ""}</div>
       ${c.error ? `<div class="bad">${esc(c.error)}</div>` : ""}</td><td style="white-space:nowrap">
-      ${c.state === "staged" ? `<button class="ghost" onclick="previewChange(${c.id})">Diff</button> ${v.readonly ? "" : `<button onclick="changeAct(${c.id},'apply')">Apply</button>`} <button class="ghost" onclick="changeAct(${c.id},'cancel')">Cancel</button>` : ""}
-      ${["applied", "failed"].includes(c.state) && !v.readonly ? `<button class="ghost" onclick="changeAct(${c.id},'rollback')">Rollback</button>` : ""}</td></tr>`;
+      ${c.state === "staged" ? `<button class="ghost" onclick="previewChange(${c.id})">Diff</button> ${v.readonly ? "" : `<button onclick='changeAct(${c.id},"apply",${js(setOf(cs, c))})'>${setOf(cs, c).length > 1 ? `Apply set (${setOf(cs, c).length} files)` : "Apply"}</button>`} <button class="ghost" onclick="changeAct(${c.id},'cancel')">Cancel</button>` : ""}
+      ${["applied", "failed"].includes(c.state) && !v.readonly ? `<button class="ghost" onclick='changeAct(${c.id},"rollback",${js(setOf(cs, c, true))})'>Rollback${setOf(cs, c, true).length > 1 ? " set" : ""}</button>` : ""}</td></tr>`;
   return `<details ${cs.length ? "open" : ""}><summary>Changes${pending.length ? ` · <span class="warn">${pending.length} staged</span>` : ""}${cs.length ? ` · ${cs.length} recent` : ""}</summary>
     ${cs.length ? `<table>${cs.map(row).join("")}</table>` : `<div class="dim">none yet</div>`}
     </details>
     ${v.readonly ? `<div class="dim">watch-only: no config changes</div>` : `<div class="row"><button class="ghost" onclick="openStage('${esc(v.key)}')">+ Stage change</button></div>`}`;
+}
+
+// changes staged as one set (a restore): applied and rolled back together, one restart
+function setOf(cs, c, done) {
+  if (!c.batch) return [c.id];
+  return cs.filter((x) => x.batch === c.batch && (done ? ["applied", "failed"].includes(x.state) : x.state === "staged")).map((x) => x.id);
+}
+
+const when = (t) => t ? new Date(t * 1000).toLocaleString([], { year: "2-digit", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "?";
+async function restorePoints(key, el) {
+  const box = el.querySelector("div");
+  const r = await (await fetch(`/api/fleet/${encodeURIComponent(key)}/restore-points`)).json();
+  if (r.error) { box.textContent = r.error; return; }
+  const k = js(key);
+  const chip = (l) => `<span class="chip ${l === "last known good" ? "ok" : l === "origin" ? "warn" : ""}">${esc(l)}</span>`;
+  const ev = (p) => p.evidence === "none" ? `<span class="dim">no completed print on record in this window</span>`
+    : `<b>${p.prints.completed}</b> completed${p.prints.failed ? `, ${p.prints.failed} failed` : ""}${p.prints.good ? `, ${p.prints.good} marked good` : ""}${p.prints.bad ? `, <span class="bad">${p.prints.bad} marked bad</span>` : ""}
+       <span class="${p.evidence === "exact" ? "ok" : "warn"}">(${p.evidence})</span>${p.prints.last ? `<div class="dim">last: ${esc(String(p.prints.last.file).split("/").pop())} · ${when(p.prints.last.finished_at)}</div>` : ""}`;
+  const row = (p) => `<tr><td>${p.id}</td><td>${p.labels.map(chip).join(" ") || `<span class="dim">${esc(p.actor)}</span>`}
+      <div class="dim">${p.kind === "origin" ? "before the farm's first change" : esc(p.actor)} · ${p.files} files</div></td>
+    <td style="white-space:nowrap">${when(p.since)}<br>→ ${p.current ? "now" : when(p.until)}</td><td>${ev(p)}</td>
+    <td style="white-space:nowrap">${p.current ? "" : `<button class="ghost" onclick='restoreDiff(${k}, ${p.id})'>Diff vs live</button> <button onclick='stageRestore(${k}, ${p.id}, ${js(p.labels.join(", ") || "snapshot " + p.id)})'>Stage restore</button>`}</td></tr>`;
+  box.innerHTML = `<div class="dim">Each config was live from its newest file's time until the next change. A print that started and finished inside counts as evidence it works
+      (<b>exact</b>: both ends known; <b>likely</b>: one end inferred). The original is pinned once and kept in git (printers/_archive). A restore is staged as one set and applied by a person: one restart, everything put back if Klipper doesn't load.</div>
+    ${r.origin ? "" : `<div class="warn">No original pinned yet. <button class="ghost" onclick='pinOrigin(${k})'>Pin it now</button></div>`}
+    <table>${r.points.map(row).join("")}</table>`;
+}
+async function restoreDiff(key, id) {
+  $("fd-title").textContent = `${key}: restore point ${id}`; $("fd-sub").textContent = "live → restore point"; $("fd-files").innerHTML = "";
+  $("fd-body").textContent = "loading…"; $("filesdlg").showModal();
+  $("fd-body").innerHTML = colourDiff(await (await fetch(`/api/fleet/${encodeURIComponent(key)}/restore-diff?snapshot=${id}`)).text());
+}
+async function stageRestore(key, id, label) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const reason = prompt(`Stage a restore of ${key} to ${label} (point ${id})? Every file that differs is staged as one set; nothing changes until you press Apply set on an idle printer.\n\nWhy?`, `restore ${label}`);
+  if (reason === null) return;
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/restore`, { snapshot: id, reason });
+  if (r) { alert(`Staged changes ${r.changes.join(", ")} (${r.files.join(", ")}).${r.left_in_place.length ? "\nLeft in place: " + r.left_in_place.join(", ") : ""}\nReview each Diff, then Apply set.`); refresh(); }
+}
+async function pinOrigin(key) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/origin`);
+  if (r) { alert(r.already ? `Already pinned (point ${r.id}).` : `Original pinned: point ${r.id}, ${r.files} files.`); refresh(); }
 }
 
 let cd = { key: null };
@@ -171,10 +214,11 @@ async function previewChange(id) {
   $("fd-title").textContent = `Change ${id}`; $("fd-sub").textContent = "staged vs live"; $("fd-files").innerHTML = "";
   $("fd-body").innerHTML = colourDiff(p.diff); $("filesdlg").showModal();
 }
-async function changeAct(id, action) {
+async function changeAct(id, action, set) {
   if (!operator()) { alert("Put your name in the 'You' box first (it's recorded with the change)."); return; }
-  const words = { apply: "Apply change " + id + "? The printer must be idle: the file is uploaded and Klipper does a FIRMWARE_RESTART, then the change is verified (rolled back automatically if Klipper doesn't come back).",
-                  rollback: "Roll back change " + id + "? The file goes back to how it was, then FIRMWARE_RESTART.", cancel: "Cancel staged change " + id + "?" };
+  const many = (set || []).length > 1 ? ` together with ${set.filter((x) => x !== id).join(", ")} (one set, one restart)` : "";
+  const words = { apply: "Apply change " + id + many + "? The printer must be idle: the files are uploaded and Klipper does a FIRMWARE_RESTART, then the change is verified (rolled back automatically if Klipper doesn't come back).",
+                  rollback: "Roll back change " + id + many + "? The files go back to how they were, then FIRMWARE_RESTART.", cancel: "Cancel staged change " + id + "?" };
   if (!confirm(words[action])) return;
   document.body.style.cursor = "progress";
   const r = await post(`/api/changes/${id}/${action}`);
@@ -346,6 +390,7 @@ function card(v) {
     ${configBlock(v)}
     ${changesBlock(v)}
     ${maintBlock(v)}
+    ${v.reachable ? `<details ontoggle='if (this.open) restorePoints(${js(v.key)}, this)'><summary>Restore points (original · last known good)</summary><div class="dim">loading…</div></details>` : ""}
     ${onboardBlock(v)}
     ${v.reachable && v.klippy_state === "ready" && !v.readonly ? `<details ontoggle='if (this.open) fluiddPreview(${js(v.key)}, this)'><summary>Fluidd layout (farm standard)</summary><div class="dim">loading…</div></details>` : ""}
     <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div style="margin-top:6px">${vers}</div></details>
