@@ -19,6 +19,8 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
   GET  /api/makers            the maker plugins (spec, health), print profiles, printers, licensed font NAMES
   POST /api/uploads?name=     a file for a new job (raw body) -> {"ref"}; kept under data/uploads/ (gitignored)
+  GET  /api/templates         New-job templates (jobs/templates.json: proven + starter; data/templates.json: saved)
+  POST /api/templates         save the New-job form as a template
   GET  /api/projects          orders -> generated jobs/models -> builds (the Projects tab's library)
   POST /api/jobs/send {job_ids, printer, profile, layer_height, same_bed}   re-use generated models on new builds
   POST /api/orders            a new order from the New-job page -> jobs queued for the worker
@@ -38,7 +40,8 @@ from .runlog import RUNS_DIR
 
 STATIC = Path(__file__).resolve().parent / "static"
 DATA = REPO / "data"
-INVENTORY = DATA / "inventory.json"
+import os as _os0
+INVENTORY = Path(_os0.environ.get("FARM_INVENTORY", DATA / "inventory.json"))   # tests point elsewhere
 BATCHES = sorted((REPO / "jobs").glob("*/batch.json"))
 
 _cache, _lock = {}, threading.Lock()
@@ -301,6 +304,34 @@ def _resolve_input(value: str) -> str:
     raise ValueError(f"bad file reference {value!r}")
 
 
+TEMPLATES = REPO / "jobs" / "templates.json"          # proven + starter, in git
+import os as _os
+MY_TEMPLATES = Path(_os.environ.get("FARM_TEMPLATES", DATA / "templates.json"))   # saved from the page (tests point elsewhere)
+
+
+def templates() -> list[dict]:
+    out = json.loads(TEMPLATES.read_text(encoding="utf-8"))["templates"] if TEMPLATES.exists() else []
+    if MY_TEMPLATES.exists():
+        out += [{**t, "status": "saved"} for t in json.loads(MY_TEMPLATES.read_text(encoding="utf-8")).get("templates", [])]
+    return out
+
+
+def save_template(body: dict) -> dict:
+    t = {k: body.get(k) for k in ("name", "maker", "title", "params", "files", "profile", "layer_height", "printer",
+                                  "colours", "colour_hex", "colour_changes", "same_bed", "items")}
+    if not (t["name"] and t["maker"]):
+        raise ValueError("a template needs a name and a maker")
+    if any(str(v).startswith("upload:") for v in (t.get("files") or {}).values()):
+        t["files"] = {k: v for k, v in t["files"].items() if not str(v).startswith("upload:")}   # uploads are one-off
+    import re as _re
+    t["id"] = "my-" + _re.sub(r"[^a-z0-9]+", "-", t["name"].lower()).strip("-")[:50]
+    mine = json.loads(MY_TEMPLATES.read_text(encoding="utf-8")).get("templates", []) if MY_TEMPLATES.exists() else []
+    mine = [m for m in mine if m["id"] != t["id"]] + [t]
+    DATA.mkdir(exist_ok=True)
+    MY_TEMPLATES.write_text(json.dumps({"templates": mine}, indent=2), encoding="utf-8")
+    return t
+
+
 def create_order(body: dict) -> dict:
     items = []
     for it in body.get("items") or []:
@@ -523,6 +554,8 @@ class Handler(BaseHTTPRequestHandler):
             except PermissionError as e:
                 return self._send(403, json.dumps({"error": str(e)}).encode())
             return self._send(404, b"{}")
+        if path == "/api/templates":
+            return self._send(200, json.dumps(templates()).encode())
         if path == "/api/projects":
             con = db.connect()
             try:
@@ -609,6 +642,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(413, json.dumps({"error": f"upload must be 1 byte..{MAX_UPLOAD // 2**20} MB"}).encode())
             name = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("name", ["file"])[0]
             return self._send(200, json.dumps(save_upload(name, self.rfile.read(n))).encode())
+        if path == "/api/templates":
+            try:
+                return self._send(200, json.dumps(save_template(self._json_body())).encode())
+            except (ValueError, KeyError) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
         if path == "/api/jobs/send":
             try:
                 body = self._json_body()

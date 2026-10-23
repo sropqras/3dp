@@ -20,3 +20,4 @@ data/farm.db-*
 data/uploads/
 data/config_snapshots/
 data/tmp/
+data/templates.json

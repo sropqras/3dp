@@ -1,0 +1,300 @@
+{
+  "_note": "New-job templates (Farm Control). 'proven' = the settings of runs printed on this farm; 'starter' = a maker's settings from the live smoke tests, not yet printed in production. People add their own from the page (saved in data/templates.json).",
+  "templates": [
+    {
+      "maker": "likhan",
+      "files": {
+        "font": "font:CharlesWright-Bold.otf"
+      },
+      "colours": [
+        "black PETG",
+        "letter colour"
+      ],
+      "colour_hex": [
+        "#1c1c1c",
+        "#F2F2F2"
+      ],
+      "colour_changes": [
+        "base_top"
+      ],
+      "id": "qabrastaan-plate-neo",
+      "status": "proven",
+      "name": "Qabrastaan grave plate on Ender3MaxNeo - 185x103, letters ~71 mm (90 mm font), 2 per bed",
+      "source": "jobs/qabrastaan/Neo_test_CH02_A11.json, printed 2026-10-22",
+      "title": "Qabrastaan plates",
+      "params": {
+        "mode": "text",
+        "font_size_mm": 90,
+        "letter_height_mm": 6,
+        "base": true,
+        "base_corner_style": "round",
+        "base_corner_radius_mm": 4,
+        "base_thickness_mm": 4,
+        "base_margin_mm": 15,
+        "base_width_mm": 185,
+        "base_depth_mm": 103,
+        "text_embed_mm": 0,
+        "bed_margin_mm": 5,
+        "auto_split": true,
+        "min_piece_mm": 15,
+        "monospace": true
+      },
+      "profile": "neo-petg-036",
+      "layer_height": 0.4,
+      "printer": "Ender3MaxNeo",
+      "same_bed": true,
+      "items": [
+        "A01",
+        "A02"
+      ]
+    },
+    {
+      "maker": "likhan",
+      "files": {
+        "font": "font:CharlesWright-Bold.otf"
+      },
+      "colours": [
+        "black PETG",
+        "letter colour"
+      ],
+      "colour_hex": [
+        "#1c1c1c",
+        "#F2F2F2"
+      ],
+      "colour_changes": [
+        "base_top"
+      ],
+      "id": "qabrastaan-plate-s1plus",
+      "status": "proven",
+      "name": "Qabrastaan grave plate on S1 Plus - 185x103, letters ~71 mm (90 mm font), 2 per bed",
+      "source": "jobs/qabrastaan/S1_test_R50_Q52.json, printed 2026-10-22",
+      "title": "Qabrastaan plates",
+      "params": {
+        "mode": "text",
+        "font_size_mm": 90,
+        "letter_height_mm": 6,
+        "base": true,
+        "base_corner_style": "round",
+        "base_corner_radius_mm": 4,
+        "base_thickness_mm": 4,
+        "base_margin_mm": 15,
+        "base_width_mm": 185,
+        "base_depth_mm": 103,
+        "text_embed_mm": 0,
+        "bed_margin_mm": 5,
+        "auto_split": true,
+        "min_piece_mm": 15,
+        "monospace": true
+      },
+      "profile": "neo-petg-036",
+      "layer_height": 0.4,
+      "printer": "enders1plus",
+      "same_bed": true,
+      "items": [
+        "R50",
+        "Q52"
+      ]
+    },
+    {
+      "maker": "likhan",
+      "files": {
+        "font": "font:CharlesWright-Bold.otf"
+      },
+      "colours": [
+        "black PETG",
+        "letter colour"
+      ],
+      "colour_hex": [
+        "#1c1c1c",
+        "#F2F2F2"
+      ],
+      "colour_changes": [
+        "base_top"
+      ],
+      "id": "qabrastaan-children",
+      "status": "proven",
+      "name": "Qabrastaan children's row - same 185x103 plate, letters ~52.6 mm (66 mm font)",
+      "source": "CH02 in jobs/qabrastaan/Neo_test_CH02_A11.json, printed 2026-10-22",
+      "title": "Qabrastaan children's row",
+      "params": {
+        "mode": "text",
+        "font_size_mm": 66,
+        "letter_height_mm": 6,
+        "base": true,
+        "base_corner_style": "round",
+        "base_corner_radius_mm": 4,
+        "base_thickness_mm": 4,
+        "base_margin_mm": 15,
+        "base_width_mm": 185,
+        "base_depth_mm": 103,
+        "text_embed_mm": 0,
+        "bed_margin_mm": 5,
+        "auto_split": true,
+        "min_piece_mm": 15,
+        "monospace": true
+      },
+      "profile": "neo-petg-036",
+      "layer_height": 0.4,
+      "printer": "Ender3MaxNeo",
+      "same_bed": true,
+      "items": [
+        "CH01",
+        "CH03"
+      ]
+    },
+    {
+      "maker": "likhan",
+      "files": {
+        "font": "font:CharlesWright-Bold.otf"
+      },
+      "colours": [
+        "black PETG",
+        "letter colour"
+      ],
+      "colour_hex": [
+        "#1c1c1c",
+        "#F2F2F2"
+      ],
+      "colour_changes": [
+        "base_top"
+      ],
+      "id": "qabrastaan-plate-s1pro",
+      "status": "starter",
+      "name": "Qabrastaan grave plate on S1 Pro (0.4 nozzle, 0.2 mm) - one plate per bed",
+      "source": "jobs/samples/s1pro_A01.json (sample, 2026-10-23)",
+      "title": "Qabrastaan plates (S1 Pro)",
+      "params": {
+        "mode": "text",
+        "font_size_mm": 90,
+        "letter_height_mm": 6,
+        "base": true,
+        "base_corner_style": "round",
+        "base_corner_radius_mm": 4,
+        "base_thickness_mm": 4,
+        "base_margin_mm": 15,
+        "base_width_mm": 185,
+        "base_depth_mm": 103,
+        "text_embed_mm": 0,
+        "bed_margin_mm": 5,
+        "auto_split": true,
+        "min_piece_mm": 15,
+        "monospace": true
+      },
+      "profile": "s1pro-petg-020",
+      "layer_height": 0.2,
+      "printer": "s1pro",
+      "same_bed": false,
+      "items": [
+        "A01"
+      ]
+    },
+    {
+      "id": "lithophane-panel",
+      "status": "starter",
+      "maker": "lithophane",
+      "name": "Lithophane panel 120x105, curved, with base",
+      "source": "maker defaults; live smoke test 2026-10-23",
+      "title": "Lithophane",
+      "params": {
+        "width_mm": 120,
+        "height_mm": 105,
+        "radius_mm": 80,
+        "t_min": 1.2,
+        "t_max": 3.2,
+        "base": true
+      },
+      "profile": "neo-hyperpla-028-litho",
+      "layer_height": 0.28,
+      "printer": "enders1plus",
+      "colours": [
+        "white Hyper PLA"
+      ],
+      "colour_hex": [
+        "#F2F2F2"
+      ],
+      "colour_changes": [],
+      "same_bed": false,
+      "items": []
+    },
+    {
+      "id": "lamp-shade",
+      "status": "starter",
+      "maker": "lamp",
+      "name": "Lithophane lamp shade 200/250 x 225",
+      "source": "lamp-maker defaults; live smoke test 2026-10-23 (smaller shade)",
+      "title": "Lamp shade",
+      "params": {
+        "top_diameter": 200,
+        "bottom_diameter": 250,
+        "shade_height": 225
+      },
+      "profile": "neo-hyperpla-028-litho",
+      "layer_height": 0.28,
+      "printer": "Ender3MaxNeo",
+      "colours": [
+        "white Hyper PLA"
+      ],
+      "colour_hex": [
+        "#F2F2F2"
+      ],
+      "colour_changes": [],
+      "same_bed": false,
+      "items": []
+    },
+    {
+      "id": "plaque-name",
+      "status": "starter",
+      "maker": "plaque",
+      "name": "Name plaque, two colours (base + letters)",
+      "source": "live smoke test 2026-10-23",
+      "title": "Plaque",
+      "params": {
+        "font_size_mm": 40,
+        "base_thickness_mm": 2,
+        "base": true
+      },
+      "profile": "neo-petg-036",
+      "layer_height": 0.4,
+      "printer": "Ender3MaxNeo",
+      "colours": [
+        "black PETG",
+        "letter colour"
+      ],
+      "colour_hex": [
+        "#1c1c1c",
+        "#F2F2F2"
+      ],
+      "colour_changes": [
+        "base_top"
+      ],
+      "same_bed": true,
+      "items": [
+        "AZ"
+      ]
+    },
+    {
+      "id": "namakdani-dish",
+      "status": "starter",
+      "maker": "namakdani",
+      "name": "Namak dani salt dish, 60 mm",
+      "source": "maker defaults; live smoke test 2026-10-23",
+      "title": "Namak dani",
+      "params": {
+        "widthMm": 60,
+        "bowl": true
+      },
+      "profile": "neo-hyperpla-028-litho",
+      "layer_height": 0.28,
+      "printer": "Ender3MaxNeo",
+      "colours": [
+        "white Hyper PLA"
+      ],
+      "colour_hex": [
+        "#F2F2F2"
+      ],
+      "colour_changes": [],
+      "same_bed": false,
+      "items": []
+    }
+  ]
+}

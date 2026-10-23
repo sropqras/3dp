@@ -14,7 +14,7 @@ m.settings_from_config = True   # the audit reads the config text, so a generate
 port = m.server.server_address[1]
 (tmp / "hosts.json").write_text(json.dumps({"hosts": [{"name": "fakehost", "address": "127.0.0.1", "ports": [port]}]}))
 env = dict(os.environ, FARM_DB=str(tmp / "farm.db"), FARM_RUNS_DIR=str(tmp / "runs"), FARM_HOSTS_FILE=str(tmp / "hosts.json"),
-           FARM_MOONRAKER_OVERRIDE=json.dumps({"Ender3MaxNeo": m.url}))
+           FARM_MOONRAKER_OVERRIDE=json.dumps({"Ender3MaxNeo": m.url}), FARM_INVENTORY=str(tmp / "inventory.json"))
 code = ("import sys; from farm import configs, cfgchange; from pathlib import Path; configs.STORE = Path(sys.argv[1]); "
         "cfgchange.FARM_MD = Path(sys.argv[2]); cfgchange.SETTLE_S = 0; cfgchange.POLL_S = 0.1; "
         "from farm import web; web.serve('127.0.0.1', 10197)")

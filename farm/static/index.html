@@ -168,6 +168,8 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
 <dialog id="newjob">
   <div class="vh"><span class="name">New job</span><span class="stamp" id="nj-health"></span><button class="ghost x" onclick="$('newjob').close()">Close</button></div>
   <div class="pad nj">
+    <label class="f">Template <select id="nj-template" onchange="applyTemplate(this.value)"></select></label>
+    <div class="stamp" id="nj-tsrc"></div>
     <div class="grid2">
       <label class="f">Maker <select id="nj-maker" onchange="renderNewJob()"></select></label>
       <label class="f">Order title <input id="nj-title" placeholder="e.g. ZA011 lithophane for Zahabiya"></label>
@@ -179,7 +181,8 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
       <label class="f">Printer <select id="nj-printer"></select></label>
     </div>
     <div class="grid2" id="nj-colours"></div>
-    <div class="acts"><button onclick="submitNewJob()">Create — generate &amp; slice for review</button><span class="stamp" id="nj-msg"></span></div>
+    <div class="acts"><button onclick="submitNewJob()">Create — generate &amp; slice for review</button>
+      <button class="ghost" onclick="saveTemplate()">Save as template</button><span class="stamp" id="nj-msg"></span></div>
     <div class="stamp">Nothing prints from here: the job is generated and sliced, then waits in Review &amp; queue for your 3D check and approval.</div>
   </div>
 </dialog>
@@ -317,11 +320,17 @@ function buildsTable(bs) {
 }
 
 // ---------------------------------------------------------------- New job (maker plugins)
-let MK = null;
+let MK = null, TPL = [];
 async function openNewJob() {
   $("newjob").showModal();
   $("nj-msg").textContent = "loading makers…";
   MK = await (await fetch("/api/makers")).json();
+  TPL = await (await fetch("/api/templates")).json();
+  const grp = (st, label) => { const ts = TPL.filter((t) => t.status === st);
+    return ts.length ? `<optgroup label="${label}">${ts.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("")}</optgroup>` : ""; };
+  $("nj-template").innerHTML = `<option value="">— none: start from the maker's defaults —</option>` +
+    grp("proven", "Proven on this farm") + grp("saved", "Saved") + grp("starter", "Starters (not printed in production yet)");
+  $("nj-tsrc").textContent = "";
   $("nj-maker").innerHTML = MK.makers.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}${m.healthy ? "" : " (offline)"}${m.experimental ? " (experimental)" : ""}</option>`).join("");
   $("nj-msg").textContent = "";
   renderNewJob();
@@ -361,6 +370,52 @@ function renderNewJob() {
     : `<option value="">no profile with supports yet</option>`;
   renderProfileBits();
 }
+function applyTemplate(id) {
+  const t = TPL.find((x) => x.id === id);
+  $("nj-tsrc").textContent = t ? `${t.status === "proven" ? "Proven" : t.status === "saved" ? "Saved" : "Starter"}: ${t.source || ""}` : "";
+  if (!t) return;
+  if (!MK.makers.some((m) => m.id === t.maker)) { $("nj-msg").textContent = `maker ${t.maker} isn't available`; return; }
+  $("nj-maker").value = t.maker; renderNewJob();
+  $("nj-title").value = t.title || "";
+  for (const [n, v] of Object.entries(t.params || {})) {
+    const el = $(`nj-p-${n}`); if (!el) continue;
+    if (el.type === "checkbox") el.checked = !!v; else if (el.tagName === "TEXTAREA") el.value = JSON.stringify(v); else el.value = v;
+  }
+  if ($("nj-items")) $("nj-items").value = (t.items || []).join("\n");
+  if ($("nj-samebed")) $("nj-samebed").checked = !!t.same_bed;
+  if (t.profile) { $("nj-profile").value = t.profile; renderProfileBits(); }
+  if (t.layer_height) $("nj-layer").value = String(t.layer_height);
+  if (t.printer) $("nj-printer").value = t.printer;
+  if ((t.colours || [])[0]) { $("nj-c1").value = t.colours[0]; $("nj-h1").value = t.colour_hex[0]; }
+  for (const h of (MK.makers.find((m) => m.id === t.maker).colour_heights || [])) {
+    const cb = $(`nj-cc-${h}`); if (cb) cb.checked = (t.colour_changes || []).includes(h);
+  }
+  if ((t.colours || [])[1] && $("nj-c2")) { $("nj-c2").value = t.colours[1]; $("nj-h2").value = t.colour_hex[1]; }
+  // last, so the profile's own note doesn't hide it: a licensed font the template needs but this server lacks
+  for (const [n, v] of Object.entries(t.files || {})) {
+    const el = $(`nj-f-${n}`);
+    if (el && el.tagName === "SELECT") {
+      el.value = v;
+      if (el.value !== v) $("nj-msg").textContent = `${String(v).replace("font:", "")} isn't installed on this server yet - copy it into assets/fonts/ (the job would fail at likhan)`;
+    }
+  }
+}
+async function saveTemplate() {
+  const m = mk(), name = prompt("Template name:", $("nj-title").value || m.name);
+  if (!name) return;
+  const files = {};
+  for (const fi of m.inputs) { const el = $(`nj-f-${fi.name}`); if (el && el.tagName === "SELECT" && el.value) files[fi.name] = el.value; }
+  const changes = (m.colour_heights || []).filter((h) => $(`nj-cc-${h}`)?.checked);
+  const body = { name, maker: m.id, title: $("nj-title").value, params: readParams(m), files, profile: $("nj-profile").value,
+    layer_height: +$("nj-layer").value, printer: $("nj-printer").value, colours: [$("nj-c1").value].concat(changes.length && $("nj-c2") ? [$("nj-c2").value] : []),
+    colour_hex: [$("nj-h1").value].concat(changes.length && $("nj-h2") ? [$("nj-h2").value] : []), colour_changes: changes,
+    same_bed: !!$("nj-samebed")?.checked, items: $("nj-items") ? $("nj-items").value.split("\n").map((x) => x.trim()).filter(Boolean) : [] };
+  const r = await fetch("/api/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const out = await r.json();
+  $("nj-msg").textContent = r.ok ? `saved template "${out.name}"` : "not saved: " + (out.error || r.status);
+  if (r.ok) TPL = await (await fetch("/api/templates")).json();
+}
+
 function renderProfileBits() {
   const m = mk(), p = MK.profiles.find((x) => x.id === $("nj-profile").value);
   $("nj-layer").innerHTML = p ? p.layer_heights.map((l) => `<option ${(m.typical.layer_heights || []).includes(l) ? "selected" : ""}>${l}</option>`).join("") : "";

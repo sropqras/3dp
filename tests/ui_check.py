@@ -45,7 +45,7 @@ from farm import spools  # noqa: E402
 spools.add(con, {"id": "SP-T1", "material": "PETG", "colour": "Black", "location": "Ender3MaxNeo", "weight_g": 1000})
 spools.add(con, {"id": "SP-T2", "material": "PETG", "colour": "White", "location": "shelf", "weight_g": 1000})
 env = dict(os.environ, FARM_DB=str(tmp / "farm.db"), FARM_RUNS_DIR=str(tmp / "runs"),
-           FARM_MOONRAKER_OVERRIDE=json.dumps(override))
+           FARM_MOONRAKER_OVERRIDE=json.dumps(override), FARM_INVENTORY=str(tmp / "inventory.json"), FARM_TEMPLATES=str(tmp / "templates.json"))
 srv = subprocess.Popen([sys.executable, "-m", "farm", "serve", "--host", "127.0.0.1", "--port", "10199"],
                        cwd=Path(__file__).resolve().parent.parent, env=env)
 time.sleep(1.5)
