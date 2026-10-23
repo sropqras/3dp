@@ -69,7 +69,6 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
      config, the audit runs, and a config error still rolls back. Apply **1** and **3**, then **Stage all fixes**
      (cold-nozzle reheat, BEEP, macro library) and apply those, then the **Telegram pack**.
    - **Ender3Pro**: KIAUH removed the missing `moonraker_obico_macros.cfg` include (what change 8 tried; it had been rolled back). Its Klipper needs a restart (Reconnect) to start, then the onboarding checklist.
-   - **27/28/29**: put the Obico updater include back in moonraker.conf (MaxNeo, Ender3Pro, V3SE).
    - ~~EnderCR10SE~~: not a printer, the S1 Plus's old instance. 13/14 cancelled. **Remove it with KIAUH** on enders3dp (see FARM.md change log), then unlink it in Obico. OctoEverywhere is removed from the farm altogether (2026-10-23).
 2. **Fluidd layout**: pushed 2026-10-23 to MaxNeo, s1pro, enders1plus and EnderCR10SE (Undo on each card).
    EnderV3SE: push it after its staged changes are on. Not pushed: Ender3Pro (Klipper not running; a push now refuses when it can't read
