@@ -34,9 +34,9 @@ const [base, reviewId, queuedId, shots] = process.argv.slice(2);
               "reasons:", JSON.stringify(await p.$$eval("#sd-reasons li", (l) => l.map((x) => x.textContent))));
   // inventory edit round trip: change remaining on the first spool, save, see it persisted
   await p.evaluate(() => refresh()); await p.waitForTimeout(800);
-  await p.click("nav.tabs >> text=Inventory"); await p.waitForTimeout(300);
+  await p.click("nav.tabs >> text=Spools"); await p.waitForTimeout(300);
   await p.fill("#spools .sp:first-child input[type=number]", "777");
-  await p.click("text=Save inventory"); await p.waitForTimeout(1200);
+  await p.click("text=Save spools"); await p.waitForTimeout(1200);
   console.log("inventory after save:", await p.textContent("#invmsg"),
               JSON.stringify(await p.evaluate(async () => (await (await fetch("/api/overview")).json()).inventory.spools.map((s) => [s.id, s.remaining_g, s.version]))));
   await p.click("nav.tabs >> text=Dashboard"); await p.waitForTimeout(300);

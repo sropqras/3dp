@@ -108,6 +108,49 @@ MIGRATIONS = [
     CREATE TABLE maintenance_intervals (
         printer TEXT NOT NULL DEFAULT '*', kind TEXT NOT NULL, hours REAL NOT NULL, PRIMARY KEY (printer, kind))
     """,
+    # 7: Inventory (artefacts and where they printed), Farm Projects (groups -> parts x qty), portfolio products
+    """
+    CREATE TABLE artefacts (
+        id INTEGER PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, design TEXT NOT NULL, maker TEXT NOT NULL,
+        job_id INTEGER REFERENCES jobs(id), path TEXT, sha256 TEXT, printer TEXT, remote_path TEXT,
+        meta TEXT NOT NULL DEFAULT '{}', modified REAL, created_at REAL NOT NULL);
+    CREATE UNIQUE INDEX artefacts_job ON artefacts(job_id) WHERE job_id IS NOT NULL;
+    CREATE UNIQUE INDEX artefacts_remote ON artefacts(printer, remote_path) WHERE job_id IS NULL AND remote_path IS NOT NULL;
+    CREATE INDEX artefacts_design ON artefacts(design);
+    CREATE TABLE prints (
+        id INTEGER PRIMARY KEY, artefact_id INTEGER NOT NULL REFERENCES artefacts(id), build_id INTEGER,
+        printer TEXT NOT NULL, file TEXT NOT NULL, started_at REAL NOT NULL, finished_at REAL, status TEXT NOT NULL,
+        duration_s REAL, filament_mm REAL, source TEXT NOT NULL, quality TEXT, marked_by TEXT, marked_at REAL,
+        note TEXT, UNIQUE (artefact_id, printer, file, started_at));
+    CREATE INDEX prints_artefact ON prints(artefact_id);
+    CREATE TABLE projects (
+        id INTEGER PRIMARY KEY, name TEXT NOT NULL, client TEXT DEFAULT '', note TEXT DEFAULT '',
+        state TEXT NOT NULL DEFAULT 'open', hours_per_unit REAL, units_per_bed REAL, source TEXT,
+        created_by TEXT NOT NULL, created_at REAL NOT NULL);
+    CREATE TABLE project_groups (
+        id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), name TEXT NOT NULL,
+        pos INTEGER NOT NULL DEFAULT 0, meta TEXT NOT NULL DEFAULT '{}');
+    CREATE TABLE project_parts (
+        id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL REFERENCES project_groups(id), label TEXT NOT NULL,
+        qty INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL, maker TEXT, params TEXT NOT NULL DEFAULT '{}',
+        template TEXT, artefact_id INTEGER REFERENCES artefacts(id), items_done INTEGER NOT NULL DEFAULT 0,
+        pos INTEGER NOT NULL DEFAULT 0, removed INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX project_parts_group ON project_parts(group_id);
+    CREATE TABLE products (
+        id INTEGER PRIMARY KEY, artefact_id INTEGER NOT NULL REFERENCES artefacts(id), name TEXT NOT NULL,
+        description TEXT DEFAULT '', photo TEXT, printer TEXT, profile TEXT, layer_height REAL,
+        created_by TEXT NOT NULL, created_at REAL NOT NULL);
+    ALTER TABLE jobs ADD COLUMN part_id INTEGER;
+    ALTER TABLE orders ADD COLUMN project_id INTEGER
+    """,
+    # 8: the OMV NAS project-files catalogue (farm/nas.py). IF NOT EXISTS: a working-tree draft of 7 carried it
+    """
+    CREATE TABLE IF NOT EXISTS nas_files (
+        path TEXT PRIMARY KEY, size INTEGER, mtime REAL, ext TEXT NOT NULL, folder TEXT NOT NULL,
+        design TEXT NOT NULL, seen_at REAL NOT NULL, gone INTEGER NOT NULL DEFAULT 0,
+        artefact_id INTEGER REFERENCES artefacts(id));
+    CREATE INDEX IF NOT EXISTS nas_files_design ON nas_files(design)
+    """,
 ]
 
 

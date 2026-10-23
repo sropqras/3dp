@@ -233,6 +233,15 @@ function farmSettings(v) {
       <div class="row"><label><input type="checkbox" name="readonly" ${e.readonly ? "checked" : ""}> watch-only</label><button class="ghost">Save</button></div>
     </form></details>`;
 }
+async function reconnectPrinter(key) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  if (!confirm(`Reconnect ${key}? Switch it on first; Klipper restarts to find the board.`)) return;
+  document.body.style.cursor = "wait";
+  const r = await post(`/api/fleet/${encodeURIComponent(key)}/reconnect`);
+  document.body.style.cursor = "";
+  if (r) alert(`${key}: ${r.state}${r.hint ? " - " + r.hint : ""}`);
+  refresh();
+}
 async function findSerial(key, host, td) {
   const r = await (await fetch(`/api/hosts/${encodeURIComponent(host)}/usb`)).json();
   if (r.error) { td.innerHTML = `<span class="warn">${esc(r.error)}</span>`; return; }
@@ -273,13 +282,14 @@ async function saveSettings(name, form) {
 function card(v) {
   if (!v.reachable) return `<div class="card"><div class="ph"><span class="name">${esc(v.host)}</span><span class="dim">:${v.port}</span><span class="chip bad">unreachable</span></div><div class="dim">${esc(v.error || "")}</div></div>`;
   const badge = v.readonly ? `<span class="chip warn">watch-only</span>` : v.registry ? `<span class="chip ok">onboarded</span>` : `<span class="chip warn">not onboarded</span>`;
-  const st = v.klippy_state !== "ready" ? `<span class="chip bad">${esc(v.klippy_state || "?")}</span>` : `<span class="chip ${v.paused ? "warn" : v.job === "printing" ? "ok" : ""}">${esc(v.paused ? "paused" : v.job || "?")}</span>`;
+  const st = v.off ? `<span class="chip">switched off</span>${v.readonly ? "" : ` <button class="ghost" onclick='reconnectPrinter(${JSON.stringify(v.key)})'>Reconnect</button>`}`
+    : v.klippy_state !== "ready" ? `<span class="chip bad">${esc(v.klippy_state || "?")}</span>` : `<span class="chip ${v.paused ? "warn" : v.job === "printing" ? "ok" : ""}">${esc(v.paused ? "paused" : v.job || "?")}</span>`;
   const vers = Object.entries(v.versions || {}).map(([k, ver]) => `<span class="chip ${(v.updates || []).includes(k) ? "warn" : ""}" title="${(v.updates || []).includes(k) ? "update available" : ""}">${esc(k.replace("Klipper-Adaptive-Meshing-Purging", "KAMP").replace("moonraker-telegram-bot", "telegram-bot"))} ${esc(ver)}</span>`).join(" ");
   const cams = (v.cameras || []).map((c) => `<span class="chip ${c.ok ? "ok" : "bad"}">📷 ${esc(c.name)} ${c.ok ? "ok" : "no snapshot"}</span>`).join(" ") || `<span class="dim">no camera registered</span>`;
   return `<div class="card">
     <div class="ph"><span class="name">${esc(v.registry || v.name)}</span><span class="dim">${esc(v.host)}:${v.port}</span>${badge}${st}
       <a class="lnk" href="${esc(v.fluidd)}" target="_blank" rel="noopener">Fluidd ↗</a></div>
-    ${v.klippy_state !== "ready" && v.state_message ? `<div class="warn" style="font-size:12px">${esc(v.state_message)}</div>` : ""}
+    ${v.klippy_state !== "ready" && v.state_message && !v.off ? `<div class="warn" style="font-size:12px">${esc(v.state_message)}</div>` : ""}
     <div class="row">Print hours <b>${v.print_hours ?? "–"}</b> Jobs <b>${v.total_jobs ?? "–"}</b> ${v.file ? `File <b>${esc(v.file.split("/").pop())}</b>` : ""}</div>
     <div class="row">${cams}</div>
     ${(v.failed_components || []).length ? `<div class="bad">failed components: ${esc(v.failed_components.join(", "))}</div>` : ""}

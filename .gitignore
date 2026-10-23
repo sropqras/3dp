@@ -21,3 +21,6 @@ data/uploads/
 data/config_snapshots/
 data/tmp/
 data/templates.json
+data/nas/
+data/products/
+data/farm.db.bak*

@@ -14,7 +14,7 @@ import os
 import re
 from pathlib import Path
 
-from . import config, db, gcode, jobs, makers, moonraker, printers, profiles, project, slicer
+from . import config, db, gcode, inventory, jobs, makers, moonraker, printers, profiles, project, slicer
 from .runlog import Run
 
 
@@ -217,6 +217,7 @@ def generate_job(con, job_id: int, actor: str = "worker") -> list[int]:
         con.execute("UPDATE jobs SET colour_zs=?, maker_version=?, error=NULL WHERE id=?",
                     (db.dumps(res.colour_zs), res.maker_version, job_id))
         jobs.transition(con, "job", job_id, "generating", "generated", actor, models=len(ids))
+        inventory.artefact_for_job(con, jobs.get(con, "job", job_id))   # it is in the Inventory from now on
     return ids
 
 

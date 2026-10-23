@@ -105,6 +105,10 @@ class FakeMoonraker:
         self.on_restart = None      # callable(fake) run at FIRMWARE_RESTART (e.g. change settings)
         self.config_file = "/home/aali/Ender3MaxNeo_data/config/printer.cfg"   # names the instance
         self.webcams = []           # what /server/webcams/item registered
+        self.history = []           # /server/history/list entries (paged with start/limit like Moonraker)
+        self.meta = {}              # filename -> extra /server/files/metadata fields (thumbnails, slicer, ...)
+        self.blobs = {}             # gcodes-root path -> bytes (thumbnails)
+        self.klipper_msg = None     # Klipper's state_message when not ready (default: "config error")
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -125,7 +129,8 @@ class FakeMoonraker:
                     return self._json(200, {"result": {"status": {
                         "print_stats": {"state": outer.state, "filename": "", "print_duration": 0, "message": ""},
                         "virtual_sdcard": {"progress": 0.0, "file_position": 0},
-                        "webhooks": {"state": outer.klipper, "state_message": "Printer is ready"},
+                        "webhooks": {"state": outer.klipper, "state_message": "Printer is ready"
+                                     if outer.klipper == "ready" else outer.klipper_msg or "config error"},
                         "pause_resume": {"is_paused": outer.paused},
                         "gcode_move": {"speed_factor": 1.0, "extrude_factor": 1.0},
                         "display_status": {"message": None},
@@ -134,6 +139,18 @@ class FakeMoonraker:
                 if u.path == "/server/files/list" and q.get("root") == ["config"]:
                     return self._json(200, {"result": [{"path": p, "size": len(b), "modified": 0}
                                                        for p, b in outer.config.items()]})
+                if u.path == "/server/files/list" and q.get("root") == ["gcodes"]:
+                    return self._json(200, {"result": [{"path": p, "size": n, "modified": 1000.0}
+                                                       for p, n in outer.files.items()]})
+                if u.path.startswith("/server/files/gcodes/"):
+                    p = up.unquote(u.path[len("/server/files/gcodes/"):])
+                    if p not in outer.blobs:
+                        return self._json(404, {"error": "no file"})
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/png")
+                    self.end_headers()
+                    self.wfile.write(outer.blobs[p])
+                    return
                 if u.path.startswith("/server/files/config/"):
                     p = up.unquote(u.path[len("/server/files/config/"):])
                     if p not in outer.config:
@@ -144,7 +161,7 @@ class FakeMoonraker:
                     return
                 if u.path == "/printer/info":
                     return self._json(200, {"result": {"state": outer.klipper, "state_message": "Printer is ready"
-                                                       if outer.klipper == "ready" else "config error",
+                                                       if outer.klipper == "ready" else outer.klipper_msg or "config error",
                                                        "software_version": "v0.13.0-fake",
                                                        "config_file": outer.config_file}})
                 if u.path == "/server/info":
@@ -167,12 +184,16 @@ class FakeMoonraker:
                 if u.path == "/server/webcams/list":
                     return self._json(200, {"result": {"webcams": outer.webcams}})
                 if u.path == "/server/history/list":
-                    return self._json(200, {"result": {"jobs": []}})
+                    start, limit = int(q.get("start", ["0"])[0]), int(q.get("limit", ["50"])[0])
+                    since = float(q.get("since", ["0"])[0])
+                    js = [h for h in outer.history if h.get("start_time", 0) >= since]
+                    return self._json(200, {"result": {"count": len(js[start:start + limit]),
+                                                       "jobs": js[start:start + limit]}})
                 if u.path == "/server/files/metadata":
                     name = q.get("filename", [""])[0]
                     if name not in outer.files:
                         return self._json(404, {"error": "no file"})
-                    return self._json(200, {"result": {"size": outer.files[name]}})
+                    return self._json(200, {"result": {"size": outer.files[name], **outer.meta.get(name, {})}})
                 return self._json(404, {})
 
             def do_POST(self):

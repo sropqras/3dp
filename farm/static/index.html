@@ -38,6 +38,7 @@ a.fluidd:hover { border-color: var(--blue); }
 .s-paused { background: rgba(251,191,36,.15); color: var(--amber); }
 .s-standby, .s-complete, .s-cancelled { background: rgba(139,152,174,.15); color: var(--muted); }
 .s-error, .s-offline { background: rgba(248,113,113,.15); color: var(--red); }
+.s-off { background: rgba(139,152,174,.15); color: var(--muted); }
 .alert { margin: 0 16px 10px; padding: 10px 12px; border-radius: 10px; background: rgba(251,191,36,.12);
   border: 1px solid rgba(251,191,36,.45); color: var(--amber); font-weight: 600; animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(251,191,36,.08); } }
@@ -103,6 +104,13 @@ nav.tabs { display: flex; gap: 4px; } nav.tabs a { color: var(--muted); text-dec
 nav.tabs a.on { color: var(--text); border-color: var(--line); background: var(--panel); }
 .tab { display: grid; gap: 22px; } .tab > * { min-width: 0; } .tab[hidden] { display: none; }
 .lib { display: grid; gap: 12px; } .lib table td { vertical-align: top; }
+.invbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; } .seg { display: inline-flex; gap: 4px; }
+.igrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); margin-bottom: 18px; }
+.art { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 6px; align-content: start; }
+.art .th { height: 120px; border-radius: 8px; background: #0b1220; display: grid; place-items: center; overflow: hidden; color: var(--dim); font-size: 12px; }
+.art .th img { max-width: 100%; max-height: 120px; }
+.art .t { font-weight: 700; overflow-wrap: anywhere; } .pc { font-size: 11px; } .pc b { color: var(--green); } .pc i { color: var(--red); font-style: normal; } .pc u { color: var(--amber); text-decoration: none; }
+.nas td, .nas th { white-space: nowrap; } .nas td.p { overflow-wrap: anywhere; white-space: normal; min-width: 260px; }
 .nextq { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 dialog#viewer { width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line);
   border-radius: var(--radius); background: var(--panel); color: var(--text); overflow: auto; }
@@ -128,7 +136,7 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
 <header>
   <div class="brand">sropqras <span>Farm Control</span></div>
   <nav class="tabs"><a href="#dashboard" data-tab="dashboard">Dashboard</a><a href="#projects" data-tab="projects">Projects</a>
-    <a href="#inventory" data-tab="inventory">Inventory</a><a href="/printers">Printers →</a></nav>
+    <a href="#inventory" data-tab="inventory">Inventory</a><a href="#spools" data-tab="spools">Spools</a><a href="/printers">Printers →</a></nav>
   <button onclick="openNewJob()">+ New job</button>
   <div class="kpis" id="kpis"></div>
 </header>
@@ -144,13 +152,32 @@ dialog#viewer::backdrop { background: rgba(3,6,12,.72); }
       <div id="library"></div></section>
   </div>
   <div class="tab" data-tab="inventory" hidden>
-    <section><h2>Spool inventory</h2>
+    <section><h2>Inventory <span class="stamp" style="text-transform:none;letter-spacing:0">everything the farm has made or holds, and where it printed - the product portfolio starts here</span></h2>
+      <div class="card pad ctl invbar">
+        <span class="seg"><button class="mini" id="iv-v-designs" onclick="ivView('designs')">Designs</button><button class="mini ghost" id="iv-v-nas" onclick="ivView('nas')">NAS catalogue</button></span>
+        <span id="iv-designs-ctl">Group by <select id="iv-by" onchange="loadInventory()"><option value="printer">Printer</option><option value="project">Project</option><option value="maker">Maker</option></select>
+          <label><input type="checkbox" id="iv-printed" onchange="loadInventory()"> printed OK only</label></span>
+        <span id="iv-nas-ctl" hidden>Folder <select id="nas-folder" onchange="loadNas()"><option value="">all</option></select>
+          <label><input type="checkbox" id="nas-matched" checked onchange="loadNas()"> sent to a printer only</label></span>
+        <input id="iv-q" placeholder="search" style="width:180px" oninput="clearTimeout(window._ivt); window._ivt = setTimeout(() => ivReload(), 300)">
+        <button class="mini ghost" id="iv-refresh" onclick="ivRefresh()">Refresh from printers</button>
+        <span class="stamp" id="iv-msg"></span>
+      </div>
+      <div id="inventory"></div></section>
+  </div>
+  <div class="tab" data-tab="spools" hidden>
+    <section><h2>Spools</h2>
       <div class="card pad"><div class="spools" id="spools"></div>
-        <div class="ctl" style="margin-top:12px; display:flex; gap:8px"><button onclick="saveInv()">Save inventory</button>
+        <div class="ctl" style="margin-top:12px; display:flex; gap:8px"><button onclick="saveInv()">Save spools</button>
         <button class="ghost" onclick="addSpool()">+ Spool</button><span class="stamp" id="invmsg"></span></div>
       </div></section>
   </div>
 </main>
+<dialog id="prdlg">
+  <div class="vh"><span class="name" id="pr-title">Prints</span><button class="ghost x" onclick="$('prdlg').close()">Close</button></div>
+  <div class="pad" id="pr-body" style="overflow-x:auto"></div>
+  <div class="pad stamp">Good / Bad is your look at the part: a finished print isn't always a good one. Marks count in the portfolio.</div>
+</dialog>
 <dialog id="senddlg">
   <div class="vh"><span class="name" id="sd2-title">Send to printer</span><button class="ghost x" onclick="$('senddlg').close()">Close</button></div>
   <div class="pad nj">
@@ -241,9 +268,22 @@ function fluiddLink(p) {
   return p.fluidd ? `<a class="fluidd" href="${esc(p.fluidd)}" target="_blank" rel="noopener" title="${esc(p.fluidd_note || "open this printer in Fluidd")}">Fluidd ↗</a>` : "";
 }
 
+async function reconnect(name) {
+  if (!confirm(`Reconnect ${name}? Switch it on first. (Klipper restarts to find the board.)`)) return;
+  let who = ""; try { who = localStorage.getItem("operator") || ""; } catch (e) {}
+  const r = await fetch(`/api/fleet/${encodeURIComponent(name)}/reconnect`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: who || "dashboard" }) });
+  const out = await r.json().catch(() => ({}));
+  alert(r.ok ? `${name}: ${out.state}${out.hint ? " - " + out.hint : ""}` : (out.error || `HTTP ${r.status}`));
+  refresh();
+}
+
 function printerCard(p) {
   if (!p.online) return `<div class="card"><div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}
     <span class="pill s-offline">offline</span></div><div class="alert">${esc(p.error || "unreachable")}</div></div>`;
+  if (p.off) return `<div class="card"><div class="ph"><span class="name">${esc(p.name)}</span><span class="host">${esc(p.host)}</span>${fluiddLink(p)}
+    <span class="pill s-off">switched off</span></div><div class="pad stamp">Board not connected — the printer is off (or its USB is out). Files, history and Inventory still work.
+    ${p.readonly ? "" : `<div style="margin-top:8px"><button class="mini" onclick="reconnect('${esc(p.name)}')">Reconnect</button> after switching it on</div>`}</div></div>`;
   const state = p.klipper !== "ready" ? "error" : (p.paused ? "paused" : p.job);
   const color = state === "paused" ? "var(--amber)" : state === "printing" ? "var(--teal)" : "var(--dim)";
   const spool = (inv?.spools || []).filter((s) => s.location === p.name)
@@ -534,15 +574,119 @@ function openStartNonceHint() { $("sd-msg").textContent = "Refused. Fix the reas
 
 // ---------------------------------------------------------------- tabs
 function showTab(name) {
-  const t = ["dashboard", "projects", "inventory"].includes(name) ? name : "dashboard";
+  const t = ["dashboard", "projects", "inventory", "spools"].includes(name) ? name : "dashboard";
   document.querySelectorAll(".tab").forEach((el) => (el.hidden = el.dataset.tab !== t));
   document.querySelectorAll("nav.tabs a[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === t));
   if (t === "projects") loadLibrary();
+  if (t === "inventory") ivReload();
+}
+
+// ---------------------------------------------------------------- Inventory: designs, prints, the NAS catalogue
+let IV = null, ivMode = "designs", NAS = null, REF = [];
+const ref = (v) => REF.push(v) - 1;     // handlers take an index: names with quotes can't break the markup
+const opName = () => { try { return localStorage.getItem("operator") || ""; } catch (e) { return ""; } };
+function ivView(m) {
+  ivMode = m;
+  $("iv-v-designs").classList.toggle("ghost", m !== "designs"); $("iv-v-nas").classList.toggle("ghost", m !== "nas");
+  $("iv-designs-ctl").hidden = m !== "designs"; $("iv-nas-ctl").hidden = m !== "nas";
+  $("iv-refresh").textContent = m === "nas" ? "Scan the NAS" : "Refresh from printers";
+  ivReload();
+}
+function ivReload() { return ivMode === "nas" ? loadNas() : loadInventory(); }
+async function ivRefresh() {
+  $("iv-msg").textContent = ivMode === "nas" ? "listing the NAS (names only)…" : "reading every printer's files and history…";
+  const r = await fetch(ivMode === "nas" ? "/api/nas/scan" : "/api/inventory/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const out = await r.json().catch(() => ({}));
+  $("iv-msg").textContent = r.ok ? (ivMode === "nas" ? `${out.files} model files` : "up to date") : (out.error || r.status);
+  ivReload();
+}
+const ivShown = {};
+function pcounts(c) {
+  return `${c.completed - c.bad > 0 ? `<b>✓${c.completed - c.bad}</b> ` : ""}${c.failed ? `<i>✗${c.failed}</i> ` : ""}${c.good ? `<u>★${c.good}</u> ` : ""}${!c.completed && !c.failed && c.files ? `<span class="stamp">sent</span>` : ""}`;
+}
+function artCard(d) {
+  const th = d.artefacts.find((a) => a.thumb);
+  const model = d.artefacts.find((a) => a.kind === "model");
+  const pr = Object.entries(d.printers).map(([n, c]) => `<span class="chip pc">${esc(n)} ${pcounts(c)}</span>`).join(" ");
+  return `<div class="art">
+    <div class="th">${th ? `<img loading="lazy" src="/api/artefacts/${th.id}/thumb" alt="">` : model && model.job_id ? "3D model" : d.kinds.includes("gcode") ? "G-code" : "model"}</div>
+    <div class="t">${esc(d.title)}</div>
+    <div class="stamp">${esc(d.makers.join(", "))} · ${d.artefacts.length} file${d.artefacts.length > 1 ? "s" : ""}${d.last ? " · last " + new Date(d.last * 1000).toLocaleDateString() : ""}</div>
+    <div>${pr || `<span class="stamp">not printed yet</span>`}</div>
+    ${d.projects.length ? `<div class="stamp">Projects: ${esc(d.projects.join(", "))}</div>` : ""}
+    ${d.nas.length ? `<div class="stamp" title="${esc(d.nas.join("\n"))}">NAS: ${esc(d.nas[0])}${d.nas.length > 1 ? ` +${d.nas.length - 1}` : ""}</div>` : ""}
+    <div class="acts"><button class="mini ghost" onclick="openPrints(${ref(d)})">Prints</button>
+      ${model ? `<button class="mini" onclick="openSendArtefact(${model.id}, ${ref(d.title)})">Send to printer…</button>` : ""}</div>
+  </div>`;
+}
+async function loadInventory() {
+  const qs = new URLSearchParams({ by: $("iv-by").value, q: $("iv-q").value, printed: $("iv-printed").checked ? "1" : "" });
+  IV = await (await fetch("/api/inventory?" + qs)).json();
+  REF = [];
+  $("iv-msg").textContent = `${IV.total} designs`;
+  $("inventory").innerHTML = IV.groups.map((g) => {
+    const n = ivShown[g.key] || 24;
+    return `<h2>${esc(g.key)} <span class="stamp">${g.designs.length}</span></h2><div class="igrid">${g.designs.slice(0, n).map(artCard).join("")}</div>
+      ${g.designs.length > n ? `<button class="mini ghost" style="margin:-8px 0 18px" onclick='ivShown[${JSON.stringify(g.key)}] = ${n + 48}; loadInventory()'>show more (${g.designs.length - n} left)</button>` : ""}`;
+  }).join("") || `<div class="stamp">Nothing yet - Refresh from printers.</div>`;
+}
+async function openPrints(i) {
+  const { design, title } = typeof i === "number" ? REF[i] : i;
+  const r = await (await fetch("/api/inventory/design?d=" + encodeURIComponent(design))).json();
+  $("pr-title").textContent = title;
+  $("pr-body").innerHTML = r.prints.length ? `<table><tr><th>When</th><th>Printer</th><th>File</th><th>Result</th><th>Quality</th></tr>${r.prints.map((p) => `<tr>
+      <td>${new Date(p.started_at * 1000).toLocaleString()}</td><td>${esc(p.printer)}</td><td class="stamp">${esc(p.file.split("/").pop())}</td>
+      <td><span class="st ${p.status === "completed" ? "completed" : p.status === "failed" ? "error" : ""}">${esc(p.status)}</span></td>
+      <td>${p.quality ? `<b>${esc(p.quality)}</b> <span class="stamp">${esc((p.marked_by || "").replace("ui:", ""))}</span>` : ""}
+        ${p.status === "completed" ? `<button class="mini ghost" onclick="markPrint(${p.id},'good')">Good</button><button class="mini ghost" onclick="markPrint(${p.id},'bad')">Bad</button>` : ""}</td></tr>`).join("")}</table>`
+    : `<div class="stamp">No prints recorded.</div>`;
+  $("prdlg").ref = { design, title };
+  if (!$("prdlg").open) $("prdlg").showModal();
+}
+async function markPrint(id, quality) {
+  const who = opName() || prompt("Your name (recorded with the mark):", "");
+  if (!who) return;
+  try { localStorage.setItem("operator", who); } catch (e) {}
+  const note = quality === "bad" ? prompt("What was wrong? (optional)", "") : "";
+  if (note === null) return;
+  const r = await fetch(`/api/prints/${id}/mark`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality, note, operator: who }) });
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).error || r.status); return; }
+  openPrints($("prdlg").ref); loadInventory();
+}
+async function loadNas() {
+  const qs = new URLSearchParams({ q: $("iv-q").value, matched: $("nas-matched").checked ? "1" : "", folder: $("nas-folder").value });
+  NAS = await (await fetch("/api/nas?" + qs)).json();
+  REF = [];
+  const sel = $("nas-folder").value;
+  $("nas-folder").innerHTML = `<option value="">all</option>` + NAS.folders.filter((f) => f).map((f) => `<option ${f === sel ? "selected" : ""}>${esc(f)}</option>`).join("");
+  $("iv-msg").textContent = NAS.scanned_at ? `${NAS.total} files on the NAS · ${NAS.matched} shown sent · scanned ${new Date(NAS.scanned_at * 1000).toLocaleString()}` : "not scanned yet - Scan the NAS";
+  $("inventory").innerHTML = `<div class="card" style="overflow-x:auto"><table class="nas"><tr><th>NAS file</th><th></th>${NAS.printers.map((p) => `<th>${esc(p)}</th>`).join("")}<th></th></tr>
+    ${NAS.rows.map((r) => `<tr><td class="p">${esc(r.path)}</td><td class="stamp">${esc(r.ext)} · ${(r.size / 1e6).toFixed(1)} MB</td>
+      ${NAS.printers.map((p) => `<td class="pc">${r.printers[p] ? pcounts(r.printers[p]) : ""}</td>`).join("")}
+      <td>${r.artefact_id ? `<span class="stamp">imported ✓</span> <button class="mini" onclick="openSendArtefact(${r.artefact_id}, ${ref(r.path.split("/").pop())})">Send…</button>` : r.printable ? `<button class="mini ghost" onclick="nasImport(${ref(r.path)}, this)">Import</button>` : `<span class="stamp" title="export an STL or 3MF to print it">catalogue only</span>`}</td></tr>`).join("")}
+  </table>${NAS.truncated ? `<div class="stamp pad">first ${NAS.rows.length} shown - narrow with the folder or search</div>` : ""}</div>`;
+}
+async function nasImport(i, btn) {
+  const path = REF[i];
+  btn.disabled = true; btn.textContent = "fetching…";
+  const r = await fetch("/api/nas/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, operator: opName() }) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(out.error || r.status); btn.disabled = false; btn.textContent = "Import"; return; }
+  btn.outerHTML = `<span class="stamp">imported ✓</span> <button class="mini" onclick="openSendArtefact(${out.artefact}, ${ref(out.title)})">Send to printer…</button>`;
 }
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 
 // ---------------------------------------------------------------- Projects: generated content, send to a printer
-let LIB = [], sendIds = [], sendDefaults = {};
+let LIB = [], sendIds = [], sendDefaults = {}, sendArtefact = null;
+async function openSendArtefact(id, ti) {
+  const title = REF[ti];
+  sendArtefact = id; sendIds = [];
+  $("sd2-title").textContent = `Send "${title}"`; $("sd2-items").textContent = "";
+  if (!MK) MK = await (await fetch("/api/makers")).json();
+  sendDefaults = {};
+  $("sd2-printer").innerHTML = MK.printers.map((p) => `<option>${esc(p)}</option>`).join("");
+  $("sd2-msg").textContent = ""; sendProfiles(); $("senddlg").showModal();
+}
 async function loadLibrary() {
   LIB = await (await fetch("/api/projects")).json();
   $("library").innerHTML = LIB.length ? `<div class="lib">${LIB.map((o) => {
@@ -557,6 +701,7 @@ async function loadLibrary() {
     </div>`; }).join("")}</div>` : `<div class="stamp">No orders yet.</div>`;
 }
 async function openSend(orderId) {
+  sendArtefact = null;
   sendIds = [...document.querySelectorAll(`.libsel[data-order="${orderId}"]:checked`)].map((c) => +c.value);
   if (!sendIds.length) { alert("Tick at least one generated item."); return; }
   const o = LIB.find((x) => x.id === orderId);
@@ -580,6 +725,14 @@ function sendLayers() {
 }
 async function doSend() {
   $("sd2-msg").textContent = "sending…";
+  if (sendArtefact) {
+    const r = await fetch(`/api/artefacts/${sendArtefact}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      printer: $("sd2-printer").value, profile: $("sd2-profile").value, layer_height: +$("sd2-layer").value, operator: opName() }) });
+    const out = await r.json().catch(() => ({}));
+    $("sd2-msg").textContent = r.ok ? (out.builds ? `build(s) ${out.builds.join(", ")} slicing` : `order ${out.order}: preparing the model, then slicing`) + " — they'll appear in Review & queue" : "not sent: " + (out.error || r.status);
+    if (r.ok) refresh();
+    return;
+  }
   const r = await fetch("/api/jobs/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
     job_ids: sendIds, printer: $("sd2-printer").value, profile: $("sd2-profile").value, layer_height: +$("sd2-layer").value,
     same_bed: $("sd2-samebed").checked }) });

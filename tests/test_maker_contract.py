@@ -20,11 +20,12 @@ class Contract(unittest.TestCase):
         cls.fake = FakeMakers(cls.tmp)
         cls.all = makers.all_makers()
         for m in cls.all.values():
-            m.spec = dataclasses.replace(type(m).spec, url=cls.fake.url)
+            m.spec = dataclasses.replace(type(m).spec, url=cls.fake.url if type(m).spec.url else "")
         img = cls.tmp / "p.png"
         img.write_bytes(b"\x89PNG fake")
         cls.files = {"likhan": {}, "lithophane": {"image": img}, "lamp": {"fileToUpload1": img}, "plaque": {},
-                     "namakdani": {"file": box_stl(cls.tmp / "s.stl", 0, 0, 0, 10, 10, 10)}, "holder": {"image1": img}}
+                     "namakdani": {"file": box_stl(cls.tmp / "s.stl", 0, 0, 0, 10, 10, 10)}, "holder": {"image1": img},
+                     "upload": {"file": box_stl(cls.tmp / "u.stl", 0, 0, 0, 10, 10, 10)}}
         cls.params = {"likhan": {"text": "A1"}, "plaque": {"text": "A1"}}
 
     @classmethod
@@ -39,7 +40,7 @@ class Contract(unittest.TestCase):
                                  label="X1")
 
     def test_all_five_makers_are_registered(self):
-        self.assertEqual(set(self.all), {"likhan", "lithophane", "lamp", "plaque", "namakdani", "holder"})
+        self.assertEqual(set(self.all), {"likhan", "lithophane", "lamp", "plaque", "namakdani", "holder", "upload"})
 
     def test_specs_are_well_formed_and_defaults_validate(self):
         for mid, m in self.all.items():
@@ -69,6 +70,8 @@ class Contract(unittest.TestCase):
             self.fake.status = code
             try:
                 for mid, m in self.all.items():
+                    if not m.spec.url:          # upload: no app to fail
+                        continue
                     with self.assertRaises(makers.MakerError, msg=f"{mid} {code}") as e:
                         m.generate(self.ctx(mid))
                     self.assertEqual(e.exception.retryable, retry, f"{mid} {code}")

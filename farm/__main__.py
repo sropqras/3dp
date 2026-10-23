@@ -19,6 +19,7 @@
   serve [--port 10111]        farm control room: live printers, cameras, spools, jobs, batch progress
 """
 import argparse
+import os
 import json
 import sys
 from pathlib import Path
@@ -256,7 +257,27 @@ def cmd_backup(args):
             dest = Path(__file__).resolve().parent.parent / "printers" / (v.get("registry") or v["name"])
             written = configs.to_repo(con, v["key"], dest)
             print(f"     -> {dest.relative_to(dest.parent.parent)}: {len(written)} file(s) updated")
+    if not args.printer:   # the nightly run also refreshes the Inventory (printers' files + history, the NAS list)
+        _inventory_refresh(con)
     sys.exit(1 if bad else 0)
+
+
+def _inventory_refresh(con):
+    from . import inventory, nas
+    inventory.backfill(con, log=lambda m: print("OK   " + m))
+    try:
+        nas.scan(con, log=lambda m: print("OK   " + m))
+    except Exception as e:   # the NAS being down must not fail the config backup
+        print(f"WARN nas: {str(e)[:120]}")
+
+
+def cmd_inventory(args):
+    from . import nas
+    con = db.connect()
+    if args.action == "import":
+        _inventory_refresh(con)
+    elif args.action == "nas-import":
+        print(nas.import_file(con, args.path, "cli:" + os.environ.get("USER", "?")))
 
 
 def cmd_doctor(args):
@@ -315,6 +336,9 @@ def main():
     wk.add_argument("--alive", action="store_true", help="exit 0 if the worker's heartbeat is fresh")
     d = sub.add_parser("db")
     d.add_argument("action", choices=["init", "import-runs"])
+    iv = sub.add_parser("inventory", help="refresh the Inventory from the printers (read-only) and the NAS list")
+    iv.add_argument("action", choices=["import", "nas-import"])
+    iv.add_argument("path", nargs="?", help="nas-import: the NAS path as the catalogue shows it")
     m = sub.add_parser("monitor")
     m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))
     v = sub.add_parser("serve")
@@ -324,7 +348,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup, "config": cmd_config}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup, "config": cmd_config, "inventory": cmd_inventory}[args.cmd](args)
 
 
 if __name__ == "__main__":

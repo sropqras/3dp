@@ -15,6 +15,7 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/fleet/<key>/snapshot | review {snapshot, operator} | changes {path, section/option/value | content, reason}
   POST /api/fleet/<key>/fix {rule} | telegram-pack | restart {service}    (farm/baseline.py, farm/ops.py)
   POST /api/fleet/<key>/onboard | registry | serial {port} | camera {name, path}   registry + onboarding (phase 5)
+  POST /api/fleet/<key>/reconnect   FIRMWARE_RESTART of a printer that was switched off (board back on)
   GET  /api/hosts/<name>/usb  USB serial ports + cameras on a host and who uses them (read-only, ssh)
   POST /api/scripts {kind: camera|instance, ...}   root-only host steps as a script to run with sudo
   POST /api/changes/<id>/preview | apply | rollback | cancel | reject {operator}   (apply/rollback: farm/cfgchange.py gate)
@@ -22,6 +23,11 @@ the server is the only thing that talks to the printers, so the browser never ne
   POST /api/uploads?name=     a file for a new job (raw body) -> {"ref"}; kept under data/uploads/ (gitignored)
   GET  /api/templates         New-job templates (jobs/templates.json: proven + starter; data/templates.json: saved)
   POST /api/templates         save the New-job form as a template
+  GET  /api/inventory?by=printer|project|maker&q=&printed=1&products=1   artefacts folded into designs (farm/inventory.py)
+  GET  /api/inventory/design?d=   a design's prints     GET /api/artefacts/<id>/thumb   G-code thumbnail from its printer
+  GET  /api/nas?q=&matched=1&folder=   the OMV project-files catalogue vs the printers (farm/nas.py)
+  POST /api/inventory/refresh | /api/nas/scan | /api/nas/import {path} | /api/prints/<id>/mark {quality, note}
+  POST /api/artefacts/<id>/send {printer, profile, layer_height}   onto a printer via Review & queue
   GET  /api/projects          orders -> generated jobs/models -> builds (the Projects tab's library)
   POST /api/jobs/send {job_ids, printer, profile, layer_height, same_bed}   re-use generated models on new builds
   POST /api/orders            a new order from the New-job page -> jobs queued for the worker
@@ -35,7 +41,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import audit, cfgchange, config, db, fleet, gate, ops, jobs, makers, model3mf, net, pipeline, printers, profiles, spools, watch, worker
+from . import audit, cfgchange, config, db, fleet, gate, inventory, nas, ops, jobs, makers, model3mf, monitor, net, pipeline, printers, profiles, spools, watch, worker
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -159,7 +165,8 @@ def printer_view(p, runs_by_remote: dict) -> dict:
                 v["next"] = {"what": "colour change", "in_s": None}
     elif v["paused"]:
         v["alert"] = "Paused"
-    if v["klipper"] != "ready":
+    v["off"] = monitor.powered_off(v["klipper"], s["webhooks"]["state_message"], v["job"])
+    if v["klipper"] != "ready" and not v["off"]:
         v["alert"] = v["klipper_msg"]
     cams = cached(f"cams:{p.name}", 600, lambda: net.get_json(f"{p.moonraker}/server/webcams/list", timeout=4)["result"]["webcams"])
     v["has_cam"] = bool(cams)
@@ -354,6 +361,30 @@ def create_order(body: dict) -> dict:
         return {"order": oid, "jobs": ids, "run": run.dir.name}
     finally:
         con.close()
+
+
+def send_artefact(con, artefact_id: int, body: dict) -> dict:
+    """An Inventory artefact onto a printer: a maker job's models are re-used (pipeline.send_jobs); an imported or
+    uploaded model file becomes an order for the upload maker. Either way it is sliced for Review & queue."""
+    a = con.execute("SELECT * FROM artefacts WHERE id=?", (artefact_id,)).fetchone()
+    if not a:
+        raise LookupError(f"no artefact {artefact_id}")
+    printer, profile, lh = str(body["printer"]), str(body["profile"]), float(body["layer_height"])
+    if a["job_id"]:
+        ids = pipeline.send_jobs(con, [a["job_id"]], printer, profile, lh, "ui")
+        for bid in ids:
+            worker.enqueue(con, "slice", bid)
+        return {"builds": ids}
+    if a["kind"] != "model" or not a["path"] or not Path(a["path"]).is_file():
+        raise ValueError("this artefact is G-code sliced elsewhere (it can't be re-sliced) - import its model "
+                         "from the NAS, or upload the STL/3MF")
+    oid, run = pipeline.submit_order(con, source="inventory", title=a["title"][:120], maker="upload",
+                                     items=[{"label": a["title"][:80], "params": {}, "inputs": {"file": a["path"]}}],
+                                     profile=profile, layer_height=lh, printer=printer)
+    ids = [r[0] for r in con.execute("SELECT id FROM jobs WHERE order_id=? ORDER BY id", (oid,))]
+    for jid in ids:
+        worker.enqueue(con, "generate", jid)
+    return {"order": oid, "jobs": ids}
 
 
 def jobs_in_progress() -> list[dict]:
@@ -560,6 +591,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"{}")
         if path == "/api/templates":
             return self._send(200, json.dumps(templates()).encode())
+        if path in ("/api/inventory", "/api/inventory/design", "/api/nas"):
+            q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).items()}
+            con = db.connect()
+            try:
+                if path == "/api/inventory":
+                    out = inventory.listing(con, q.get("by", "printer"), q.get("q", ""), q.get("printed") == "1",
+                                            q.get("products") == "1")
+                elif path == "/api/inventory/design":
+                    out = {"prints": inventory.prints_of(con, q.get("d", ""))}
+                else:
+                    out = nas.matrix(con, q.get("q", ""), q.get("matched") == "1", q.get("folder", ""))
+                return self._send(200, json.dumps(out, default=str).encode())
+            finally:
+                con.close()
+        if path.startswith("/api/artefacts/") and path.endswith("/thumb"):
+            def fetch(aid=path.split("/")[3]):
+                con = db.connect()
+                try:
+                    return inventory.thumb(con, int(aid))
+                except (ValueError, OSError):
+                    return None
+                finally:
+                    con.close()
+            t = cached(f"thumb:{path}", 3600, fetch)
+            return self._send(200, t[0], t[1]) if t else self._send(404, b"{}")
         if path == "/api/projects":
             con = db.connect()
             try:
@@ -622,6 +678,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.register_camera(key, body, who)).encode())
                 if parts[3] == "registry":
                     return self._send(200, json.dumps(fleet.update_registry(key, body, who)).encode())
+                if parts[3] == "reconnect":
+                    return self._send(200, json.dumps(fleet.reconnect(key, who)).encode())
                 if parts[3] == "maintenance":
                     return self._send(200, json.dumps(fleet.maint_log(key, body, who), default=str).encode())
                 if parts[3] == "fix":
@@ -691,6 +749,31 @@ class Handler(BaseHTTPRequestHandler):
             except spools.Conflict as e:
                 return self._send(409, json.dumps({"error": str(e)}).encode())
             except (LookupError, ValueError, KeyError) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
+            finally:
+                con.close()
+        if path in ("/api/inventory/refresh", "/api/nas/scan", "/api/nas/import") or (
+                len(parts) == 4 and parts[:2] in (["api", "prints"], ["api", "artefacts"]) and parts[2].isdigit()):
+            con = db.connect()
+            try:
+                body = self._json_body()
+                who = "ui:" + (str(body.get("operator") or "").strip()[:40] or "unknown")
+                if path == "/api/inventory/refresh":
+                    out = inventory.backfill(con, log=lambda m: None)
+                elif path == "/api/nas/scan":
+                    out = nas.scan(con, log=lambda m: None)
+                elif path == "/api/nas/import":
+                    out = nas.import_file(con, str(body["path"]), who)
+                elif parts[1] == "prints" and parts[3] == "mark":
+                    out = inventory.mark(con, int(parts[2]), body.get("quality"), who, str(body.get("note") or ""))
+                elif parts[1] == "artefacts" and parts[3] == "send":
+                    out = send_artefact(con, int(parts[2]), body)
+                else:
+                    return self._send(404, b"{}")
+                return self._send(200, json.dumps(out, default=str).encode())
+            except LookupError as e:
+                return self._send(404, json.dumps({"error": str(e)}).encode())
+            except (inventory.Refused, pipeline.StepFailed, ValueError, KeyError, RuntimeError, SystemExit) as e:
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             finally:
                 con.close()

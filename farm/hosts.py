@@ -72,6 +72,8 @@ def health(host: dict, port: int, reg: dict) -> dict:
     v["state"] = pinfo.get("state")
     v["state_message"] = (pinfo.get("state_message") or "").strip().splitlines()[0][:200] if pinfo.get("state_message") else ""
     v["klipper_version"] = pinfo.get("software_version")
+    from .monitor import powered_off
+    v["off"] = powered_off(pinfo.get("state"), pinfo.get("state_message"))
     v["name"] = instance_name(pinfo.get("config_file", ""), host["name"])
     p = reg.get((_ip(host["address"]), port))
     v["registry"] = p.name if p else None

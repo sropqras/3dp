@@ -182,4 +182,4 @@ def all_makers() -> dict:
 
 def _load():
     # each adapter registers itself on import
-    from . import holder, lamp, likhan, lithophane, namakdani  # noqa: F401
+    from . import holder, lamp, likhan, lithophane, namakdani, upload  # noqa: F401

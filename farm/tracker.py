@@ -8,7 +8,7 @@ A failed or cancelled build's jobs go back to "planned" so they can be printed a
 """
 import json
 
-from . import db, jobs, net, printers, spools
+from . import db, inventory, jobs, net, printers, spools
 
 DONE = {"completed": "done", "cancelled": "cancelled", "error": "failed", "klippy_shutdown": "failed",
         "klippy_disconnect": "failed", "server_exit": "failed", "interrupted": "failed"}
@@ -40,6 +40,7 @@ def finish(con, b: dict, status: str, entry: dict, log=print) -> str:
             if jobs.get(con, "job", jid)["state"] == "printing":
                 jobs.transition(con, "job", jid, "printing", "done" if to == "done" else "planned", "tracker",
                                 build=b["id"])
+        inventory.record_build(con, b, entry)
         written = spools.deduct(con, b["id"], b["attempt"], _assignments(con, b["id"]), b["segments"] or [],
                                 used_mm=used_mm, reason=f"build {b['id']} {to}")
     log(f"tracker: build {b['id']} {b['labels'] or ''} on {b['printer']} -> {to} ({status}); spools {written}")

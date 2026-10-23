@@ -382,5 +382,33 @@ def register_camera(key: str, body: dict, actor: str) -> dict:
     return {"registered": item["name"], "stream": item["stream_url"]}
 
 
+def reconnect(key: str, actor: str, wait_s: float = 20) -> dict:
+    """A printer switched off at the wall leaves Klipper in "Unable to connect"; after it is switched on, Klipper
+    needs a FIRMWARE_RESTART to find the board. Only for that state - a config error or a lost-mid-print board is
+    not fixed by a restart and stays for a person to read."""
+    from .monitor import powered_off
+    _person(actor)
+    v = _instance(key)
+    if v.get("readonly") or (printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(readonly=False)).readonly:
+        raise cfgchange.Refused(f"{key} is watch-only: use its own Fluidd")
+    info = net.get_json(f"{v['url']}/printer/info", timeout=5)["result"]
+    if not powered_off(info.get("state"), info.get("state_message")):
+        raise cfgchange.Refused(f"{key} is {info.get('state')}, not waiting for its board - nothing to reconnect")
+    net.post_json(f"{v['url']}/printer/firmware_restart", timeout=10)
+    deadline = time.time() + wait_s
+    state = info.get("state")
+    while time.time() < deadline:
+        time.sleep(1)
+        try:
+            state = net.get_json(f"{v['url']}/printer/info", timeout=5)["result"].get("state")
+        except Exception:
+            continue
+        if state == "ready":
+            break
+    _cache.pop("fleet", None)
+    return {"key": key, "state": state,
+            "hint": "" if state == "ready" else "still not connected: is the printer switched on and its USB in?"}
+
+
 def unquote_key(part: str) -> str:
     return urllib.parse.unquote(part)

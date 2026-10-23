@@ -6,6 +6,7 @@ Serious = Klipper in error/shutdown (thermal runaway, MCU lost, ...), a print in
 unreachable on two passes running, or a new console error line: Klipper's "!!" errors and "Unknown command"
 (the API answers ok for an unknown macro, so the console is the only place that shows it).
 """
+import re
 import json
 from pathlib import Path
 
@@ -39,7 +40,9 @@ def check(p, prev: dict) -> tuple[dict, list[tuple[str, str]]]:
             now["problems"]["unreachable"] = f"Moonraker unreachable: {str(e)[:120]}"
     else:
         wh, ps = s["webhooks"], s["print_stats"]
-        if wh["state"] in ("error", "shutdown"):
+        if powered_off(wh["state"], wh.get("state_message"), ps["state"]):
+            now["off"] = True                 # switched off at the wall: a note, not an alarm
+        elif wh["state"] in ("error", "shutdown"):
             now["problems"]["klipper"] = f"Klipper {wh['state']}: {wh['state_message'].strip().splitlines()[0][:200]}"
         if ps["state"] == "error":
             now["problems"]["print"] = f"print error ({ps['filename']}): {ps.get('message', '')[:200]}"
@@ -52,6 +55,10 @@ def check(p, prev: dict) -> tuple[dict, list[tuple[str, str]]]:
                 out.append(("loud", f"🟠 {p.name}: console error\n" + "\n".join(l[:200] for l in lines[:5]) + more + link))
         except Exception:
             pass
+    if now.get("off") and not prev.get("off"):
+        out.append(("silent", f"⚪ {p.name}: powered off (board not connected) - Reconnect in Farm Control after switching it on"))
+    elif prev.get("off") and not now.get("off") and "unreachable" not in now["problems"]:
+        out.append(("silent", f"🟢 {p.name}: board connected again"))
     old = prev.get("problems", {})
     for key, text in now["problems"].items():
         if old.get(key) != text:
@@ -59,6 +66,13 @@ def check(p, prev: dict) -> tuple[dict, list[tuple[str, str]]]:
     for key in old.keys() - now["problems"].keys():
         out.append(("silent", f"✅ {p.name}: recovered ({old[key][:80]})"))
     return now, out
+
+
+def powered_off(klippy: str | None, message: str | None, job: str | None = None) -> bool:
+    """Klipper couldn't reach the board at start-up and nothing was printing: the printer is switched off (or its
+    USB is out), which the farm does to idle printers. Losing the board mid-print is NOT this - that stays loud."""
+    return klippy == "error" and job not in ("printing", "paused") and bool(
+        re.search(r"mcu '[^']*': Unable to connect", message or ""))
 
 
 # ---------------------------------------------------------------- fleet health (Printers tab, phase 4)
