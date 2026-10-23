@@ -80,7 +80,6 @@ The library is staged, not applied:
 |---|---|
 | Ender3MaxNeo | 9 → 10 |
 | s1pro | 11 → 12 |
-| EnderCR10SE | 13 → 14 |
 
 enders1plus gets it from **Stage all fixes** once it is back on and its changes 1 and 3 are applied. The Fluidd
 layout hasn't been pushed anywhere yet.

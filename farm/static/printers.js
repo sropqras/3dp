@@ -88,6 +88,10 @@ function hostTools(h) {
       <input type="hidden" name="kind" value="instance"><input name="name" placeholder="name" style="width:110px">
       <input name="port" placeholder="7130" style="width:70px"><input name="klipper_commit" placeholder="own Klipper commit (optional)" style="width:200px">
       <button class="ghost">Make script</button><pre style="width:100%;max-height:30vh;overflow:auto"></pre></form>
+    <form onsubmit="makeScript(this);return false" class="row"><b>Retire an instance</b>
+      <input type="hidden" name="kind" value="retire"><input name="name" placeholder="name (e.g. EnderCR10SE)" style="width:170px">
+      <input name="port" placeholder="7127" style="width:70px">
+      <button class="ghost">Make script</button><pre style="width:100%;max-height:30vh;overflow:auto"></pre></form>
     <div class="dim">Scripts are for a person to run on the host with sudo; Farm Control never runs root steps.</div></details>`;
 }
 

@@ -70,7 +70,7 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
      (cold-nozzle reheat, BEEP, macro library) and apply those, then the **Telegram pack**.
    - **Ender3Pro 8**: comments out the missing `moonraker_obico_macros.cfg` include, so Klipper can start. Then the
      onboarding checklist.
-   - **EnderCR10SE 13 → 14** once it is switched on. Then onboarding.
+   - ~~EnderCR10SE~~: not a printer, the S1 Plus's old instance. 13/14 cancelled. **Remove it with KIAUH** on enders3dp (see FARM.md change log), then unlink it in Obico/OctoEverywhere.
 2. **Fluidd layout**: pushed 2026-10-23 to MaxNeo, s1pro, enders1plus and EnderCR10SE (Undo on each card).
    EnderV3SE: push it after its staged changes are on. Not pushed: Ender3Pro (Klipper not running; a push now refuses when it can't read
    any macros).
@@ -86,7 +86,7 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 6. **Next features** (ranked in `docs/FEATURE_GAPS.md`): cost per print/product, product SKUs with recipes, proven
    settings as the send default, suggested printer, Spoolman sync. Phase 7 (invtool) and phase 8 (EnderV3SE) still
    wait for Amir's go-ahead.
-7. **Telegram bots** for EnderV3SE / Ender3Pro / EnderCR10SE on enders3dp crash-loop (tokens rejected by Telegram).
+7. **Telegram bots** for EnderV3SE / Ender3Pro (and EnderCR10SE until it is removed) on enders3dp crash-loop (tokens rejected by Telegram).
    The monitor now reports each one once instead of every 2 minutes.
 8. **Filament** for the full Qabrastaan batch: ~40 kg plate colour + ~16 kg letter colour (+5-10 %).
 

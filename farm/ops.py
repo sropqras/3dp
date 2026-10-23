@@ -303,4 +303,38 @@ systemctl enable --now klipper-{name}.service moonraker-{name}.service
 sleep 5
 systemctl --no-pager --lines=0 status klipper-{name}.service moonraker-{name}.service | grep -E "Loaded|Active"
 """
+    if kind == "retire":
+        # a printer that moved to another host leaves its old instance behind: its services restart forever
+        # (Telegram bot crash loops) and the farm keeps watching a port with no printer
+        name, port = re.sub(r"[^A-Za-z0-9_-]", "", p["name"]), int(p["port"])
+        if not name:
+            raise Refused("name: the instance name, as in <name>_data and klipper-<name>.service")
+        return f"""#!/usr/bin/env bash
+# Retire Klipper instance {name} (Moonraker port {port}) on this host. Nothing is deleted: the units go to
+# /etc/systemd/retired/ and the data folder to ~aali/retired/, so it can be put back by moving them again.
+# Its configs and history are already archived in the farm repo (printers/_archive/{name}/).
+# Run on the printer host: sudo bash farm-retire-{name}.sh
+set -euo pipefail
+[[ $EUID -eq 0 ]] || {{ echo "run with sudo"; exit 1; }}
+NAME={name}; HOMEDIR=/home/aali; STAMP=$(date +%Y%m%d-%H%M)
+[[ -d "$HOMEDIR/${{NAME}}_data" ]] || {{ echo "no $HOMEDIR/${{NAME}}_data - wrong name?"; exit 1; }}
+grep -q "port: {port}" "$HOMEDIR/${{NAME}}_data/config/moonraker.conf" || {{ echo "${{NAME}}'s moonraker.conf is not on port {port} - stopping"; exit 1; }}
+mkdir -p /etc/systemd/retired "$HOMEDIR/retired"
+for svc in klipper moonraker moonraker-obico moonraker-telegram-bot octoeverywhere; do
+  unit="$svc-$NAME.service"
+  if [[ -f "/etc/systemd/system/$unit" ]]; then
+    systemctl disable --now "$unit" || true
+    mv "/etc/systemd/system/$unit" "/etc/systemd/retired/$unit.$STAMP"
+    echo "retired $unit"
+  fi
+done
+systemctl daemon-reload
+systemctl reset-failed || true
+mv "$HOMEDIR/${{NAME}}_data" "$HOMEDIR/retired/${{NAME}}_data-$STAMP"
+chown -R aali:aali "$HOMEDIR/retired"
+sleep 2
+if ss -ltn | grep -q ":{port} "; then echo "WARNING: something still listens on {port}"; else echo "port {port} free"; fi
+systemctl list-units --all --no-pager | grep -i "$NAME" || echo "no $NAME units left"
+echo "Done. Unlink '$NAME' in the Obico and OctoEverywhere apps too (it stays listed there as offline)."
+"""
     raise Refused(f"unknown script {kind}")

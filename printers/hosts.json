@@ -8,10 +8,12 @@
       "ports": [
         7125,
         7126,
-        7127,
         7128,
         7129
-      ]
+      ],
+      "retired_ports": {
+        "7127": "EnderCR10SE: the S1 Plus's old instance (bed 316x304x300); the printer runs on 3dpnas:7125 (enders1plus). Archive: printers/_archive/EnderCR10SE. Retired 2026-10-23"
+      }
     },
     {
       "name": "3dpnas",

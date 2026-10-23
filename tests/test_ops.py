@@ -112,6 +112,16 @@ class Scripts(unittest.TestCase):
         self.assertIn("klippy-env-neo2", inst)
         self.assertNotIn("RemainAfterExit=yes", inst)      # stopped units must come back (the s1pro lesson)
 
+    def test_retire_script_moves_aside_never_deletes(self):
+        r = ops.host_script("retire", name="EnderCR10SE; rm -rf /", port="7127")
+        self.assertIn("NAME=EnderCR10SErm-rf", r)                 # the name can't carry shell
+        r = ops.host_script("retire", name="EnderCR10SE", port="7127")
+        self.assertIn("/etc/systemd/retired/", r)
+        self.assertIn("grep -q \"port: 7127\"", r)              # refuses if the name and port don't match
+        self.assertNotRegex(r, r"\brm\s+-")
+        with self.assertRaises(ops.Refused):
+            ops.host_script("retire", name="../", port="7127")
+
 
 if __name__ == "__main__":
     unittest.main()
