@@ -3,9 +3,17 @@
   "printer": "Ender3MaxNeo",
   "material": "petg",
   "layer_height": 0.4,
-  "colour_changes": ["base_top"],
-  "colours": ["plate colour", "letter colour"],
-  "colour_hex": ["#2B2B2B", "#F2F2F2"],
+  "colour_changes": [
+    "base_top"
+  ],
+  "colours": [
+    "plate colour",
+    "letter colour"
+  ],
+  "colour_hex": [
+    "#2B2B2B",
+    "#F2F2F2"
+  ],
   "upload_folder": "farm/qabrastaan",
   "font": "CharlesWright-Bold.otf",
   "likhan": {
@@ -21,6 +29,9 @@
     "text_embed_mm": 0,
     "bed_margin_mm": 5,
     "auto_split": true,
-    "min_piece_mm": 15
+    "min_piece_mm": 15,
+    "base_width_mm": 185,
+    "base_depth_mm": 103,
+    "monospace": true
   }
 }
