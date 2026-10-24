@@ -58,7 +58,12 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
    1. In your own terminal on aali-cli: `~/agent_workspace/infrastructure/meross/get_key.sh`. It asks for your Meross login,
       saves only the device key (chmod 600), then shows the strip's outlets.
    2. Restart Farm Control: `~/agent_workspace/infrastructure/farm_control/stop.sh && …/start.sh`.
-   3. Printers tab → each printer's **Farm settings** → **Power outlet** → Save. The **Power strips** panel shows what
+   3. Printers tab → each printer's **Farm settings** → **Power outlet** → Save.
+      Outlets found 2026-10-24 (Ironman switched each on in the Meross app; the board or host that appeared was read):
+      app 1 = channel 6 EnderV3SE · app 2 = ch 3 s1pro · app 3 = ch 2 Ender3MaxNeo (its board stays on through USB
+      power, so it shows "ready" even with the outlet off) · app 4 = ch 5 enders1plus · app 5 = ch 1 Ender 3 V3 SE on a
+      Nebula Pad (192.168.1.200, hosts.json `printer-200`, not onboarded) · app 6 = ch 4 CR-10 SE on stock Creality
+      firmware (a new printer, not onboarded) · ch 7 = probably the USB ports · ch 0 = the whole strip (never mapped). The **Power strips** panel shows what
       each outlet feeds.
    4. Try it on an idle, cold printer: ⏻ off, then **Power on** (it reconnects Klipper).
 1. **Apply the staged changes** (Printers tab → Changes; `FARM.md` "Staged" table). Put your name in the **You**
