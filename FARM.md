@@ -14,9 +14,10 @@ Slicer profiles (PrusaSlicer 2.9.6) live in `prusa/`.
 | ~~EnderCR10SE~~ | ~~:7127~~ | – | **not a printer**: the S1 Plus's old instance (bed 316×304×300, Jan 2025 calibration runs only). The S1 Plus runs on 3dpnas (enders1plus). Retired 2026-10-23: no longer watched; configs and history in `printers/_archive/EnderCR10SE/`; services removed by Ironman with KIAUH |
 | **s1pro** (Ender 3 S1 Pro) | :7129 | connected (USB 3.3) | ready; moved off its SBC 2026-10-23, own Klipper v0.13.0-770, 0.4 nozzle, RunoutSensor, profile `s1pro-petg-020` |
 | **enders1plus** (host 3dpnas.local, 192.168.1.68) | :7125 | connected | ready; Ender 3 S1 Plus, same bed + Sprite Pro 0.6 as MaxNeo, filament sensor |
+| **NebulaV3SE** (Creality Nebula Pad, 192.168.1.200) | :7125 | on the pad | onboarded 2026-10-24: Ender 3 V3 SE on stock Creality Klipper, 0.4 nozzle, bed 5–215 (travel X −15…220, Y −20…220), Z 250; no profile yet (no farm jobs); 9 farm audit FAILs left as Creality set them (speed/accel caps, pause macros, idle timeout) for Ironman to decide; camera :8080 works but its Moonraker entry has a typo (`192.168.1.200s`); power outlet channel 1 |
 
 Other hosts (not on enders3dp, not yet onboarded): e3propad.local, powerpad.local, s1propad.local,
-192.168.1.39:4408, 192.168.1.200:4408.
+192.168.1.39 (CR-10 SE on stock Creality firmware, no Moonraker yet: read-only status feed for the power check, root planned).
 
 ## Feature matrix
 
@@ -55,6 +56,8 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-24 | NebulaV3SE | Farm settings: power outlet 1 on the mss426 at 192.168.1.63 (Claude session on Ironman's instruction; outlet confirmed by switching it on in the Meross app) |
+| 2026-10-24 | NebulaV3SE | Onboarded in Farm Control (printer-200:7125, bed [5.0, 5.0]-[215.0, 215.0], Z 250.0, profiles none) by a Claude session on Ironman's instruction |
 | 2026-10-24 | enders1plus | Farm settings: power outlet 5 on the mss426 at 192.168.1.63 (Claude session on Ironman's instruction; outlet confirmed by switching it on in the Meross app) |
 | 2026-10-24 | Ender3MaxNeo | Farm settings: power outlet 2 on the mss426 at 192.168.1.63 (Claude session on Ironman's instruction; outlet confirmed by switching it on in the Meross app) |
 | 2026-10-24 | s1pro | Farm settings: power outlet 3 on the mss426 at 192.168.1.63 (Claude session on Ironman's instruction; outlet confirmed by switching it on in the Meross app) |

@@ -142,6 +142,33 @@
         "channel": 6,
         "model": "mss426"
       }
+    },
+    {
+      "name": "NebulaV3SE",
+      "note": "Ender 3 V3 SE on a Creality Nebula Pad (stock Creality Klipper, 192.168.1.200); same printer model as EnderV3SE. 419 jobs / 933 h before onboarding.",
+      "moonraker": "http://192.168.1.200:7125",
+      "fluidd": "http://192.168.1.200/",
+      "fluidd_note": "",
+      "bed_min": [
+        5.0,
+        5.0
+      ],
+      "bed_max": [
+        215.0,
+        215.0
+      ],
+      "max_z": 250.0,
+      "has_m600_prompt": false,
+      "readonly": false,
+      "profiles": [],
+      "legacy_presets": {},
+      "power": {
+        "type": "meross",
+        "ip": "192.168.1.63",
+        "uuid": "2309280720925654060248e1e9dd015b",
+        "channel": 1,
+        "model": "mss426"
+      }
     }
   ]
 }
