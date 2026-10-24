@@ -125,3 +125,26 @@ class Scripts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TelegramPackSettings(unittest.TestCase):
+    """The pack, read the way moonraker-telegram-bot (96a7fb9) reads it."""
+
+    def setUp(self):
+        import configparser
+        self.cp = configparser.ConfigParser(interpolation=None)
+        self.cp.read_string(ops.PACK.read_text())
+
+    def test_dangerous_commands_and_macros_ask_first(self):
+        # a LIST in this bot version: "true" would match no command and turn confirmations off
+        vals = [x.strip() for x in self.cp["telegram_ui"]["require_confirmation"].split(",")]
+        self.assertTrue({"cancel", "emergency", "fw_restart", "shutdown", "power", "macro"} <= set(vals), vals)
+
+    def test_quiet(self):
+        self.assertEqual(self.cp["telegram_ui"]["progress_update_message"], "false")   # no notice per update
+        self.assertGreaterEqual(int(self.cp["progress_notification"]["time"]), 60)     # never every few seconds
+
+    def test_no_whole_host_buttons(self):
+        self.assertNotIn("shutdown", self.cp["telegram_ui"]["buttons"])
+        self.assertNotIn("services", self.cp["telegram_ui"]["buttons"])
+
