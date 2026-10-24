@@ -394,6 +394,14 @@ async function reconnect(name) {
 // A card that needs attention (offline, error, paused, an alert, PrintGuard's ⚠) is never hidden: it shows collapsed.
 const CARD_PARTS = [["cam", "Camera"], ["temps", "Temperatures"], ["facts", "Speed, flow, spool & baseline"]];
 
+// status group for "Sort by status": 0 working or needing attention, 1 on and idle, 2 switched off / offline
+function cardRank(p) {
+  if (!p.online || p.off) return 2;
+  if (p.power && p.power.mapped && p.power.on === false && !["printing", "paused"].includes(p.job)) return 2;   // outlet off (MaxNeo's board stays up on USB)
+  if (["printing", "paused"].includes(p.job) || p.paused || p.klipper !== "ready" || p.alert) return 0;
+  return 1;
+}
+
 function cardFrame(p, i, st, urgent, head, inner) {
   const hide = st.hidden && !urgent, collapsed = st.collapsed || (st.hidden && urgent);
   return `<div class="card ccard${collapsed ? " collapsed" : ""}${hide ? " is-hidden" : ""}" data-card="${esc(p.name)}" data-scope="printers" style="order:${st.order}">
@@ -404,7 +412,7 @@ function cardFrame(p, i, st, urgent, head, inner) {
 }
 
 function printerCard(p, i) {
-  const st = farmUI.cardState("printers", p.name, i);
+  const st = farmUI.cardState("printers", p.name, i, cardRank(p));
   if (!p.online) return cardFrame(p, i, st, true, `<span class="pill s-offline">offline</span>${powerControl(p)}`,
     () => `<div class="alert red">${esc(p.error || "unreachable")}</div>`);
   if (p.off) return cardFrame(p, i, st, false, `<span class="pill s-off">switched off</span>${powerControl(p)}`, (collapsed) => collapsed ? "" :
@@ -438,7 +446,8 @@ function printerCard(p, i) {
         <span>Nozzle <b>${t(p.nozzle)}</b></span><span>Bed <b>${t(p.bed)}</b></span>${queued.length ? `<span>Queue <b>${queued.length}</b></span>` : ""}</div>` : `
     <div class="body">
       ${p.has_cam && st.part("cam") ? `<div class="cam ${boost[p.name] !== false ? "boost" : ""}" onclick="toggleBoost('${esc(p.name)}')" title="click: toggle low-light boost">
-        <img id="cam-${esc(p.name)}" src="/api/cam/${encodeURIComponent(p.name)}?t=${Date.now()}" alt="${esc(p.name)} camera">
+        <img id="cam-${esc(p.name)}" src="/api/cam/${encodeURIComponent(p.name)}?t=${Date.now()}" alt="${esc(p.name)} camera"
+          ${/^[a-zA-Z0-9() .-]*$/.test(p.cam_transform || "") && p.cam_transform ? `style="transform:${p.cam_transform}"` : ""}>
         <span class="tag">${boost[p.name] !== false ? "low-light boost" : "raw"}</span></div>` : ""}
       <div class="facts">
         ${run}

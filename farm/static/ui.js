@@ -107,6 +107,7 @@
     return `<details class="menu"><summary class="icon" title="view options" aria-label="view options" role="button">☰</summary><div class="pop">
       <div class="lbl">Card size</div><div class="seg">${seg}</div>
       ${(parts || []).map(([p, label]) => `<button type="button" class="mi" data-ui="partall" data-part="${esc(p)}" data-scope="${esc(scope)}"><span class="ck">${all(p) ? "✓" : ""}</span>${esc(label)} on every card</button>`).join("")}
+      <button type="button" class="mi" data-ui="sort" data-scope="${esc(scope)}"><span class="ck">${lay(scope).sort !== "manual" ? "✓" : ""}</span>Sort by status (working, on, off)</button>
       <div class="sep"></div>
       <button type="button" class="mi" data-ui="collapseall" data-scope="${esc(scope)}"><span class="ck"></span>Collapse all</button>
       <button type="button" class="mi" data-ui="expandall" data-scope="${esc(scope)}"><span class="ck"></span>Expand all</button>
@@ -216,6 +217,7 @@
       (l.parts["*"] = l.parts["*"] || {})[p] = !cur;
       for (const k of Object.keys(l.parts)) if (k !== "*" && l.parts[k]) delete l.parts[k][p];   // "every card" wins
     }
+    else if (act === "sort") l.sort = l.sort === "manual" ? "status" : "manual";
     else if (act === "collapseall") l.collapsed = idsInOrder(scope);
     else if (act === "expandall") l.collapsed = [];
     else if (act === "showall") l.hidden = [];
@@ -283,10 +285,13 @@
     settings: () => ({ theme: get("theme"), density: get("density"), text: get("text"), cards: get("cards") }),
     editing: () => root.classList.contains("editing"),
     // what a page needs while it builds a card: order (for style="order:…"), collapsed, hidden, and part(p)
-    cardState(scope, id, natural) {
-      const l = lay(scope);
-      return { order: orderOf(scope, id, natural), collapsed: has(l.collapsed, id), hidden: has(l.hidden, id), part: (p) => part(scope, id, p) };
+    // rank: the card's status group (0 working, 1 on, 2 off) - used when the scope sorts by status
+    cardState(scope, id, natural, rank) {
+      const l = lay(scope), byStatus = l.sort !== "manual" && rank != null;
+      return { order: (byStatus ? rank * 10000 : 0) + orderOf(scope, id, natural), collapsed: has(l.collapsed, id),
+               hidden: has(l.hidden, id), part: (p) => part(scope, id, p) };
     },
+    sortsByStatus: (scope) => lay(scope).sort !== "manual",
     // header controls for a card: collapse chevron, edit-mode buttons and the ⋯ menu (parts = [[key, label], ...])
     cardControls: (scope, id, parts) => collapseButton(scope, id) + editButtons(scope, id) + cardMenu(scope, id, parts),
     viewMenu, panels: allPanels, busy,

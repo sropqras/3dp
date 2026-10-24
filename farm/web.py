@@ -56,7 +56,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import (audit, cfgchange, config, db, fleet, gate, inventory, jobs, makers, model3mf, monitor, moonraker, nas, net, ops,
+from . import (audit, cfgchange, config, db, fleet, gate, hosts, inventory, jobs, makers, model3mf, monitor, moonraker, nas, net, ops,
                nasview, pipeline, power, printers, printguard, profiles, projects, spools, tracker, watch, worker)
 from .printers import REPO
 from .runlog import RUNS_DIR
@@ -192,6 +192,12 @@ def printer_view(p, runs_by_remote: dict) -> dict:
         v["alert"] = v["klipper_msg"]
     cams = cached(f"cams:{p.name}", 600, lambda: net.get_json(f"{p.moonraker}/server/webcams/list", timeout=4)["result"]["webcams"])
     v["has_cam"] = bool(cams)
+    if cams:      # the camera entry's own orientation (what Fluidd applies): the card shows it the same way up
+        c = cams[0]
+        rot = int(c.get("rotation") or 0) % 360
+        v["cam_transform"] = " ".join(t for t in (f"rotate({rot}deg)" if rot else "",
+                                                  "scaleX(-1)" if c.get("flip_horizontal") else "",
+                                                  "scaleY(-1)" if c.get("flip_vertical") else "") if t)
 
     def audit_now():
         return [{"rule": r, "detail": d} for st, r, d in audit.rules(audit._settings(p), p) if st == "FAIL"]
@@ -373,8 +379,8 @@ def project_action(con, pid: int | None, action: str, body: dict, who: str):
 
 def cam_snapshot(p) -> tuple[bytes, str]:
     cams = net.get_json(f"{p.moonraker}/server/webcams/list", timeout=4)["result"]["webcams"]
-    host = urllib.parse.urlparse(p.moonraker).hostname
-    with urllib.request.urlopen(f"http://{host}{cams[0]['snapshot_url']}", timeout=5) as r:
+    url = hosts.snapshot_url(p.moonraker, cams[0].get("snapshot_url"), cams[0].get("stream_url"))
+    with urllib.request.urlopen(url, timeout=5) as r:
         ct = r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
         return r.read(), ct if ct in ("image/jpeg", "image/png") else "image/jpeg"
 

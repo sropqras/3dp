@@ -109,7 +109,7 @@ def health(host: dict, port: int, reg: dict) -> dict:
         v["disk_used_pct"] = round(100 * d["used"] / d["total"], 1) if d.get("total") else None
         v["disk_free_gb"] = round(d.get("free", 0) / 1e9, 1)
     cams = _get(f"{base}/server/webcams/list")
-    v["cameras"] = [{"name": c.get("name"), "snapshot": c.get("snapshot_url")}
+    v["cameras"] = [{"name": c.get("name"), "snapshot": c.get("snapshot_url"), "stream": c.get("stream_url")}
                     for c in (cams or {}).get("webcams", [])] if isinstance(cams, dict) else []
     tot = _get(f"{base}/server/history/totals")
     jt = (tot or {}).get("job_totals", {}) if isinstance(tot, dict) else {}
@@ -118,12 +118,35 @@ def health(host: dict, port: int, reg: dict) -> dict:
     return v
 
 
+def snapshot_url(printer_url: str, snapshot: str | None, stream: str | None = None) -> str:
+    """Where a printer's camera snapshot really is. Moonraker's webcam entry is a path ("/webcam/?action=snapshot",
+    served by the host's nginx) or a full URL (stock Creality: "http://<ip>:8080/?action=snapshot", and the Nebula Pad
+    stores its own address with a typo, "192.168.1.200s"). The port and path are kept, but the host is ALWAYS the
+    printer's own: that repairs such typos, and Farm Control never fetches an image from anywhere but the printer."""
+    host = urllib.parse.urlparse(printer_url).hostname
+    raw = snapshot or (stream or "").replace("action=stream", "action=snapshot")
+    u = urllib.parse.urlparse(raw)
+    path = (u.path or "/") + (f"?{u.query}" if u.query else "")
+    if not path.startswith("/"):
+        path = "/" + path
+    port = None
+    if u.scheme:
+        try:
+            port = u.port
+        except ValueError:
+            port = None
+        if port is None:      # the netloc may be broken ("192.168.1.200s:8080"): take the port after the last colon
+            tail = u.netloc.rsplit(":", 1)
+            port = int(tail[1]) if len(tail) == 2 and tail[1].isdigit() else None
+    return f"http://{host}{f':{port}' if port else ''}{path}"
+
+
 def camera_ok(v: dict) -> list[dict]:
     """Snapshot each registered camera through the host's web server (what Fluidd and Farm Control use)."""
     out = []
     host = urllib.parse.urlparse(v["url"]).hostname
     for c in v.get("cameras", []):
-        url = c["snapshot"] if (c["snapshot"] or "").startswith("http") else f"http://{host}{c['snapshot']}"
+        url = snapshot_url(v["url"], c.get("snapshot"), c.get("stream"))
         try:
             status, headers, body = net.get_bytes(url, timeout=5)
             out.append({**c, "ok": status == 200 and len(body) > 1000, "bytes": len(body)})
