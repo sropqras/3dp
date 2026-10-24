@@ -143,6 +143,13 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     identified by uuid **before** anything is sent.
   - The ⏻ control on each printer card, the switched-off card's **Power on** (switch on, then FIRMWARE_RESTART), and
     `python3 -m farm power scan|on|off`. A strip that can't be read is a quiet monitor note.
+  - **The printer's own power button (Telegram ⏻, Fluidd's toggle):** `[power printer]` in its `moonraker.conf`
+    (`power.moonraker_section`, staged with `farm power stage-device <printer>`, applied by a person) is an http
+    device that calls `GET/POST /api/power/device/<printer>`. That endpoint goes through `set_power` (same gates,
+    `reconnect=False`: Moonraker's `restart_klipper_when_powered` does the FIRMWARE_RESTART). Moonraker adds its own
+    `locked_while_printing`. Refusals answer 409, are logged as `power_refused`, and the monitor relays each once
+    (silent). The Telegram pack sets `[bot] power_device: printer` (only `ops.BOT_KEYS`; token and chat are never
+    touched) and the power button only where the device exists. Never wired on standalone printers.
   - **Named outlets** that aren't printers live in `printers/power.json` (`power.map_aux`, a FARM.md row each). The
     first is **"Farm lights"**: channel 7, the strip's USB ports, for USB LED lights when the garage is dark (2026-10-24).
     A person switches them with the 💡 button in the dashboard header. There are no print checks (nothing to protect),

@@ -46,8 +46,12 @@ def _log(con, kind: str, detail: dict, actor: str):
 
 # ---------------------------------------------------------------- Telegram pack
 
-def merge_pack(current: str, pack: str) -> tuple[str, list, list]:
-    """Pack sections replace the printer's sections of the same name; everything else ([bot] first) is kept."""
+BOT_KEYS = ("power_device",)     # the only [bot] keys the farm may set; the token and chat are never touched
+
+
+def merge_pack(current: str, pack: str, bot: dict | None = None) -> tuple[str, list, list]:
+    """Pack sections replace the printer's sections of the same name; everything else ([bot] first) is kept.
+    bot: [bot] keys to set (only BOT_KEYS; a value of None removes the key)."""
     cur = configparser.ConfigParser(interpolation=None, strict=False)
     cur.optionxform = str
     cur.read_string(current)
@@ -62,9 +66,25 @@ def merge_pack(current: str, pack: str) -> tuple[str, list, list]:
         cur.add_section(sec)
         for k, v in pk.items(sec):
             cur.set(sec, k, v)
+    for k, v in (bot or {}).items():
+        if k not in BOT_KEYS or not cur.has_section("bot"):
+            continue
+        if v is None:
+            cur.remove_option("bot", k)
+        else:
+            cur.set("bot", k, str(v))
     buf = io.StringIO()
     cur.write(buf)
     return buf.getvalue(), [s for s in pk.sections() if s != "bot"], [s for s in cur.sections() if s not in pk.sections()]
+
+
+def power_device(url: str) -> bool:
+    """The printer's Moonraker has the farm's [power printer] device (farm/power.py stage_device)."""
+    try:
+        devs = net.get_json(f"{url}/machine/device_power/devices", timeout=5)["result"]["devices"]
+    except Exception:
+        return False
+    return any(d.get("device") == "printer" for d in devs)
 
 
 def _raw(url, path) -> bytes:
@@ -103,7 +123,14 @@ def telegram_pack(con, key: str, url: str, instance: str, actor: str, wait_s: fl
         current = _raw(url, "telegram.conf")
     except Exception:
         raise Refused(f"{key} has no telegram.conf") from None
-    new, replaced, kept = merge_pack(current.decode("utf-8", "replace"), PACK.read_text(encoding="utf-8"))
+    # the power button only where the printer's Moonraker has the farm's [power printer] device (else it would say
+    # "no device"): [bot] power_device set or cleared, and "power" kept in or dropped from the buttons
+    wired = power_device(url)
+    pack = PACK.read_text(encoding="utf-8")
+    if not wired:
+        pack = re.sub(r",power\]", "]", pack)
+    new, replaced, kept = merge_pack(current.decode("utf-8", "replace"), pack,
+                                     {"power_device": "printer" if wired else None})
     backup = f"telegram.conf.bak-farm-{time.strftime('%Y%m%d-%H%M%S')}"
     _upload(url, backup, current)                    # stays on the printer, next to the original
     _upload(url, "telegram.conf", new.encode())

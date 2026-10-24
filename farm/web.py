@@ -663,6 +663,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, body, STATIC_FILES[name])
         if path == "/api/fleet":
             return self._send(200, json.dumps(fleet.overview(), default=str).encode())
+        if path.startswith("/api/power/device/"):   # a printer's own Moonraker [power printer] asks its outlet's state
+            name = urllib.parse.unquote(path[len("/api/power/device/"):])
+            p = printers.PRINTERS.get(name)
+            st = power.state(p) if p else {}
+            if "on" not in st:
+                return self._send(503, json.dumps({"error": st.get("error") or f"{name}: no power outlet mapped"}).encode())
+            return self._send(200, json.dumps({"state": "on" if st["on"] else "off"}).encode())
         if path == "/api/power":     # the power strips, their outlets and who is mapped to each (read-only)
             return self._send(200, json.dumps({"keyed": bool(power.key()), "devices": power.devices()}).encode())
         if path.startswith("/api/hosts/") and path.endswith("/usb"):
@@ -913,6 +920,28 @@ class Handler(BaseHTTPRequestHandler):
             except (LookupError, KeyError, ValueError, PermissionError, cfgchange.Refused, ops.Refused) as e:
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             return self._send(404, b"{}")
+        if path.startswith("/api/power/device/"):
+            # a printer's own Moonraker [power printer] device: Telegram's power button / Fluidd's toggle, pressed by a
+            # person in that printer's chat or Fluidd. Same gates as the card (power.set_power); Moonraker restarts Klipper.
+            name = urllib.parse.unquote(path[len("/api/power/device/"):])
+            con = db.connect()
+            try:
+                body = self._json_body()
+                action = str(body.get("action", ""))
+                if action not in ("on", "off"):
+                    return self._send(400, json.dumps({"error": "action: on or off"}).encode())
+                who = f"ui:{config.OPERATOR} via {name} (Telegram/Fluidd)"
+                if getattr(printers.PRINTERS.get(name), "standalone", False):
+                    return self._send(409, json.dumps({"error": f"{name} is standalone: use its card in Farm Control"}).encode())
+                try:
+                    power.set_power(con, name, action == "on", who, reconnect=False)
+                except (power.Refused, RuntimeError, LookupError, ValueError) as e:
+                    jobs.event(con, "printer_op", 0, None, "power_refused", who, printer=name, action=action, reason=str(e)[:200])
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
+                _cache.pop(f"power:{name}", None)
+                return self._send(200, json.dumps({"state": action}).encode())
+            finally:
+                con.close()
         if path == "/api/power/aux":     # a person switches a named outlet (the farm lights): no print checks
             con = db.connect()
             try:

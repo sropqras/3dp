@@ -396,6 +396,16 @@ def cmd_power(args):
             sys.exit("not done")
         print(power.clear_trip("cli:" + input("Your name: ").strip()))
         return
+    if args.action == "stage-device":    # staging is fine for an agent: a person Applies it in the Printers tab
+        if not args.target:
+            sys.exit("farm power stage-device <printer>")
+        con = db.connect()
+        try:
+            c = power.stage_device(con, args.target, "agent" if not sys.stdin.isatty() else "cli:" + os.environ.get("USER", "?"))
+        except (power.Refused, LookupError, PermissionError, RuntimeError) as e:
+            sys.exit(f"not staged: {e}")
+        print(f"staged change {c['id']} on {args.target}: {c['summary']} - Apply it in Farm Control -> Printers when idle")
+        return
     if not args.target:
         sys.exit("farm power on|off <printer>")
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -469,7 +479,7 @@ def main():
     nv.add_argument("--minutes", type=float, default=30)
     nv.add_argument("--max-mb", type=float, default=80)
     pw = sub.add_parser("power", help="wall outlets on the Meross strip: scan [ip] (read-only) | on|off <printer>")
-    pw.add_argument("action", choices=["scan", "on", "off", "reset"])
+    pw.add_argument("action", choices=["scan", "on", "off", "reset", "stage-device"])
     pw.add_argument("target", nargs="?", default="")
     m = sub.add_parser("monitor")
     m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))

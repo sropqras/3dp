@@ -148,3 +148,16 @@ class TelegramPackSettings(unittest.TestCase):
         self.assertNotIn("shutdown", self.cp["telegram_ui"]["buttons"])
         self.assertNotIn("services", self.cp["telegram_ui"]["buttons"])
 
+    def test_bot_keys_only_from_the_allowlist_and_the_token_untouched(self):
+        cur = "[bot]\nserver: localhost:7125\nbot_token: SECRET-123\nchat_id: 42\n"
+        new, _, _ = ops.merge_pack(cur, ops.PACK.read_text(), {"power_device": "printer", "bot_token": "evil"})
+        import configparser
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.read_string(new)
+        self.assertEqual((cp["bot"]["bot_token"], cp["bot"]["chat_id"], cp["bot"]["power_device"]), ("SECRET-123", "42", "printer"))
+        new2, _, _ = ops.merge_pack(new, ops.PACK.read_text(), {"power_device": None})
+        cp2 = configparser.ConfigParser(interpolation=None)
+        cp2.read_string(new2)
+        self.assertNotIn("power_device", cp2["bot"])
+        self.assertEqual(cp2["bot"]["bot_token"], "SECRET-123")
+

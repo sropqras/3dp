@@ -331,7 +331,9 @@ def _after_on(p, boot_s: float, wait_s: float) -> dict:
     return {"state": state, "hint": "" if state == "ready" else "powered on, but Klipper didn't find the board: is its USB in?"}
 
 
-def set_power(con, name: str, on: bool, actor: str, boot_s: float = 8, wait_s: float = 25) -> dict:
+def set_power(con, name: str, on: bool, actor: str, boot_s: float = 8, wait_s: float = 25, reconnect: bool = True) -> dict:
+    """reconnect=False: the printer's own Moonraker asked (its [power printer] device), and it restarts Klipper itself
+    (restart_klipper_when_powered) - so switch and answer at once, well inside its 20 s request timeout."""
     _person(actor)
     p = printers.PRINTERS.get(name)
     if p is None:
@@ -344,7 +346,8 @@ def set_power(con, name: str, on: bool, actor: str, boot_s: float = 8, wait_s: f
         now = _toggle(m, True)
         if not now:
             raise RuntimeError(f"the strip didn't switch outlet {m['channel']} on")
-        result = {"printer": name, "outlet": m["channel"], "on": True, **_after_on(p, boot_s, wait_s)}
+        result = {"printer": name, "outlet": m["channel"], "on": True,
+                  **(_after_on(p, boot_s, wait_s) if reconnect else {"state": "switched on", "hint": "its Moonraker restarts Klipper"})}
     else:
         why = _off_check(p)
         # any printer printing anywhere on the farm blocks every Off: if this outlet were ever mapped to the wrong
@@ -499,3 +502,58 @@ def switch_aux(con, name: str, on: bool, actor: str) -> dict:
     result = {"outlet": name, "channel": a["channel"], "on": on}
     jobs.event(con, "printer_op", 0, None, "aux_on" if on else "aux_off", actor, **result)
     return result
+
+
+# ---------------------------------------------------------------- the printer's own power button (Telegram, Fluidd)
+
+FARM_URL = os.environ.get("FARM_PUBLIC_URL", "http://192.168.1.107:10111")
+
+
+def moonraker_section(name: str) -> str:
+    """[power printer] for a printer's moonraker.conf: an http power device that asks Farm Control, so Telegram's
+    power button and Fluidd's toggle go through the same gates as the card's ⏻. Moonraker also refuses while
+    printing (locked_while_printing) and restarts Klipper once the board has power."""
+    url = f"{FARM_URL.rstrip('/')}/api/power/device/{urllib.parse.quote(name)}"
+    return f"""[power printer]
+# Farm Control power (farm/power.py): the Meross outlet, switched only through the farm's gates (never while anything
+# on the farm prints, hotend under 50 C, nothing heating). Telegram's power button and Fluidd's toggle use this.
+type: http
+on_url: {url}
+off_url: {url}
+status_url: {url}
+request_template:
+  {{% if command in ["on", "off"] %}}
+    {{% do http_request.set_method("POST") %}}
+    {{% do http_request.add_header("Content-Type", "application/json") %}}
+    {{% do http_request.add_header("X-Farm", "1") %}}
+    {{% do http_request.set_body({{"action": command}}) %}}
+  {{% endif %}}
+  {{% do http_request.send() %}}
+response_template:
+  {{http_request.last_response().json()["state"]}}
+locked_while_printing: True
+restart_klipper_when_powered: True
+restart_delay: 8
+"""
+
+
+def stage_device(con, name: str, author: str) -> dict:
+    """Stage [power printer] into the printer's moonraker.conf as a normal config change: a person Applies it through
+    the gate when the printer is idle (Moonraker restarts). Never for a standalone or watch-only printer."""
+    from . import baseline, cfgchange, configs
+    p = printers.PRINTERS.get(name)
+    if p is None:
+        raise LookupError(f"{name} is not a farm printer")
+    if p.readonly or p.standalone:
+        raise Refused(f"{name} is {'watch-only' if p.readonly else 'standalone'}: its own power button isn't wired to the farm")
+    _mapping(p)
+    current = configs.read_file(p.moonraker, "moonraker.conf").decode("utf-8", "replace")
+    crlf = "\r\n" in current
+    text = current.replace("\r\n", "\n")
+    new = baseline.replace_section(text, "power printer", moonraker_section(name))
+    if new == text:
+        raise Refused(f"{name}'s moonraker.conf already has this [power printer]")
+    return cfgchange.stage(con, name, p.moonraker, "moonraker.conf", new_content=new.replace("\n", "\r\n") if crlf else new,
+                           reason="power button in Telegram/Fluidd: [power printer] asks Farm Control, which switches the "
+                                  "outlet through its gates (never while anything prints)", author=author)
+

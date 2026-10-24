@@ -252,7 +252,29 @@ def power_pass(state: dict) -> list[tuple[str, str]]:
     now = settle(ps.setdefault("seen", {}), {"power": probs} if probs else {}, time.time())
     prev = {k: {kk: tuple(vv) for kk, vv in v.items()} for k, v in ps.get("health", {}).items()}
     ps["health"] = now
-    return diff_problems(prev, now)
+    return diff_problems(prev, now) + power_refusals(ps)
+
+
+def power_refusals(ps: dict) -> list[tuple[str, str]]:
+    """A power button pressed in a printer's Telegram or Fluidd that the farm refused: Moonraker's error may not reach
+    the chat, so the reason comes here, once each, quietly. The first pass only notes where the log is."""
+    from . import db
+    con = db.connect()
+    try:
+        rows = con.execute("SELECT id, detail FROM events WHERE to_state='power_refused' AND id > ? ORDER BY id",
+                           (ps.get("refused_id", 0),)).fetchall()
+    finally:
+        con.close()
+    first = "refused_id" not in ps
+    out = []
+    for r in rows:
+        ps["refused_id"] = r["id"]
+        if first:
+            continue
+        d = json.loads(r["detail"] or "{}")
+        out.append(("silent", f"\u23fb {d.get('printer')}: power {d.get('action')} from Telegram/Fluidd refused - {d.get('reason')}"))
+    ps.setdefault("refused_id", ps.get("refused_id", 0))
+    return out[-5:]
 
 
 def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:

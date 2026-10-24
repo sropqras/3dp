@@ -296,6 +296,84 @@ class PowerTest(unittest.TestCase):
             power._toggle({"ip": "127.0.0.1", "uuid": self.strip.uuid, "channel": 0}, False)
         self.assertEqual([c for c in self.strip.calls if c[0] == "SET"], [])
 
+    # -------------------------------------------------------------- the printer's own power button (Telegram, Fluidd)
+    def _serve(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+        from farm import web
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
+        self.addCleanup(srv.shutdown)
+        return f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def _post(self, base, body, farm_header=True):
+        import urllib.error
+        import urllib.request
+        h = {"Content-Type": "application/json", **({"X-Farm": "1"} if farm_header else {})}
+        req = urllib.request.Request(f"{base}/api/power/device/{NAME}", data=json.dumps(body).encode(), headers=h, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    def test_moonraker_device_endpoint_switches_through_the_gates(self):
+        import urllib.request
+        base = self._serve()
+        with urllib.request.urlopen(f"{base}/api/power/device/{NAME}", timeout=10) as r:
+            self.assertEqual(json.loads(r.read()), {"state": "on"})
+        self.assertEqual(self._post(base, {"action": "off"}), (200, {"state": "off"}))
+        self.assertEqual(self.strip.onoff[2], 0)
+        self.moon.klipper, self.moon.klipper_msg = "error", "mcu 'mcu': Unable to connect"
+        self.assertEqual(self._post(base, {"action": "on"}), (200, {"state": "on"}))
+        self.assertEqual((self.strip.onoff[2], self.moon.restarts), (1, 0), "Moonraker restarts Klipper itself")
+        ev = db.connect().execute("SELECT actor FROM events WHERE to_state IN ('power_on','power_off')").fetchall()   # the web server's DB
+        self.assertTrue(all(e["actor"].endswith(f"via {NAME} (Telegram/Fluidd)") for e in ev) and ev)
+
+    def test_moonraker_device_refusals_are_409_logged_and_relayed_once(self):
+        base = self._serve()
+        state = {}
+        monitor.power_refusals(state)                                              # first pass: start of the log
+        self.moon.extruder = {"temperature": 120.0, "target": 0.0}
+        code, out = self._post(base, {"action": "off"})
+        self.assertEqual(code, 409)
+        self.assertIn("hotend 120 C", out["error"])
+        self.assertEqual(self.strip.onoff[2], 1)
+        with mock.patch.object(power, "farm_busy", return_value=["s1pro"]):
+            self.moon.extruder = {"temperature": 25.0, "target": 0.0}
+            self.assertEqual(self._post(base, {"action": "off"})[0], 409)
+        told = monitor.power_refusals(state)
+        self.assertEqual(len(told), 2)
+        self.assertIn("hotend 120 C", told[0][1])
+        self.assertIn("s1pro is printing", told[1][1])
+        self.assertEqual(monitor.power_refusals(state), [], "told once")
+
+    def test_moonraker_device_needs_the_farm_header_and_a_real_action(self):
+        base = self._serve()
+        self.assertEqual(self._post(base, {"action": "off"}, farm_header=False)[0], 403)
+        self.assertEqual(self._post(base, {"action": "explode"})[0], 400)
+        self.set_printer(power=self.mapping, standalone=True)
+        self.assertEqual(self._post(base, {"action": "off"})[0], 409)
+        self.assertEqual(self.strip.onoff[2], 1)
+
+    def test_stage_device_puts_the_section_in_moonraker_conf(self):
+        import configparser
+        from farm import cfgchange
+        self.moon.config["moonraker.conf"] = b"[server]\nhost: 0.0.0.0\n"
+        with mock.patch.object(cfgchange, "_settings", return_value={}, create=True):
+            c = power.stage_device(self.con, NAME, "agent")
+        new = self.con.execute("SELECT new_content FROM config_changes WHERE id=?", (c["id"],)).fetchone()[0]
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.read_string(new if isinstance(new, str) else new.decode())
+        self.assertEqual(cp["power printer"]["type"], "http")
+        self.assertTrue(cp["power printer"]["on_url"].endswith(f"/api/power/device/{NAME}"))
+        self.assertEqual(cp["power printer"]["locked_while_printing"], "True")
+        self.assertEqual(cp["server"]["host"], "0.0.0.0", "the rest of moonraker.conf is kept")
+        self.set_printer(power=self.mapping, standalone=True)
+        with self.assertRaises(power.Refused):
+            power.stage_device(self.con, NAME, "agent")
+
     # -------------------------------------------------------------- the monitor and the card
     def test_unreadable_strip_is_a_quiet_debounced_note(self):
         state = {}
