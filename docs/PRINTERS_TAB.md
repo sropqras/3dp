@@ -182,3 +182,11 @@ What's available to build on:
 - **New:** `farm/hosts.py`, `farm/configs.py`, `farm/baseline.py`, `farm/maintenance.py`, `farm/static/printers.html`, `farm/static/printers.js`, `printers/hosts.json`, `printers/registry.json`, `tests/test_configs.py`, `tests/test_baseline.py`
 - **Modified:** `farm/web.py` (routes), `farm/db.py` (migrations 4–6), `farm/monitor.py`, `farm/audit.py` (fix hooks), `farm/printers.py` (registry from JSON), `farm/__main__.py` (`config`/`backup`/`maint` commands), `farm/static/index.html` (header link only), `tests/fakes.py`, CLAUDE.md, FARM.md
 - **Ops:** jobctl `farm-backup` (nightly), SERVER.md, `farm_control/PROJECT.md`
+
+## Later additions
+
+- **Printer power (2026-10-24):** Farm settings maps a printer to its Meross strip outlet; the strip panel lists
+  outlets and named outlets (Farm lights). The printer's own Telegram/Fluidd power button is a staged
+  `moonraker.conf` change (`farm power stage-device`). Design, gates and outlet map: `docs/POWER.md`.
+- **Standalone printers (2026-10-24):** a Farm settings / onboarding tick box; farm-standard rules show as INFO and no
+  Stage fix is offered (CLAUDE.md "Standalone printers").

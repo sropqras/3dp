@@ -1,40 +1,67 @@
-# Switching printers on and off: Meross smart plugs (research, 2026-10-23)
+# Printer power: the Meross MSS426 strip (built 2026-10-24)
 
-Nothing is built yet. This is the design and what is needed from Ironman first.
+The design research of 2026-10-23 (a separate bridge, one smart plug per printer) is superseded. What runs is below;
+the code is `farm/power.py`, the tests `tests/test_power.py`, the rules in CLAUDE.md ("Printer power is a person's action").
 
-## Findings
+## Hardware
 
-- **No Moonraker support.** Moonraker's `[power]` has no Meross type. Its types are gpio, klipper_device, rf,
-  tplink_smartplug, tasmota, shelly, homeseer, homeassistant, loxonev1, smartthings, mqtt, hue, http and uhubctl
-  (https://moonraker.readthedocs.io/en/latest/configuration/).
-- **LAN control works without the cloud.** Send `POST http://<plug>/config` with
-  `sign = md5(messageId + key + timestamp)`. Toggle with `Appliance.Control.ToggleX` (older firmware uses
-  `Toggle`); read power with `Appliance.Control.Electricity` (MSS310/315 only, in mW).
-- **The key is the account's** and the same for every plug. You get it once by logging in with `meross_iot`; no cloud
-  is needed after that. It belongs in a chmod-600 env file, never in git or Telegram.
-- **Some newer firmware encrypts** the local API. These plugs advertise `Appliance.Encrypt.ECDHE` in
-  `Appliance.System.Ability`: AES-256-CBC, which the standard library can't do. One Ability GET per plug tells.
+- **One Meross MSS426 surge strip** at 192.168.1.63 (fw 4.1.1), switched over its **local** HTTP API:
+  `POST http://<ip>/config`, `sign = md5(messageId + key + timestamp)`, `Appliance.Control.ToggleX`
+  `{togglex: {channel, onoff}}`. The device key is the account's, fetched once by Ironman with
+  `~/agent_workspace/infrastructure/meross/get_key.sh` into `farm_control/meross.env` (chmod 600). No farm code
+  talks to Meross's cloud (`tests/test_no_ai.py`).
+- **The app's outlet numbers are not the API's channels:**
 
-## Design
+| App outlet | Channel | Feeds |
+|---|---|---|
+| 1 | 6 | EnderV3SE |
+| 2 | 3 | s1pro |
+| 3 | 2 | Ender3MaxNeo (its board stays up on USB power, so "ready" with the outlet off) |
+| 4 | 5 | enders1plus |
+| 5 | 1 | NebulaV3SE (standalone) |
+| 6 | 4 | CR-10 SE (stock Creality, read-only status) |
+| USB | 7 | "Farm lights" (`printers/power.json`) |
+| - | 0 | the whole strip: never mapped, never sent |
 
-1. **A small stdlib bridge on aali-cli** holds the key and exposes `GET /plug/<name>/on|off|status`. It is the only
-   place encryption would ever be added.
-2. **Moonraker `[power <name>]` with `type: http`** points at the bridge, one section per printer instance, with:
-   - `locked_while_printing: True`: no power-off mid-print, even from Fluidd;
-   - `restart_klipper_when_powered: True`: replaces the manual Reconnect;
-   - `initial_state` left unset.
+- **No outlet feeds a print host** (enders3dp, 3dpnas): one Off would take down every instance on it.
 
-   These are printer config changes, so they are staged and applied through the gate like any other.
-3. **Farm Control** switches through Moonraker's `/machine/device_power/device`, so it never sees the key. It refuses
-   OFF while printing or paused, or while the hotend is above about 50 C (the heat-break fan has to keep running).
-4. **No plug may feed a host** (enders3dp or 3dpnas). One OFF would take down every instance on it.
+## Who can switch what
 
-## Needed from Ironman
+- **A person** maps outlets (Printers tab → Farm settings, registry `power`; named outlets with `power.map_aux`), and
+  switches them: the card's ⏻ / **Power on**, the 💡 header button, `python3 -m farm power on|off`, and the printer's
+  own button (below). Agents only run `farm power scan` (read-only).
+- **The monitor** switches exactly one outlet, Farm lights: on while any farm printer prints, off 10 min after the last
+  print, only lights it switched on itself, and only after a person's own 💡 switch read back clean (`proven`).
 
-- Each plug's model and hardware/firmware version (Meross app → device → settings), and which printer it feeds.
-- A DHCP reservation per plug.
-- The account key, extracted once in a throwaway venv (`meross_iot`), into the bridge's env file.
-- Optionally, block the plugs' internet access at the router once local control works.
+## The gates (`set_power` → `_toggle`)
+
+1. **No Off anywhere while anything prints.** `farm_busy()` reads, in parallel, every registry printer, every Moonraker
+   in `printers/hosts.json`, and the stock-Creality hosts in `FARM_CREALITY_HOSTS` (`farm/creality.py` listens to the
+   :9999 WebSocket; unknown state codes count as printing). This also covers an outlet mapped to the wrong printer.
+2. **The printer being switched off is idle:** not printing/paused, no heater target, hotend under 50 °C, Moonraker
+   readable. A board that's gone counts as off only if its last print isn't printing/paused/error.
+3. **One choke point:** channel ≥ 1, the strip identified by uuid **before** the SET, every outlet read before and
+   after. If any other outlet changed, a **trip latch** stops all switching (loud monitor alert) until a person runs
+   `farm power reset`.
+
+## The printer's own power button (Telegram ⏻, Fluidd's toggle)
+
+Telegram/Fluidd → the printer's Moonraker `[power printer]` (`type: http`) → `GET/POST
+http://192.168.1.107:10111/api/power/device/<printer>` → `set_power(..., reconnect=False)`.
+
+- Two locks: Moonraker's `locked_while_printing` and every farm gate above. Moonraker's
+  `restart_klipper_when_powered` (delay 8 s) does the FIRMWARE_RESTART after On.
+- The section comes from `power.moonraker_section(name)`, staged by `farm power stage-device <printer>` as an ordinary
+  config change on `moonraker.conf`. A person applies it **with the printer switched on and idle**: applying restarts
+  Moonraker and the gate waits for Klipper "ready" (change 30 rolled back because it was applied with the board off).
+- The endpoint needs `X-Farm: 1` (the template sends it), logs the actor as `ui:Ironman via <printer> (Telegram/Fluidd)`,
+  and answers a refusal with 409, logged as event `power_refused`; farm-monitor relays each one once, silent, on the
+  ops bot (Moonraker's error text may never reach the printer's chat).
+- The Telegram pack sets `[bot] power_device: printer` (only keys in `ops.BOT_KEYS`; token and chat untouched) and adds
+  the `power` button only where the device exists; `power` is in `require_confirmation`.
+- **Not wired on standalone printers** (NebulaV3SE: its Moonraker runs on the pad its own outlet powers). Use the card's ⏻.
+- State 2026-10-24: staged as changes 35 (Ender3MaxNeo), 36 (s1pro), 38 (enders1plus), 39 (EnderV3SE, which also
+  drops the Obico updater include). Live test pending Ironman's Apply.
 
 ## What the garage costs to run (measured, 2026-10-23)
 
