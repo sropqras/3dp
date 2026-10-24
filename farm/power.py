@@ -185,9 +185,10 @@ def _person(actor: str):
 
 
 def farm_busy(timeout: float = 3) -> list[str]:
-    """Every printer the farm can see that is printing or paused: the registry printers AND every Moonraker in
-    printers/hosts.json (printers not onboarded yet, like the Nebula Pad's V3 SE, share the strip). One that can't be
-    read is not counted (a switched-off or retired host would otherwise block every Off for ever)."""
+    """Every printer the farm can see that is printing or paused: the registry printers, every Moonraker in
+    printers/hosts.json (printers not onboarded yet, like the Nebula Pad's V3 SE, share the strip), and the stock-Creality
+    printers in FARM_CREALITY_HOSTS (the CR-10 SE, read-only over its status feed). One that can't be read is not
+    counted (a switched-off or retired host would otherwise block every Off for ever)."""
     from . import hosts
     urls = {p.moonraker.rstrip("/"): p.name for p in printers.PRINTERS.values()}
     try:
@@ -204,9 +205,17 @@ def farm_busy(timeout: float = 3) -> list[str]:
             return None
         printing = (q.get("print_stats") or {}).get("state") in ("printing", "paused") or (q.get("pause_resume") or {}).get("is_paused")
         return name if printing else None
+    def creality_one(host):          # stock Creality firmware (farm/creality.py): read-only status feed, no Moonraker
+        from . import creality
+        try:
+            return f"{host} (Creality)" if creality.busy(creality.status(host, timeout=timeout, port=creality.PORT)) else None
+        except Exception:
+            return None
     from concurrent.futures import ThreadPoolExecutor
+    from . import creality
     with ThreadPoolExecutor(max_workers=8) as ex:      # in parallel: retired hosts that don't answer cost one timeout, not one each
-        return sorted(n for n in ex.map(one, urls.items()) if n)
+        found = list(ex.map(one, urls.items())) + list(ex.map(creality_one, creality.hosts()))
+    return sorted(n for n in found if n)
 
 
 def _off_check(p):

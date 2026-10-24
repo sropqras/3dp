@@ -27,7 +27,9 @@ class PowerTest(unittest.TestCase):
         self.addCleanup(env.stop)
         tmp = Path(tempfile.mkdtemp())
         self._real_busy = power.farm_busy
-        for patch in (mock.patch.object(power, "AUX_FILE", tmp / "power.json"),     # never the real strip's map
+        # the live registry maps the real printers to the real strip: tests see none of those mappings
+        unmapped = {n: dataclasses.replace(pr, power=None) for n, pr in printers.PRINTERS.items()}
+        for patch in (mock.patch.dict(printers.PRINTERS, unmapped),mock.patch.object(power, "AUX_FILE", tmp / "power.json"),     # never the real strip's map
                       mock.patch.object(db, "DB_PATH", tmp / "farm.db"),            # never the real farm DB
                       mock.patch.object(power, "farm_busy", return_value=[])):      # never the real printers
             patch.start()

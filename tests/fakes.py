@@ -352,3 +352,48 @@ class FakeMeross:
     def close(self):
         self.server.shutdown()
 
+
+class FakeCreality:
+    """A stock-Creality status feed: a WebSocket that pushes .fields as one JSON text frame after the handshake and
+    records anything a client sends after it (farm/creality.py must never send a command)."""
+
+    def __init__(self, fields: dict):
+        import json as _json
+        import socket
+        self.fields, self.received = dict(fields), []
+        outer = self
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+
+        def serve():
+            while True:
+                try:
+                    c, _ = self.sock.accept()
+                except OSError:
+                    return
+                try:
+                    c.settimeout(2)
+                    req = b""
+                    while b"\r\n\r\n" not in req:
+                        req += c.recv(4096)
+                    c.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+                    body = _json.dumps(outer.fields).encode()
+                    n = len(body)
+                    head = bytes([0x81, n]) if n < 126 else bytes([0x81, 126]) + n.to_bytes(2, "big")
+                    c.sendall(head + body)
+                    try:
+                        more = c.recv(4096)
+                        if more:
+                            outer.received.append(more)
+                    except OSError:
+                        pass
+                finally:
+                    c.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+
+    def close(self):
+        self.sock.close()
+

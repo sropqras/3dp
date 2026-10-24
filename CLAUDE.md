@@ -177,8 +177,9 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
 - **Printer power is a person's action.** Agents never switch an outlet (no POST to `/api/fleet/*/power` or
   `/api/power/aux`, no `farm power on|off|reset`). `farm power scan` is read-only and fine. What keeps a print from
   being cut (`farm/power.py`; tests in `tests/test_power.py`):
-  - **No Off anywhere while any printer prints.** `farm_busy()` reads every registry printer and every Moonraker in
-    `printers/hosts.json`; any printing/paused one blocks every printer Off. This also covers an outlet mapped to the
+  - **No Off anywhere while any printer prints.** `farm_busy()` reads every registry printer, every Moonraker in
+    `printers/hosts.json` and the stock-Creality CR-10 SE (`farm/creality.py`: listens to its status WebSocket on :9999,
+    never sends a command; unknown state codes count as printing; `FARM_CREALITY_HOSTS` in farm.conf); any printing/paused one blocks every printer Off. This also covers an outlet mapped to the
     wrong printer.
   - **The printer being switched off must be idle:** not printing/paused, no heater target, hotend under 50 °C, its
     Moonraker readable. A board that's gone counts as off only if its print isn't printing/paused/error.
