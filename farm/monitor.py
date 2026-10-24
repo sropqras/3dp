@@ -224,6 +224,32 @@ def printguard_pass(state: dict) -> list[tuple[str, str]]:
     return alerts + diff_problems(prev, now)
 
 
+def power_pass(state: dict) -> list[tuple[str, str]]:
+    """A power strip that can't be read (unreachable, wrong key, a different device at its address) is a quiet,
+    debounced note: its printers' power buttons don't work until it's back. Reads only; never switches anything."""
+    from . import power
+    ips = power.known_ips()
+    if not ips or not power.key():
+        return []
+    ps = state.setdefault("_power", {})
+    probs = {}
+    for ip in ips:
+        try:
+            d = power.device(ip, fresh=True)
+        except Exception as e:
+            probs[f"strip:{ip}"] = ("silent", f"power strip {ip} unreadable: {str(e)[:120]} - power buttons won't work")
+            continue
+        for pr in printers.PRINTERS.values():
+            m = pr.power or {}
+            if m.get("ip") == ip and m.get("uuid") and m["uuid"].lower() != str(d.get("uuid", "")).lower():
+                probs[f"uuid:{pr.name}"] = ("silent", f"{pr.name}'s power outlet: the device at {ip} is not the mapped "
+                                                      "strip any more (check its DHCP reservation)")
+    now = settle(ps.setdefault("seen", {}), {"power": probs} if probs else {}, time.time())
+    prev = {k: {kk: tuple(vv) for kk, vv in v.items()} for k, v in ps.get("health", {}).items()}
+    ps["health"] = now
+    return diff_problems(prev, now)
+
+
 def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:
     state = json.loads(state_file.read_text()) if state_file.exists() else {}
     alerts = []
@@ -239,6 +265,10 @@ def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:
         alerts += printguard_pass(state)
     except Exception as e:   # like the health pass: PrintGuard must never stop the print-error watch
         alerts.append(("silent", f"farm monitor: PrintGuard pass failed: {type(e).__name__}: {str(e)[:120]}"))
+    try:
+        alerts += power_pass(state)
+    except Exception as e:   # the power strip must never stop the print-error watch either
+        alerts.append(("silent", f"farm monitor: power pass failed: {type(e).__name__}: {str(e)[:120]}"))
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps(state, indent=2))
     return alerts

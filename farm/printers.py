@@ -27,6 +27,7 @@ class Printer:
     fluidd_note: str = ""     # Fluidd can't pick an instance from the URL; say which one to choose when it's shared
     profiles: tuple = ()      # print profiles (farm/profiles.py) this printer may use
     note: str = ""
+    power: dict = None        # wall outlet (farm/power.py): {"type": "meross", "ip", "uuid", "channel"}, set in the Printers tab
 
     @property
     def bed_center(self):
@@ -46,7 +47,7 @@ def _from_json(e: dict) -> "Printer":
         bundle=PRUSA_DIR / lp.get("bundle", "farm_profiles.ini"), printer_preset=lp.get("printer", ""),
         print_preset=lp.get("print", ""), filament_presets=dict(lp.get("filament") or {}),
         readonly=bool(e.get("readonly")), fluidd=e.get("fluidd", ""), fluidd_note=e.get("fluidd_note", ""),
-        profiles=tuple(e.get("profiles") or ()), note=e.get("note", ""))
+        profiles=tuple(e.get("profiles") or ()), note=e.get("note", ""), power=e.get("power") or None)
 
 
 def refresh(force: bool = False) -> bool:

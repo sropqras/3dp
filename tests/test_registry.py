@@ -92,6 +92,27 @@ class Registry(unittest.TestCase):
         with self.assertRaises(LookupError):
             fleet.update_registry("nobody", {}, "ui:Ironman")
 
+    def test_power_outlet_is_mapped_against_the_strip_and_logged(self):
+        import json as _json
+        import os
+        from farm import power
+        from tests.fakes import FakeMeross
+        strip = FakeMeross("k1")
+        self.addCleanup(strip.close)
+        env = {"FARM_MEROSS_KEY": "k1", "FARM_POWER_TEST": "1", "FARM_POWER_PORTS": _json.dumps({"127.0.0.1": strip.port})}
+        with mock.patch.dict(os.environ, env):
+            power._cache.clear()
+            self._onboard()
+            r = fleet.update_registry("newone", {"power": {"ip": "127.0.0.1", "channel": 4}}, "ui:Ironman")
+            self.assertEqual(r["changed"], ["power outlet 4 on the mss426 at 127.0.0.1"])
+            self.assertEqual(printers.PRINTERS["newone"].power["uuid"], strip.uuid)
+            self.assertIn("power outlet 4", (self.tmp / "FARM.md").read_text())
+            self.assertEqual(fleet.update_registry("newone", {"power": {"ip": "127.0.0.1", "channel": 4}}, "ui:Ironman")["changed"], [])
+            with self.assertRaises(ValueError):
+                fleet.update_registry("newone", {"power": {"ip": "127.0.0.1", "channel": 0}}, "ui:Ironman")
+            self.assertEqual(fleet.update_registry("newone", {"power": None}, "ui:Ironman")["changed"], ["no power outlet"])
+            self.assertIsNone(printers.PRINTERS["newone"].power)
+
     def test_serial_is_a_staged_change(self):
         with self.assertRaises(ValueError):
             fleet.stage_serial(self.key, "/dev/ttyUSB1", "ui:Ironman")

@@ -134,6 +134,15 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     an "after change" snapshot so the new config is dated from the moment it's on.
   - The nightly `farm backup` pins an origin for any printer without one and archives new history files.
     Committing `printers/_archive` is a development session's job (git is the copy off aali-cli).
+- **Printer power** (`farm/power.py`): a Meross MSS426 surge strip (192.168.1.63) switched over its **local** HTTP API
+  (signed with the account's device key, `FARM_MEROSS_KEY` in `farm_control/meross.env`, chmod 600, fetched once by
+  Ironman with `~/agent_workspace/infrastructure/meross/get_key.sh`). No farm code talks to Meross's cloud
+  (`test_no_ai` checks).
+  - A printer is switchable only once a person maps it to one outlet in the Printers tab → Farm settings (registry
+    `power`: ip, uuid, channel; logged in FARM.md). Channel 0 (the whole strip) is never mapped, and the device is
+    identified by uuid **before** anything is sent.
+  - The ⏻ control on each printer card, the switched-off card's **Power on** (switch on, then FIRMWARE_RESTART), and
+    `python3 -m farm power scan|on|off`. A strip that can't be read is a quiet monitor note.
 - **Switched-off printers** (`monitor.powered_off`): the farm switches idle printers off.
   - "Unable to connect" or "Lost communication" while nothing prints is a silent note, not an alarm.
   - **Reconnect** (FIRMWARE_RESTART) is offered only from that state, never on a watch-only printer.
@@ -161,6 +170,10 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     pausing a print automatically is a per-printer decision Ironman makes after an alert-only trial (started
     2026-10-23, alerts through farm-monitor).
 - **Printer configs change only through Farm Control's Printers tab** (`/printers`, `farm/cfgchange.py`). An AI session may *stage* a change with a reason (`python3 -m farm config stage --printer <name> --path printer.cfg --section printer --option max_velocity --value 200 --reason "..." --author agent`), but never applies or rolls one back on its own, and never edits printer files over SSH or the Moonraker file API directly. A person presses Apply. The one exception: Ironman names the specific change ids in the session and says apply them (as on 2026-10-23 for changes 4 and 7). The session then runs them through the same gate as `cli:Ironman`, and that permission covers only those ids. The gate refuses while printing or paused, takes a snapshot, verifies (Klipper ready, no new audit FAIL, no `Unknown command`), rolls back automatically if Klipper doesn't come back, and writes FARM.md's change log.
+- **Printer power is a person's action.** Agents never switch an outlet (no POST to `/api/fleet/*/power`, no
+  `farm power on|off`), and neither does the monitor. `farm/power.py` refuses Off while printing or paused, with any heater
+  target set, with the hotend at 50 °C or more (its fan needs power to cool it), or when Moonraker can't be read,
+  unless the board is already gone. Watch-only printers get no power control. `farm power scan` is read-only and fine.
 - **Agents never approve or start prints.** No calls to `/api/builds/*/approve|start`, `farm approve` or `farm start` (the latter two refuse without a terminal anyway). Preparing, slicing and queueing for review is fine. Only `farm/gate.py` can start a print: `moonraker.start` needs its token, and the gate re-checks the approval hash, the 3D view, the audit, printer idle, the uploaded file and the spool.
 - **Visual gate, the most important rule:** never run `farm start` (or start a print any other way) until the user has looked at the run's `.3mf` (Farm Control's 3D viewer or PrusaSlicer), confirmed the bed is clear and the first colour is loaded, and said go. Preparing and uploading a run is fine. Starting one on your own is not.
 - **EnderV3SE (enders3dp:7128) was handed over to the farm on 2026-10-23.** It is Ironman's own production printer: it gets changes through the gate like the others, but only while it is idle and never between his prints without asking. It has no print profile yet, so no farm jobs go to it until one is confirmed.

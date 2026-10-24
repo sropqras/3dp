@@ -417,6 +417,18 @@ def update_registry(name: str, body: dict, actor: str) -> dict:
         if k in body and body[k] != e.get(k):
             e[k] = str(body[k])[:300]
             changed.append(k)
+    if "power" in body:      # a wall outlet on a power strip, checked against the live strip (farm/power.py)
+        from . import power as _power
+        m = _power.validate_mapping(name, body["power"])
+        old = e.get("power") or None
+        if (m or {}).get("ip") != (old or {}).get("ip") or (m or {}).get("channel") != (old or {}).get("channel") \
+                or (m or {}).get("uuid") != (old or {}).get("uuid"):
+            if m:
+                e["power"] = m
+                changed.append(f"power outlet {m['channel']} on the {m['model']} at {m['ip']}")
+            else:
+                e.pop("power", None)
+                changed.append("no power outlet")
     if changed:
         printers.save_registry(entries)
         _farm_md_row(name, f"Farm settings: {'; '.join(changed)} (Farm Control, {actor.split(':', 1)[-1]})")

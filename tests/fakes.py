@@ -110,6 +110,8 @@ class FakeMoonraker:
         self.meta = {}              # filename -> extra /server/files/metadata fields (thumbnails, slicer, ...)
         self.blobs = {}             # gcodes-root path -> bytes (thumbnails)
         self.klipper_msg = None     # Klipper's state_message when not ready (default: "config error")
+        self.extruder = {"temperature": 25.0, "target": 0.0}
+        self.heater_bed = {"temperature": 24.0, "target": 0.0}
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -135,8 +137,8 @@ class FakeMoonraker:
                         "pause_resume": {"is_paused": outer.paused},
                         "gcode_move": {"speed_factor": 1.0, "extrude_factor": 1.0},
                         "display_status": {"message": None},
-                        "extruder": {"temperature": 25.0, "target": 0.0},
-                        "heater_bed": {"temperature": 24.0, "target": 0.0}}}})
+                        "extruder": dict(outer.extruder),
+                        "heater_bed": dict(outer.heater_bed)}}})
                 if u.path == "/server/files/list" and q.get("root") == ["config"]:
                     return self._json(200, {"result": [{"path": p, "size": len(b), "modified": outer.mtimes.get(p, 0)}
                                                        for p, b in outer.config.items()]})
@@ -292,3 +294,58 @@ class FakeMakers:
 
     def close(self):
         self.server.shutdown()
+
+
+class FakeMeross:
+    """Enough of a Meross MSS426's LOCAL API: POST /config, signed md5(messageId + key + timestamp).
+    GET Appliance.System.All (type, uuid, togglex channels), SET Appliance.Control.ToggleX. .uuid can be changed to
+    play a different device at the same address; .down makes it not answer."""
+
+    def __init__(self, key: str, channels=(0, 1, 2, 3, 4, 5)):
+        import hashlib
+        import json as _json
+        self.key, self.uuid, self.down = key, "2309280720925654060248e1e9dd015b", False
+        self.onoff = {c: 1 for c in channels}
+        self.calls = []             # (method, namespace, payload)
+        outer = self
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if outer.down:
+                    self.close_connection = True
+                    return
+                msg = _json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                h, pl = msg["header"], msg.get("payload") or {}
+                outer.calls.append((h["method"], h["namespace"], pl))
+                reply = {"header": {"messageId": h["messageId"], "namespace": h["namespace"], "payloadVersion": 1,
+                                    "from": f"/appliance/{outer.uuid}/publish", "timestamp": h["timestamp"], "sign": "x"}}
+                good = hashlib.md5(f"{h['messageId']}{outer.key}{h['timestamp']}".encode()).hexdigest()
+                if h.get("sign") != good:
+                    reply["header"]["method"], reply["payload"] = "ERROR", {"error": {"code": 5001, "detail": "sign error"}}
+                elif h["namespace"] == "Appliance.System.All":
+                    reply["header"]["method"] = "GETACK"
+                    reply["payload"] = {"all": {"system": {"hardware": {"type": "mss426", "version": "4.0.0", "uuid": outer.uuid},
+                                                           "firmware": {"version": "4.2.4"}},
+                                                "digest": {"togglex": [{"channel": c, "onoff": v} for c, v in outer.onoff.items()]}}}
+                elif h["namespace"] == "Appliance.Control.ToggleX":
+                    t = pl["togglex"]
+                    outer.onoff[int(t["channel"])] = int(t["onoff"])
+                    reply["header"]["method"], reply["payload"] = "SETACK", {}
+                else:
+                    reply["header"]["method"], reply["payload"] = "ERROR", {"error": {"code": 5000, "detail": "unknown"}}
+                b = _json.dumps(reply).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b)
+
+            def log_message(self, *a):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+

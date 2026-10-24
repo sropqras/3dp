@@ -37,6 +37,17 @@ class NoAI(unittest.TestCase):
             pass
         self.assertTrue(local, f"FARM_PRINTGUARD_URL must stay on the LAN/Tailscale, not {host}")
 
+    def test_power_strip_stays_local(self):
+        """Printer power (farm/power.py) is the strip's LOCAL API: no farm code names Meross's cloud, and every strip
+        address it is given is a LAN one."""
+        import os
+        from farm import power
+        cloud = [str(p.relative_to(REPO)) for p in (REPO / "farm").rglob("*.py")
+                 if re.search(r"meross\.com|iotx-|mqtt-[a-z]+\.meross", p.read_text(encoding="utf-8"), re.I)]
+        self.assertEqual(cloud, [])
+        for ip in [x for x in os.environ.get("FARM_MEROSS_DEVICES", "").split(",") if x.strip()]:
+            power.lan_ip(ip.strip())
+
     @unittest.skipUnless(JOBS.is_dir(), "jobctl definitions live on aali-cli")
     def test_farm_jobs_never_escalate_to_ai(self):
         for d in sorted(JOBS.glob("farm-*")):

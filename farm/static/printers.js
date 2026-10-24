@@ -12,6 +12,7 @@ const js = (v) => esc(JSON.stringify(v));
 const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 const ago = (t) => { if (!t) return "never"; const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
 let data = null, fd = { key: null, files: [], path: null, mode: "diff" };
+let powerData = { keyed: false, devices: [] };   // /api/power: the Meross strips and their outlets (farm/power.py)
 
 const operator = () => farmOperator();     // static/operator.js: the "You" link in the header
 
@@ -289,6 +290,18 @@ function onboardBlock(v) {
       <div class="dim">Bed and Z are what you measured, not what a copied config says. Each profile's bed must fit, or nothing is saved.</div>
     </form></details>`;
 }
+function powerPicker(e) {
+  const cur = e.power ? `${e.power.ip}#${e.power.channel}` : "";
+  if (!powerData.devices.length) return cur ? `<div class="row">Power outlet <b>${esc(e.power.channel)}</b> on ${esc(e.power.ip)}</div>` : "";
+  if (!powerData.keyed) return `<div class="row dim">Power outlet: run ~/agent_workspace/infrastructure/meross/get_key.sh once so the strip can be read</div>`;
+  const opts = powerData.devices.filter((d) => !d.error).flatMap((d) => d.channels.filter((c) => c.channel > 0).map((c) => {
+    const val = `${d.ip}#${c.channel}`, taken = c.printer && c.printer !== e.name;
+    return `<option value="${esc(val)}" ${val === cur ? "selected" : ""} ${taken ? "disabled" : ""}>${esc(d.type)} ${esc(d.ip)} · outlet ${c.channel} (${c.onoff ? "on" : "off"}${c.printer ? ", " + esc(c.printer) : ""})</option>`;
+  }));
+  return `<div class="row">Power outlet <select name="power"><option value="">none</option>${opts.join("")}</select>
+    <span class="dim">nothing switches until this is set; channel 0 (the whole strip) is never offered</span></div>`;
+}
+
 function farmSettings(v) {
   const e = (data.registry || []).find((x) => x.name === v.registry);
   if (!e) return "";
@@ -298,6 +311,7 @@ function farmSettings(v) {
     <form onsubmit='saveSettings(${k}, this);return false' style="display:grid;gap:6px;margin-top:6px">
       <div class="row">Bed ${esc(e.bed_min.join(","))} – ${esc(e.bed_max.join(","))} · Z ${e.max_z}${e.note ? " · " + esc(e.note) : ""}</div>
       <div class="row">Profiles ${profs}</div>
+      ${powerPicker(e)}
       <div class="row"><label><input type="checkbox" name="readonly" ${e.readonly ? "checked" : ""}> watch-only</label><button class="ghost">Save</button></div>
     </form></details>`;
 }
@@ -369,6 +383,7 @@ async function onboard(key, form, left) {
 async function saveSettings(name, form) {
   if (!operator()) { alert("Put your name in the 'You' box first."); return; }
   const f = new FormData(form), body = { profiles: f.getAll("profiles"), readonly: !!f.get("readonly") };
+  if (f.has("power")) { const [ip, ch] = String(f.get("power")).split("#"); body.power = ip ? { ip, channel: +ch } : null; }
   if (!confirm(`Save ${name}: profiles ${body.profiles.join(", ") || "none"}${body.readonly ? ", watch-only" : ""}?`)) return;
   const r = await post(`/api/fleet/${encodeURIComponent(name)}/registry`, body);
   if (r) { alert(r.changed.length ? `Saved: ${r.changed.join("; ")}` : "Nothing changed."); refresh(); }
@@ -430,7 +445,7 @@ function render(force) {
   // not while someone is working in it: a drag, an open menu, a field with focus, or a block that loads on opening
   // (restore points, Fluidd layout) - the next refresh after that redraws
   if (farmUI.busy(box) || (!force && box.querySelector("details[open][ontoggle]"))) return;
-  box.innerHTML = data.hosts.map((h) => {
+  box.innerHTML = powerPanel() + data.hosts.map((h) => {
     const mine = inst.filter((v) => v.host === h.name), any = mine.find((v) => v.reachable);
     const stats = any ? `CPU <b>${any.cpu_temp != null ? Math.round(any.cpu_temp) + "°C" : "–"}</b> RAM <b>${any.mem_used_pct ?? "–"}%</b> Disk <b class="${any.disk_used_pct > 90 ? "bad" : ""}">${any.disk_used_pct ?? "–"}%</b> (${any.disk_free_gb ?? "–"} GB free)${(any.throttled || []).length ? ` <span class="bad">throttled: ${esc(any.throttled.join(","))}</span>` : ""}` : "";
     return `<section class="panel host" data-panel="${esc(h.name)}">
@@ -443,6 +458,16 @@ function render(force) {
   box.querySelectorAll("details:not(.menu)").forEach((d) => { if (d.style.display !== "inline-block") d.classList.add("sub"); });
   restoreDetails(box);
   farmUI.panels();
+}
+
+// the power strips and what each outlet feeds (read-only here; switching is on the dashboard's printer cards)
+function powerPanel() {
+  if (!powerData.devices.length) return "";
+  const dev = (d) => d.error ? `<div class="row"><b>${esc(d.ip)}</b> <span class="warn">${esc(d.error)}</span></div>`
+    : `<div class="row"><b>${esc(d.type)}</b> ${esc(d.ip)} <span class="dim">fw ${esc(d.firmware)}</span></div>
+       <div class="cluster">${d.channels.filter((c) => c.channel > 0).map((c) => `<span class="chip ${c.onoff ? "ok" : ""}">outlet ${c.channel}: ${c.onoff ? "on" : "off"} · ${c.printer ? esc(c.printer) : "<span class='dim'>not mapped</span>"}</span>`).join("")}</div>`;
+  return `<section class="panel host" data-panel="power-strips"><div class="panel-h"><h2>Power strips <span class="dim">Meross, local network only · map an outlet in a printer's Farm settings</span></h2></div>
+    <div class="panel-b card fcard">${powerData.devices.map(dev).join("")}</div></section>`;
 }
 
 // a refresh keeps the <details> a person opened or closed (by card and position); the others keep their own default,
@@ -463,6 +488,7 @@ document.addEventListener("click", (e) => {
 });
 
 async function refresh() {
+  try { powerData = await (await fetch("/api/power")).json(); } catch (e) { /* no strips: the panel stays hidden */ }
   try { data = await (await fetch("/api/fleet")).json(); render(); }
   catch (e) { $("kpis").innerHTML = `<div class="kpi"><b class="bad">offline</b><small>farm server</small></div>`; }
 }

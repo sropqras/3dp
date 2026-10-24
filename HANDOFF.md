@@ -54,6 +54,13 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 
 ## To do (in order)
 
+0. **Printer power (Meross MSS426, 2026-10-24): built, waiting for the key and the outlet map.**
+   1. In your own terminal on aali-cli: `~/agent_workspace/infrastructure/meross/get_key.sh`. It asks for your Meross login,
+      saves only the device key (chmod 600), then shows the strip's outlets.
+   2. Restart Farm Control: `~/agent_workspace/infrastructure/farm_control/stop.sh && …/start.sh`.
+   3. Printers tab → each printer's **Farm settings** → **Power outlet** → Save. The **Power strips** panel shows what
+      each outlet feeds.
+   4. Try it on an idle, cold printer: ⏻ off, then **Power on** (it reconnects Klipper).
 1. **Apply the staged changes** (Printers tab → Changes; `FARM.md` "Staged" table). Put your name in the **You**
    box first: without it Apply stops at "Put your name in the 'You' box first". That is probably why 1/3/4/7
    didn't go on the first time.

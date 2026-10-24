@@ -57,7 +57,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import (audit, cfgchange, config, db, fleet, gate, inventory, jobs, makers, model3mf, monitor, moonraker, nas, net, ops,
-               nasview, pipeline, printers, printguard, profiles, projects, spools, tracker, watch, worker)
+               nasview, pipeline, power, printers, printguard, profiles, projects, spools, tracker, watch, worker)
 from .printers import REPO
 from .runlog import RUNS_DIR
 
@@ -579,6 +579,10 @@ def overview() -> dict:
     plist = list(printers.PRINTERS.values())
     live = [_safe_view(p, by_remote) for p in plist]
     _add_printguard(live, cached("printguard", 10, printguard.status))
+    for v in live:              # wall outlet state for mapped printers (farm/power.py; LAN-only, cached)
+        p = printers.PRINTERS.get(v["name"])
+        if p is not None and p.power:
+            v["power"] = cached(f"power:{p.name}", 5, lambda p=p: power.state(p))
     hist = {}
     for p in plist:
         for h in sorted(cached(f"hist:{p.name}", 30, lambda p=p: history(p)), key=lambda h: h.get("start_time", 0)):
@@ -652,6 +656,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, body, STATIC_FILES[name])
         if path == "/api/fleet":
             return self._send(200, json.dumps(fleet.overview(), default=str).encode())
+        if path == "/api/power":     # the power strips, their outlets and who is mapped to each (read-only)
+            return self._send(200, json.dumps({"keyed": bool(power.key()), "devices": power.devices()}).encode())
         if path.startswith("/api/hosts/") and path.endswith("/usb"):
             try:
                 return self._send(200, json.dumps(fleet.usb(urllib.parse.unquote(path.split("/")[3]))).encode())
@@ -877,6 +883,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(fleet.pin_origin(key, who)).encode())
                 if parts[3] == "reconnect":
                     return self._send(200, json.dumps(fleet.reconnect(key, who)).encode())
+                if parts[3] == "power":      # a person switches a mapped printer's wall outlet (farm/power.py)
+                    con = db.connect()
+                    try:
+                        out = power.set_power(con, key, bool(body.get("on")), who)
+                    except (power.Refused, RuntimeError) as e:
+                        return self._send(400, json.dumps({"error": str(e)}).encode())
+                    finally:
+                        con.close()
+                    _cache.pop(f"power:{key}", None)     # the card shows the new state on the next poll
+                    return self._send(200, json.dumps(out).encode())
                 if parts[3] == "maintenance":
                     return self._send(200, json.dumps(fleet.maint_log(key, body, who), default=str).encode())
                 if parts[3] == "fix-all":

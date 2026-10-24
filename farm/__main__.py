@@ -368,6 +368,37 @@ def cmd_doctor(args):
     sys.exit(1 if n else 0)
 
 
+def cmd_power(args):
+    """scan <ip>: read-only look at a strip. on|off <printer>: a person at a terminal switches a mapped outlet."""
+    from . import power
+    if args.action == "scan":
+        for ip in ([args.target] if args.target else power.known_ips()):
+            try:
+                d = power.device(ip, fresh=True)
+            except Exception as e:
+                print(f"{ip}: {e}")
+                continue
+            print(f"{ip}: {d['type']} hw {d['hardware']} fw {d['firmware']} uuid {d['uuid']}")
+            for c in d["channels"]:
+                who = next((n for n, pr in printers.PRINTERS.items() if (pr.power or {}).get("ip") == ip
+                            and (pr.power or {}).get("channel") == c["channel"]), "")
+                label = "the whole strip (never mapped)" if c["channel"] == 0 else (who or "not mapped")
+                print(f"  outlet {c['channel']}: {'on ' if c['onoff'] else 'off'}  {label}")
+        return
+    if not args.target:
+        sys.exit("farm power on|off <printer>")
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        sys.exit("farm power on|off is for a person at a terminal (CLAUDE.md): agents never switch printer power")
+    who = "cli:" + input("Your name: ").strip()
+    if input(f"switch {args.target} {args.action}? [y/N] ").strip().lower() != "y":
+        sys.exit("not done")
+    con = db.connect()
+    try:
+        print(power.set_power(con, args.target, args.action == "on", who))
+    except (power.Refused, RuntimeError, LookupError) as e:
+        sys.exit(f"refused: {e}")
+
+
 def cmd_status(args):
     for name in [args.printer] if args.printer else printers.PRINTERS:
         print(name, moonraker.status(printers.get(name)))
@@ -426,6 +457,9 @@ def main():
     nv.add_argument("action", choices=["scan", "status", "warm"])
     nv.add_argument("--minutes", type=float, default=30)
     nv.add_argument("--max-mb", type=float, default=80)
+    pw = sub.add_parser("power", help="wall outlets on the Meross strip: scan [ip] (read-only) | on|off <printer>")
+    pw.add_argument("action", choices=["scan", "on", "off"])
+    pw.add_argument("target", nargs="?", default="")
     m = sub.add_parser("monitor")
     m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))
     v = sub.add_parser("serve")
@@ -435,7 +469,7 @@ def main():
     if args.cmd == "serve":
         from . import web
         return web.serve(args.host, args.port)
-    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup, "config": cmd_config, "inventory": cmd_inventory, "nas": cmd_nas}[args.cmd](args)
+    {"run": cmd_run, "start": cmd_start, "status": cmd_status, "watch": cmd_watch, "audit": cmd_audit, "monitor": cmd_monitor, "doctor": cmd_doctor, "db": cmd_db, "presets": cmd_presets, "worker": cmd_worker, "submit": cmd_submit, "approve": cmd_approve, "builds": cmd_builds, "backup": cmd_backup, "config": cmd_config, "inventory": cmd_inventory, "nas": cmd_nas, "power": cmd_power}[args.cmd](args)
 
 
 if __name__ == "__main__":

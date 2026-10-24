@@ -18,6 +18,7 @@
 .ph .end { flex: none; display: flex; align-items: center; gap: 2px; margin-top: -3px; }
 a.fluidd, a.pg { font-size: .86rem; font-weight: 600; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 1px 8px; white-space: nowrap; }
 a.fluidd { color: var(--blue); } a.fluidd:hover, a.pg:hover { border-color: var(--blue); }
+button.pw { font-weight: 600; } button.pw.on { color: var(--green); border-color: var(--green-edge); } button.pw.off { color: var(--dim); }
 a.pg { color: var(--dim); font-weight: 500; } a.pg.watch { color: var(--teal); } a.pg.bad { color: var(--red); border-color: var(--red); font-weight: 600; }
 .alert { margin: 0 var(--pad) 10px; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); border: 1px solid var(--amber-edge);
   color: var(--amber); font-weight: 600; animation: pulse 1.6s ease-in-out infinite; }
@@ -348,6 +349,28 @@ function fluiddLink(p) {
   return p.fluidd ? `<a class="fluidd" href="${esc(p.fluidd)}" target="_blank" rel="noopener" title="${esc(p.fluidd_note || "open this printer in Fluidd")}">Fluidd ↗</a>` : "";
 }
 
+// Wall power (farm/power.py): a person switches a printer's mapped outlet on the Meross strip. The server refuses Off
+// while printing/paused, with a heater on or the hotend at 50 C+, and switches On then reconnects Klipper.
+function powerControl(p) {
+  const w = p.power;
+  if (!w || !w.mapped || p.readonly) return "";
+  if (w.error) return `<span class="chip warn" title="${esc(w.error)}">⏻ ?</span>`;
+  return `<button class="mini ghost pw ${w.on ? "on" : "off"}" title="${w.on ? "wall power is on: click to switch off (refused unless idle and cool)" : "wall power is off: click to switch on"}"
+    onclick="powerSwitch('${esc(p.name)}', ${!w.on})">⏻ ${w.on ? "on" : "off"}</button>`;
+}
+async function powerSwitch(name, on) {
+  if (!confirm(on ? `Switch ${name} on at the wall and connect Klipper to it?`
+                  : `Switch ${name} off at the wall?\n\nRefused if it is printing or paused, a heater is on, or the hotend is 50 °C or hotter.`)) return;
+  document.body.style.cursor = "progress";
+  const r = await fetch(`/api/fleet/${encodeURIComponent(name)}/power`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ on, operator: farmOperator() || "dashboard" }) });
+  document.body.style.cursor = "";
+  const out = await r.json().catch(() => ({}));
+  alert(!r.ok ? `Not done: ${out.error || "HTTP " + r.status}`
+    : on ? `${name}: power on, Klipper ${out.state}${out.hint ? " - " + out.hint : ""}` : `${name}: power off (${out.checked}).`);
+  refresh();
+}
+
 async function reconnect(name) {
   if (!confirm(`Reconnect ${name}? Switch it on first. (Klipper restarts to find the board.)`)) return;
   const who = farmOperator();
@@ -373,17 +396,19 @@ function cardFrame(p, i, st, urgent, head, inner) {
 
 function printerCard(p, i) {
   const st = farmUI.cardState("printers", p.name, i);
-  if (!p.online) return cardFrame(p, i, st, true, `<span class="pill s-offline">offline</span>`,
+  if (!p.online) return cardFrame(p, i, st, true, `<span class="pill s-offline">offline</span>${powerControl(p)}`,
     () => `<div class="alert red">${esc(p.error || "unreachable")}</div>`);
-  if (p.off) return cardFrame(p, i, st, false, `<span class="pill s-off">switched off</span>`, (collapsed) => collapsed ? "" :
+  if (p.off) return cardFrame(p, i, st, false, `<span class="pill s-off">switched off</span>${powerControl(p)}`, (collapsed) => collapsed ? "" :
     `<div class="pad stamp" style="padding-top:0">Board not connected — the printer is off (or its USB is out). Files, history and Inventory still work.
-    ${p.readonly ? "" : `<div style="margin-top:8px"><button class="mini" onclick="reconnect('${esc(p.name)}')">Reconnect</button> after switching it on</div>`}</div>`);
+    ${p.readonly ? "" : p.power && p.power.mapped && !p.power.error && !p.power.on
+      ? `<div style="margin-top:8px"><button class="mini" onclick="powerSwitch('${esc(p.name)}', true)">⏻ Power on</button> switches its outlet on and connects Klipper</div>`
+      : `<div style="margin-top:8px"><button class="mini" onclick="reconnect('${esc(p.name)}')">Reconnect</button> after switching it on</div>`}</div>`);
   const state = p.klipper !== "ready" ? "error" : (p.paused ? "paused" : p.job);
   const color = state === "paused" ? "var(--amber)" : state === "printing" ? "var(--teal)" : "var(--dim)";
   const pgAlert = !!(p.printguard && p.printguard.alert && p.printguard.alert.ts);
   const urgent = !!p.alert || pgAlert || state === "error" || state === "paused";
   const active = ["printing", "paused"].includes(p.job);
-  const head = `${pgBadge(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span>`;
+  const head = `${pgBadge(p)}${p.readonly ? `<span class="chip" title="watch-only: no jobs or config changes from the farm">watch-only</span>` : ""}<span class="pill s-${state}">${esc(state)}</span>${powerControl(p)}`;
   const spool = (inv?.spools || []).filter((s) => s.location === p.name)
     .map((s) => `<span class="spool"><span class="sw" style="background:${esc(s.hex)}"></span>${esc(s.colour)} ${esc(s.material)}</span>`).join(" ") || "<span class='stamp'>no spool assigned</span>";
   const audit = p.audit_fails == null ? "" : p.audit_fails.length
