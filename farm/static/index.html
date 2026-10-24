@@ -164,7 +164,7 @@ a.pg { color: var(--dim); font-weight: 500; } a.pg.watch { color: var(--teal); }
   <div class="bar1">
     <div class="brand">sropqras <span>Farm Control</span></div>
     <nav class="tabs"><a href="#dashboard" data-tab="dashboard">Dashboard</a><a href="#projects" data-tab="projects">Projects</a><a href="#inventory" data-tab="inventory">Inventory</a><a href="#spools" data-tab="spools">Spools</a><a href="/printers">Printers →</a></nav>
-    <div class="tools"><button onclick="openNewJob()">+ New job</button><span class="you" data-you></span><span data-settings></span></div>
+    <div class="tools"><span id="aux" class="cluster"></span><button onclick="openNewJob()">+ New job</button><span class="you" data-you></span><span data-settings></span></div>
   </div>
   <div class="kpis" id="kpis"></div>
 </header>
@@ -368,6 +368,15 @@ async function powerSwitch(name, on) {
   const out = await r.json().catch(() => ({}));
   alert(!r.ok ? `Not done: ${out.error || "HTTP " + r.status}`
     : on ? `${name}: power on, Klipper ${out.state}${out.hint ? " - " + out.hint : ""}` : `${name}: power off (${out.checked}).`);
+  refresh();
+}
+
+// a named outlet that isn't a printer (the farm's USB LED lights): no print checks, so no confirm either
+async function auxSwitch(name, on) {
+  const r = await fetch("/api/power/aux", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, on, operator: farmOperator() || "dashboard" }) });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok) alert(`Not done: ${out.error || "HTTP " + r.status}`);
   refresh();
 }
 
@@ -1347,6 +1356,10 @@ function render() {
   ].filter(Boolean).map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><small>${esc(l)}</small></div>`).join("");
   // not under an open card menu or a drag (static/ui.js): the layout follows this browser's saved order and states
   if (!farmUI.busy($("printers"))) $("printers").innerHTML = P.map(printerCard).join("");
+  $("aux").innerHTML = (data.aux_outlets || []).map((a) => a.error
+    ? `<span class="chip warn" title="${esc(a.error)}">💡 ${esc(a.name)} ?</span>`
+    : `<button class="mini ghost pw ${a.on ? "on" : "off"}" title="${esc(a.name)} is ${a.on ? "on" : "off"}: click to switch ${a.on ? "off" : "on"}"
+        onclick="auxSwitch('${esc(a.name)}', ${!a.on})">💡 ${esc(a.name)} ${a.on ? "on" : "off"}</button>`).join("");
   if (!$("printers-view").querySelector("details[open]")) $("printers-view").innerHTML = farmUI.viewMenu("printers", CARD_PARTS);
   $("jobs").innerHTML = jobsTable(data.runs);
   // don't redraw under an open printer drop-down (it would close it); anything else re-renders

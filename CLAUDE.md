@@ -143,6 +143,10 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     identified by uuid **before** anything is sent.
   - The ⏻ control on each printer card, the switched-off card's **Power on** (switch on, then FIRMWARE_RESTART), and
     `python3 -m farm power scan|on|off`. A strip that can't be read is a quiet monitor note.
+  - **Named outlets** that aren't printers live in `printers/power.json` (`power.map_aux`, a FARM.md row each). The
+    first is **"Farm lights"**: channel 7, the strip's USB ports, for USB LED lights when the garage is dark (2026-10-24).
+    A person switches them with the 💡 button in the dashboard header. There are no print checks (nothing to protect),
+    but the strip is still identified first and channel 0 is never used. A printer can't be mapped to a named outlet.
 - **Switched-off printers** (`monitor.powered_off`): the farm switches idle printers off.
   - "Unable to connect" or "Lost communication" while nothing prints is a silent note, not an alarm.
   - **Reconnect** (FIRMWARE_RESTART) is offered only from that state, never on a watch-only printer.

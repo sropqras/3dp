@@ -55,6 +55,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-24 | farm | power outlet 7 on the mss426 at 192.168.1.63 is 'Farm lights' (Ironman) |
 | 2026-10-23 | all | PrintGuard (local print-failure detection) on 3dpnas:11111, alert-only trial: monitors for enders1plus, MaxNeo, V3SE and s1pro (2 fps, threshold 0.75, 3 frames, no pause). Alerts come through farm-monitor and the ops bot; Farm Control cards show a badge. Not yet: camera crops (garage dark at setup), Ender3Pro (no camera of its own: `/webcam2/` faces the MaxNeo, Ironman confirmed). No printer config changed |
 | 2026-10-23 | EnderV3SE | Telegram fixed: the old bot token was rejected (401) and `server:` pointed at a dead address (10.0.0.123). New bot @AZ3dpe3v3seBot, `server: localhost:7128`, then the farm Telegram pack (buttons, macros, pinned status). Ender3Pro's token is cleared until it gets its own bot (its `chat_id` is wrong too) |
 | 2026-10-23 | EnderV3SE | printer.cfg: edited (printer.cfg): farm baseline: pause_resume recover_velocity >= 100; idle timeout is pause-aware - applied by Ironman via Farm Control, change 25 |

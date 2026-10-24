@@ -45,7 +45,8 @@ class NoAI(unittest.TestCase):
         cloud = [str(p.relative_to(REPO)) for p in (REPO / "farm").rglob("*.py")
                  if re.search(r"meross\.com|iotx-|mqtt-[a-z]+\.meross", p.read_text(encoding="utf-8"), re.I)]
         self.assertEqual(cloud, [])
-        for ip in [x for x in os.environ.get("FARM_MEROSS_DEVICES", "").split(",") if x.strip()]:
+        for ip in [x for x in os.environ.get("FARM_MEROSS_DEVICES", "").split(",") if x.strip()] + \
+                [a["ip"] for a in power.aux()]:
             power.lan_ip(ip.strip())
 
     @unittest.skipUnless(JOBS.is_dir(), "jobctl definitions live on aali-cli")

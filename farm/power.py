@@ -15,6 +15,8 @@ device(ip)         the strip: type, firmware, uuid, channels [{channel, onoff}] 
 state(printer)     {mapped, on, error} for one registry printer
 set_power(...)     switch a mapped printer on (then FIRMWARE_RESTART to find the board) or off
 devices()          every known strip (FARM_MEROSS_DEVICES + mapped ones) with its outlets and who is on them
+aux outlets        named outlets that are not printers (e.g. "Farm lights": USB LED lights for when the garage is dark),
+                   kept in printers/power.json; switched by a person with no print checks (nothing to protect)
 """
 import hashlib
 import ipaddress
@@ -25,10 +27,12 @@ import time
 import urllib.parse
 import urllib.request
 import uuid as _uuid
+from pathlib import Path
 
 from . import jobs, net, printers
 
 HOT_C = 50.0                # hotend at or above this: its fan still has to run, so no power off
+AUX_FILE = Path(os.environ.get("FARM_POWER_FILE", printers.REPO / "printers" / "power.json"))
 _cache, _lock = {}, threading.Lock()
 
 
@@ -40,11 +44,19 @@ def key() -> str:
     return os.environ.get("FARM_MEROSS_KEY", "").strip()
 
 
+def aux() -> list[dict]:
+    """Named non-printer outlets: [{"name", "ip", "uuid", "channel"}]."""
+    try:
+        return list(json.loads(AUX_FILE.read_text(encoding="utf-8")).get("aux") or [])
+    except (OSError, ValueError):
+        return []
+
+
 def known_ips() -> list[str]:
     """Strips Farm Control should show: FARM_MEROSS_DEVICES (comma separated) plus every mapped one."""
     ips = [x.strip() for x in os.environ.get("FARM_MEROSS_DEVICES", "").split(",") if x.strip()]
-    for p in printers.PRINTERS.values():
-        ip = (p.power or {}).get("ip")
+    for m in [p.power or {} for p in printers.PRINTERS.values()] + aux():
+        ip = m.get("ip")
         if ip and ip not in ips:
             ips.append(ip)
     return ips
@@ -160,6 +172,7 @@ def devices() -> list[dict]:
         for c in d["channels"]:
             c["printer"] = next((p.name for p in printers.PRINTERS.values()
                                  if (p.power or {}).get("ip") == ip and (p.power or {}).get("channel") == c["channel"]), None)
+            c["aux"] = next((a["name"] for a in aux() if a.get("ip") == ip and a.get("channel") == c["channel"]), None)
         out.append(d)
     return out
 
@@ -274,4 +287,65 @@ def validate_mapping(name: str, m: dict | None) -> dict | None:
         pm = p.power or {}
         if p.name != name and pm.get("ip") == ip and pm.get("channel") == ch:
             raise ValueError(f"outlet {ch} is already mapped to {p.name}")
+    for a in aux():
+        if a.get("ip") == ip and a.get("channel") == ch and a.get("name") != name:
+            raise ValueError(f"outlet {ch} is the {a['name']} outlet")
     return {"type": "meross", "ip": ip, "uuid": d["uuid"], "channel": ch, "model": d["type"]}
+
+
+# ---------------------------------------------------------------- named non-printer outlets (farm lights)
+
+def map_aux(name: str, ip: str | None, channel: int | None, actor: str) -> dict:
+    """A person names an outlet (or clears it with ip=None). Checked against the live strip like a printer mapping."""
+    from .fleet import _farm_md_row
+    _person(actor)
+    name = str(name).strip()[:40]
+    if not name or name in printers.PRINTERS:
+        raise ValueError("an outlet name that is not a printer's, e.g. 'Farm lights'")
+    rest = [a for a in aux() if a.get("name") != name]
+    if ip is None:
+        entry, change = None, f"power outlet '{name}' removed"
+    else:
+        m = validate_mapping(name, {"ip": ip, "channel": channel})
+        entry = {"name": name, "ip": m["ip"], "uuid": m["uuid"], "channel": m["channel"], "model": m["model"]}
+        change = f"power outlet {m['channel']} on the {m['model']} at {m['ip']} is '{name}'"
+    data = {"aux": rest + ([entry] if entry else [])}
+    tmp = AUX_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(AUX_FILE)
+    _farm_md_row("farm", f"{change} ({actor.split(':', 1)[-1]})")
+    return {"name": name, "outlet": entry}
+
+
+def aux_state() -> list[dict]:
+    """[{name, on, error}] for the named outlets (cheap: the 5 s device cache)."""
+    out = []
+    for a in aux():
+        try:
+            d = device(a["ip"])
+            if a["uuid"].lower() != str(d.get("uuid", "")).lower():
+                out.append({"name": a["name"], "error": "the strip at that address is a different device"})
+                continue
+            ch = next((c for c in d["channels"] if c["channel"] == a["channel"]), None)
+            out.append({"name": a["name"], "on": bool(ch and ch["onoff"]), "channel": a["channel"]}
+                       if ch else {"name": a["name"], "error": f"outlet {a['channel']} not on the strip"})
+        except Exception as e:
+            out.append({"name": a["name"], "error": str(e)[:160]})
+    return out
+
+
+def switch_aux(con, name: str, on: bool, actor: str) -> dict:
+    """A person switches a named outlet (lights): no print checks, there is nothing to protect."""
+    _person(actor)
+    a = next((x for x in aux() if x.get("name") == name), None)
+    if a is None:
+        raise LookupError(f"no outlet named {name!r}")
+    if int(a.get("channel", 0)) < 1:
+        raise Refused("channel 0 switches the whole strip")
+    lan_ip(a["ip"])
+    now = _toggle(a, on)
+    if now != on:
+        raise RuntimeError(f"the strip didn't switch outlet {a['channel']} {'on' if on else 'off'}")
+    result = {"outlet": name, "channel": a["channel"], "on": on}
+    jobs.event(con, "printer_op", 0, None, "aux_on" if on else "aux_off", actor, **result)
+    return result

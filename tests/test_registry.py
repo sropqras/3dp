@@ -100,7 +100,7 @@ class Registry(unittest.TestCase):
         strip = FakeMeross("k1")
         self.addCleanup(strip.close)
         env = {"FARM_MEROSS_KEY": "k1", "FARM_POWER_TEST": "1", "FARM_POWER_PORTS": _json.dumps({"127.0.0.1": strip.port})}
-        with mock.patch.dict(os.environ, env):
+        with mock.patch.dict(os.environ, env), mock.patch.object(power, "AUX_FILE", self.tmp / "power.json"):
             power._cache.clear()
             self._onboard()
             r = fleet.update_registry("newone", {"power": {"ip": "127.0.0.1", "channel": 4}}, "ui:Ironman")

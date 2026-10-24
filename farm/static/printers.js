@@ -295,7 +295,7 @@ function powerPicker(e) {
   if (!powerData.devices.length) return cur ? `<div class="row">Power outlet <b>${esc(e.power.channel)}</b> on ${esc(e.power.ip)}</div>` : "";
   if (!powerData.keyed) return `<div class="row dim">Power outlet: run ~/agent_workspace/infrastructure/meross/get_key.sh once so the strip can be read</div>`;
   const opts = powerData.devices.filter((d) => !d.error).flatMap((d) => d.channels.filter((c) => c.channel > 0).map((c) => {
-    const val = `${d.ip}#${c.channel}`, taken = c.printer && c.printer !== e.name;
+    const val = `${d.ip}#${c.channel}`, taken = (c.printer && c.printer !== e.name) || c.aux;
     return `<option value="${esc(val)}" ${val === cur ? "selected" : ""} ${taken ? "disabled" : ""}>${esc(d.type)} ${esc(d.ip)} · outlet ${c.channel} (${c.onoff ? "on" : "off"}${c.printer ? ", " + esc(c.printer) : ""})</option>`;
   }));
   return `<div class="row">Power outlet <select name="power"><option value="">none</option>${opts.join("")}</select>
@@ -465,7 +465,7 @@ function powerPanel() {
   if (!powerData.devices.length) return "";
   const dev = (d) => d.error ? `<div class="row"><b>${esc(d.ip)}</b> <span class="warn">${esc(d.error)}</span></div>`
     : `<div class="row"><b>${esc(d.type)}</b> ${esc(d.ip)} <span class="dim">fw ${esc(d.firmware)}</span></div>
-       <div class="cluster">${d.channels.filter((c) => c.channel > 0).map((c) => `<span class="chip ${c.onoff ? "ok" : ""}">outlet ${c.channel}: ${c.onoff ? "on" : "off"} · ${c.printer ? esc(c.printer) : "<span class='dim'>not mapped</span>"}</span>`).join("")}</div>`;
+       <div class="cluster">${d.channels.filter((c) => c.channel > 0).map((c) => `<span class="chip ${c.onoff ? "ok" : ""}">outlet ${c.channel}: ${c.onoff ? "on" : "off"} · ${c.printer ? esc(c.printer) : c.aux ? "💡 " + esc(c.aux) : "<span class='dim'>not mapped</span>"}</span>`).join("")}</div>`;
   return `<section class="panel host" data-panel="power-strips"><div class="panel-h"><h2>Power strips <span class="dim">Meross, local network only · map an outlet in a printer's Farm settings</span></h2></div>
     <div class="panel-b card fcard">${powerData.devices.map(dev).join("")}</div></section>`;
 }

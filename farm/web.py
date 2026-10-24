@@ -579,6 +579,7 @@ def overview() -> dict:
     plist = list(printers.PRINTERS.values())
     live = [_safe_view(p, by_remote) for p in plist]
     _add_printguard(live, cached("printguard", 10, printguard.status))
+    aux_outlets = cached("power:aux", 5, power.aux_state) if power.aux() else []   # the farm lights etc.
     for v in live:              # wall outlet state for mapped printers (farm/power.py; LAN-only, cached)
         p = printers.PRINTERS.get(v["name"])
         if p is not None and p.power:
@@ -605,7 +606,7 @@ def overview() -> dict:
         inv = {"spools": spools.all_spools(con)}
     finally:
         con.close()
-    return {"time": time.time(), "printers": live, "runs": shown[:25],
+    return {"time": time.time(), "printers": live, "runs": shown[:25], "aux_outlets": aux_outlets,
             "projects": [x for x in cached("projects", 15, projects_view) if x["state"] == "open"],
             "builds": builds_view(), "jobs_in_progress": jobs_in_progress(),
             "inventory": inv, "petg_used_g": round(sum(r["grams"] for r in shown if r["status"] == "completed"), 1)}
@@ -906,6 +907,18 @@ class Handler(BaseHTTPRequestHandler):
             except (LookupError, KeyError, ValueError, PermissionError, cfgchange.Refused, ops.Refused) as e:
                 return self._send(400, json.dumps({"error": str(e)}).encode())
             return self._send(404, b"{}")
+        if path == "/api/power/aux":     # a person switches a named outlet (the farm lights): no print checks
+            con = db.connect()
+            try:
+                body = self._json_body()
+                who = "ui:" + (str(body.get("operator") or "").strip()[:40] or "unknown")
+                out = power.switch_aux(con, str(body.get("name", "")), bool(body.get("on")), who)
+            except (power.Refused, RuntimeError, LookupError, ValueError) as e:
+                return self._send(400, json.dumps({"error": str(e)}).encode())
+            finally:
+                con.close()
+            _cache.pop("power:aux", None)
+            return self._send(200, json.dumps(out).encode())
         if path == "/api/scripts":
             try:
                 body = self._json_body()

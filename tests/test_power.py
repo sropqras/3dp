@@ -25,6 +25,9 @@ class PowerTest(unittest.TestCase):
                                             "FARM_POWER_PORTS": json.dumps({"127.0.0.1": self.strip.port})})
         env.start()
         self.addCleanup(env.stop)
+        aux = mock.patch.object(power, "AUX_FILE", Path(tempfile.mkdtemp()) / "power.json")   # never the real strip's map
+        aux.start()
+        self.addCleanup(aux.stop)
         self.mapping = {"type": "meross", "ip": "127.0.0.1", "uuid": self.strip.uuid, "channel": 2, "model": "mss426"}
         self.set_printer(power=self.mapping)
         power._cache.clear()
@@ -151,6 +154,41 @@ class PowerTest(unittest.TestCase):
             power.validate_mapping(other, {"ip": "127.0.0.1", "channel": 2})    # NAME has outlet 2
         self.assertIn(f"already mapped to {NAME}", str(cm.exception))
         self.assertIsNone(power.validate_mapping(NAME, None))
+
+    # -------------------------------------------------------------- named outlets (the farm lights)
+    def _aux_files(self):
+        from farm import cfgchange
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "FARM.md").write_text("| Date | Printer | Change |\n|---|---|---|\n")
+        for patch in (mock.patch.object(power, "AUX_FILE", tmp / "power.json"), mock.patch.object(cfgchange, "FARM_MD", tmp / "FARM.md")):
+            patch.start()
+            self.addCleanup(patch.stop)
+        return tmp
+
+    def test_farm_lights_are_mapped_switched_by_a_person_and_kept_apart_from_printers(self):
+        tmp = self._aux_files()
+        r = power.map_aux("Farm lights", "127.0.0.1", 5, "cli:Ironman")
+        self.assertEqual(r["outlet"]["channel"], 5)
+        self.assertIn("'Farm lights'", (tmp / "FARM.md").read_text())
+        self.assertEqual(power.aux_state(), [{"name": "Farm lights", "on": True, "channel": 5}])
+        out = power.switch_aux(self.con, "Farm lights", False, "ui:Ironman")
+        self.assertEqual((out["on"], self.strip.onoff[5], self.strip.onoff[2]), (False, 0, 1))   # only its outlet
+        self.moon.state = "printing"                                                           # lights: no print checks
+        self.assertTrue(power.switch_aux(self.con, "Farm lights", True, "ui:Ironman")["on"])
+        with self.assertRaises(power.Refused):
+            power.switch_aux(self.con, "Farm lights", False, "agent")
+        with self.assertRaises(ValueError):                                                    # a printer's outlet
+            power.map_aux("Farm lights", "127.0.0.1", 2, "cli:Ironman")
+        with self.assertRaises(ValueError):                                                    # the lights' outlet
+            power.validate_mapping("s1pro", {"ip": "127.0.0.1", "channel": 5})
+        with self.assertRaises(ValueError):
+            power.map_aux(NAME, "127.0.0.1", 4, "cli:Ironman")                                 # a printer's name
+        self.strip.uuid = "f" * 32
+        with self.assertRaises(RuntimeError):
+            power.switch_aux(self.con, "Farm lights", False, "ui:Ironman")
+        self.assertEqual(self.strip.onoff[5], 1)
+        power.map_aux("Farm lights", None, None, "cli:Ironman")
+        self.assertEqual(power.aux(), [])
 
     # -------------------------------------------------------------- the monitor and the card
     def test_unreadable_strip_is_a_quiet_debounced_note(self):
