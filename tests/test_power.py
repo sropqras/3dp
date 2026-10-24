@@ -5,6 +5,7 @@ import dataclasses
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -125,6 +126,26 @@ class PowerTest(unittest.TestCase):
         self.moon.klipper, self.moon.klipper_msg = "error", "mcu 'mcu': Unable to connect"
         out = self.switch(True)
         self.assertEqual((out["on"], out["state"], self.moon.restarts, self.strip.onoff[2]), (True, "ready", 1, 1))
+
+    def test_on_waits_for_a_klipper_already_finding_the_board(self):
+        self.strip.onoff[2] = 0
+        self.moon.klipper = "startup"
+        threading.Timer(1.5, lambda: setattr(self.moon, "klipper", "ready")).start()
+        out = self.switch(True)
+        self.assertEqual((out["state"], self.moon.restarts), ("ready", 0))      # waited, never restarted it
+
+    def test_a_switch_from_farm_control_refreshes_the_printers_own_device(self):
+        """Moonraker caches its http device's state: after a card switch, Fluidd/Telegram would show the old one."""
+        self.switch(False)
+        for _ in range(50):
+            if self.moon.device_reads:
+                break
+            time.sleep(0.05)
+        self.assertEqual(self.moon.device_reads, ["printer"])
+        n = len(self.moon.device_reads)
+        power.set_power(self.con, NAME, True, "ui:Ironman via x (Telegram/Fluidd)", boot_s=0, wait_s=1, reconnect=False)
+        time.sleep(0.3)
+        self.assertEqual(len(self.moon.device_reads), n)        # Moonraker asked: it knows already, no call back
 
     def test_on_does_not_restart_a_ready_klipper(self):
         self.assertEqual(self.switch(True)["state"], "ready")

@@ -108,6 +108,7 @@ class FakeMoonraker:
         self.warnings, self.failed_components = [], []   # what /server/info reports
         self.power_devices = None   # None: parsed from moonraker.conf's [power X] at each Moonraker restart
         self.on_server_restart = None   # callable(fake) run at /server/restart
+        self.device_reads = []      # GET /machine/device_power/device?device=X (a power device's state asked)
         self.config_file = "/home/aali/Ender3MaxNeo_data/config/printer.cfg"   # names the instance
         self.webcams = []           # what /server/webcams/item registered
         self.history = []           # /server/history/list entries (paged with start/limit like Moonraker)
@@ -175,6 +176,9 @@ class FakeMoonraker:
                     return self._json(200, {"result": {"klippy_state": outer.klipper,
                                                        "failed_components": outer.failed_components,
                                                        "warnings": outer.warnings, "moonraker_version": "v0.9.3-fake"}})
+                if u.path == "/machine/device_power/device":
+                    outer.device_reads.append(q.get("device", [""])[0])
+                    return self._json(200, {"result": {q.get("device", [""])[0]: "on"}})
                 if u.path == "/machine/device_power/devices":
                     return self._json(200, {"result": {"devices": [{"device": d, "status": "off"}
                                                                    for d in outer.loaded_power()]}})

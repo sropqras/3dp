@@ -373,10 +373,16 @@ def _after_on(p, boot_s: float, wait_s: float) -> dict:
         return {"state": "unknown", "hint": "powered on, but its Moonraker didn't answer - is the printer host up?"}
     if info.get("state") == "ready":
         return {"state": "ready", "hint": ""}
+    if info.get("state") == "startup":       # Klipper is already finding the board: wait for it, don't restart it
+        return _wait_ready(p, "startup", wait_s)
     if not powered_off(info.get("state"), info.get("state_message"), None):
         return {"state": info.get("state"), "hint": f"powered on; Klipper is {info.get('state')}: {str(info.get('state_message'))[:120]}"}
     net.post_json(f"{p.moonraker}/printer/firmware_restart", timeout=10)
-    state, deadline = info.get("state"), time.time() + wait_s
+    return _wait_ready(p, info.get("state"), wait_s)
+
+
+def _wait_ready(p, state, wait_s: float) -> dict:
+    deadline = time.time() + wait_s
     while time.time() < deadline:
         time.sleep(1)
         try:
@@ -385,7 +391,9 @@ def _after_on(p, boot_s: float, wait_s: float) -> dict:
             continue
         if state == "ready":
             break
-    return {"state": state, "hint": "" if state == "ready" else "powered on, but Klipper didn't find the board: is its USB in?"}
+    hint = "" if state == "ready" else ("powered on; Klipper is still finding the board - give it a minute" if state == "startup"
+                                        else "powered on, but Klipper didn't find the board: is its USB in?")
+    return {"state": state, "hint": hint}
 
 
 def set_power(con, name: str, on: bool, actor: str, boot_s: float = 8, wait_s: float = 25, reconnect: bool = True) -> dict:
@@ -418,7 +426,18 @@ def set_power(con, name: str, on: bool, actor: str, boot_s: float = 8, wait_s: f
             raise RuntimeError(f"the strip didn't switch outlet {m['channel']} off")
         result = {"printer": name, "outlet": m["channel"], "on": False, "checked": why}
     jobs.event(con, "printer_op", 0, None, "power_on" if on else "power_off", actor, **result)
+    if reconnect:      # switched from Farm Control: its Moonraker's [power printer] still shows the old state
+        threading.Thread(target=_refresh_device, args=(p,), daemon=True).start()
     return result
+
+
+def _refresh_device(p):
+    """Ask the printer's Moonraker for its [power printer] state once, so Fluidd and the Telegram button show what
+    the card just did (Moonraker caches an http device's state until asked). A read; no device = nothing to do."""
+    try:
+        net.get_json(f"{p.moonraker}/machine/device_power/device?device=printer", timeout=25)
+    except Exception:
+        pass
 
 
 def validate_mapping(name: str, m: dict | None) -> dict | None:

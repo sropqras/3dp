@@ -53,6 +53,8 @@ the code is `farm/power.py`, the tests `tests/test_power.py`, the rules in CLAUD
 Telegram/Fluidd → the printer's Moonraker `[power printer]` (`type: http`) → `GET/POST
 http://192.168.1.107:10111/api/power/device/<printer>` → `set_power(..., reconnect=False)`.
 
+- After a switch from a Farm Control card, Farm Control asks the printer's Moonraker for its `printer` device once, because
+  Moonraker caches an http device's state, and Fluidd/Telegram would otherwise show the old one.
 - Two locks: Moonraker's `locked_while_printing` and every farm gate above. Moonraker's
   `restart_klipper_when_powered` (delay 8 s) does the FIRMWARE_RESTART after On.
 - The section comes from `power.moonraker_section(name)`, staged by `farm power stage-device <printer>` as an ordinary
@@ -65,7 +67,7 @@ http://192.168.1.107:10111/api/power/device/<printer>` → `set_power(..., recon
 - The Telegram pack sets `[bot] power_device: printer` (only keys in `ops.BOT_KEYS`; token and chat untouched) and adds
   the `power` button only where the device exists; `power` is in `require_confirmation`.
 - **Not wired on standalone printers** (NebulaV3SE: its Moonraker runs on the pad its own outlet powers). Use the card's ⏻.
-- State 2026-10-24: staged as changes 35 (Ender3MaxNeo), 40 (s1pro), 38 (enders1plus), 39 (EnderV3SE, which also
+- State 2026-10-24: staged as changes 35 (Ender3MaxNeo), 40 (s1pro, applied and loaded 2026-10-24), 38 (enders1plus), 39 (EnderV3SE, which also
   drops the Obico updater include). Live test pending Ironman's Apply.
 
 ## What the garage costs to run (measured, 2026-10-23)

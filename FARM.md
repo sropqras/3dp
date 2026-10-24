@@ -56,6 +56,7 @@ enders1plus (3dpnas) has its own working Telegram bot (user confirmed 2026-10-22
 
 | Date | Printer | Change |
 |---|---|---|
+| 2026-10-24 | s1pro | moonraker.conf: edited (moonraker.conf): power button in Telegram/Fluidd: [power printer] asks Farm Control, which switches the outlet through its gates (never while anything prints) - applied by Ironman via Farm Control, change 40 |
 | 2026-10-24 | NebulaV3SE | Farm settings: **standalone** - a self-contained Creality Nebula Pad (rooted, Guilouz Helper Script: own KAMP, timelapse, shapers, Git-Backup). Farm standards are INFO, never staged; staged change 34 (idle timeout + 12 h cap in Creality's printer.cfg) cancelled (Claude session on Ironman's instruction) |
 | 2026-10-24 | NebulaV3SE | Farm settings: power outlet 1 on the mss426 at 192.168.1.63 (Claude session on Ironman's instruction; outlet confirmed by switching it on in the Meross app) |
 | 2026-10-24 | NebulaV3SE | Onboarded in Farm Control (printer-200:7125, bed [5.0, 5.0]-[215.0, 215.0], Z 250.0, profiles none) by a Claude session on Ironman's instruction |

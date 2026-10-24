@@ -54,8 +54,8 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 
 ## To do (in order)
 
-0. **Telegram/Fluidd power button (2026-10-24): staged, waiting for Apply.** Changes 35 (MaxNeo), 40 (s1pro), 38 (enders1plus)
-   and 39 (EnderV3SE: + drops the Obico updater include, superseding 30) add `[power printer]` to moonraker.conf. Apply each
+0. **Telegram/Fluidd power button (2026-10-24): staged, waiting for Apply.** Changes 35 (MaxNeo), 38 (enders1plus)
+   and 39 (EnderV3SE: + drops the Obico updater include, superseding 30) add `[power printer]` to moonraker.conf (40, s1pro, applied 2026-10-24: the device loaded). Apply each
    while the printer is idle; switched on or off no longer matters. Changes 30 and 36 rolled back because the gate used to
    FIRMWARE_RESTART for a moonraker.conf change (Klipper retried the switched-off board past the 90 s wait) and never
    restarted Moonraker. It now restarts Moonraker only and checks the `[power printer]` device loaded. Then press
