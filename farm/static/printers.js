@@ -104,7 +104,7 @@ function auditBlock(v) {
   const nfix = v.readonly ? 0 : v.audit.filter((a) => a.status !== "PASS" && a.fixable).length;   // WARN too: the macro library
   return `<details><summary>${head}${warns.length ? ` <span class="warn">· ${warns.length} warning</span>` : ""} — ${v.audit.length} rules</summary>${offNote}
     ${nfix > 1 ? `<div class="row" style="margin:6px 0"><button class="ghost" onclick='stageAllFixes(${js(v.key)}, ${nfix})'>Stage all ${nfix} fixes (one change per file)</button></div>` : ""}
-    <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td>
+    <table>${v.audit.map((a) => `<tr><td class="${a.status === "PASS" ? "ok" : a.status === "WARN" ? "warn" : a.status === "INFO" ? "dim" : "bad"}">${a.status}</td><td>${esc(a.rule)}</td><td class="dim">${esc(a.detail)}</td>
       <td>${a.status === "FAIL" && !v.readonly && !a.fixable ? `<span class="dim" title="needs judgement: use + Stage change">edit manually</span>` : ""}${a.status !== "PASS" && !v.readonly && a.fixable ? `<button class="ghost" onclick='stageFix(${js(v.key)}, ${js(a.rule)})'>Stage fix</button>` : ""}</td></tr>`).join("")}</table></details>`;
 }
 
@@ -286,6 +286,7 @@ function onboardBlock(v) {
       <div class="row">Profiles ${profs}</div>
       <div class="row"><label><input type="checkbox" name="m600"> M600 shows a prompt</label>
         <label><input type="checkbox" name="readonly"> watch-only (no jobs, no changes)</label>
+        <label title="a self-contained printer (Creality Nebula Pad, CR-10 SE screen): watched, powered and sent files, but the farm's Klipper standards are not applied"><input type="checkbox" name="standalone"> standalone (keep its maker's setup)</label>
         <button>Add to the farm</button></div>
       <div class="dim">Bed and Z are what you measured, not what a copied config says. Each profile's bed must fit, or nothing is saved.</div>
     </form></details>`;
@@ -312,7 +313,8 @@ function farmSettings(v) {
       <div class="row">Bed ${esc(e.bed_min.join(","))} – ${esc(e.bed_max.join(","))} · Z ${e.max_z}${e.note ? " · " + esc(e.note) : ""}</div>
       <div class="row">Profiles ${profs}</div>
       ${powerPicker(e)}
-      <div class="row"><label><input type="checkbox" name="readonly" ${e.readonly ? "checked" : ""}> watch-only</label><button class="ghost">Save</button></div>
+      <div class="row"><label><input type="checkbox" name="readonly" ${e.readonly ? "checked" : ""}> watch-only</label>
+        <label title="watched, powered and sent files, but the farm's Klipper standards (macro library, caps, generated fixes) are not applied"><input type="checkbox" name="standalone" ${e.standalone ? "checked" : ""}> standalone</label><button class="ghost">Save</button></div>
     </form></details>`;
 }
 async function fluiddPreview(key, el) {
@@ -374,7 +376,7 @@ async function onboard(key, form, left) {
   if (!operator()) { alert("Put your name in the 'You' box first."); return; }
   const f = new FormData(form), n = (x) => +f.get(x);
   const body = { name: f.get("name").trim(), note: f.get("note"), bed_min: [n("x0"), n("y0")], bed_max: [n("x1"), n("y1")], max_z: n("z"),
-    profiles: f.getAll("profiles"), has_m600_prompt: !!f.get("m600"), readonly: !!f.get("readonly") };
+    profiles: f.getAll("profiles"), has_m600_prompt: !!f.get("m600"), readonly: !!f.get("readonly"), standalone: !!f.get("standalone") };
   if (!confirm(`Add ${body.name} to the farm: bed ${body.bed_min}–${body.bed_max}, Z ${body.max_z}, profiles ${body.profiles.join(", ") || "none"}${body.readonly ? ", watch-only" : ""}?` +
     (left ? `\n\n${left} checklist step(s) are still open.` : "") + `\n\nThe monitor and the pipeline pick it up at once; FARM.md's change log records it.`)) return;
   const r = await post(`/api/fleet/${encodeURIComponent(key)}/onboard`, body);
@@ -382,7 +384,7 @@ async function onboard(key, form, left) {
 }
 async function saveSettings(name, form) {
   if (!operator()) { alert("Put your name in the 'You' box first."); return; }
-  const f = new FormData(form), body = { profiles: f.getAll("profiles"), readonly: !!f.get("readonly") };
+  const f = new FormData(form), body = { profiles: f.getAll("profiles"), readonly: !!f.get("readonly"), standalone: !!f.get("standalone") };
   if (f.has("power")) { const [ip, ch] = String(f.get("power")).split("#"); body.power = ip ? { ip, channel: +ch } : null; }
   if (!confirm(`Save ${name}: profiles ${body.profiles.join(", ") || "none"}${body.readonly ? ", watch-only" : ""}?`)) return;
   const r = await post(`/api/fleet/${encodeURIComponent(name)}/registry`, body);
@@ -408,7 +410,9 @@ function card(v, i) {
   const waiting = [pending ? `<span class="chip warn">${pending} staged</span>` : "", due ? `<span class="chip bad">${due} maintenance due</span>` : "",
     v.klippy_state !== "ready" && !v.off ? `<span class="chip bad">Klipper ${esc(v.klippy_state || "?")}</span>` : ""].filter(Boolean);
   const urgent = waiting.length > 0;
-  const badge = v.readonly ? `<span class="chip warn">watch-only</span>` : v.registry ? `<span class="chip ok">onboarded</span>` : `<span class="chip warn">not onboarded</span>`;
+  const reg = (data.registry || []).find((x) => x.name === v.registry) || {};
+  const badge = (v.readonly ? `<span class="chip warn">watch-only</span>` : v.registry ? `<span class="chip ok">onboarded</span>` : `<span class="chip warn">not onboarded</span>`)
+    + (reg.standalone ? ` <span class="chip" title="self-contained: watched, powered and sent files; the farm's Klipper standards are not applied">standalone</span>` : "");
   const st = v.off ? `<span class="chip">switched off</span>${v.readonly ? "" : ` <button class="ghost" onclick='reconnectPrinter(${js(v.key)})'>Reconnect</button>`}`
     : v.klippy_state !== "ready" ? `<span class="chip bad">${esc(v.klippy_state || "?")}</span>` : `<span class="chip ${v.paused ? "warn" : v.job === "printing" ? "ok" : ""}">${esc(v.paused ? "paused" : v.job || "?")}</span>`;
   const vers = Object.entries(v.versions || {}).map(([k, ver]) => `<span class="chip ${(v.updates || []).includes(k) ? "warn" : ""}" title="${(v.updates || []).includes(k) ? "update available" : ""}">${esc(k.replace("Klipper-Adaptive-Meshing-Purging", "KAMP").replace("moonraker-telegram-bot", "telegram-bot"))} ${esc(ver)}</span>`).join(" ");
@@ -428,7 +432,7 @@ function card(v, i) {
     ${maintBlock(v)}
     ${v.reachable ? `<details ontoggle='if (this.open) restorePoints(${js(v.key)}, this)'><summary>Restore points (original · last known good)</summary><div class="dim">loading…</div></details>` : ""}
     ${onboardBlock(v)}
-    ${v.reachable && v.klippy_state === "ready" && !v.readonly ? `<details ontoggle='if (this.open) fluiddPreview(${js(v.key)}, this)'><summary>Fluidd layout (farm standard)</summary><div class="dim">loading…</div></details>` : ""}
+    ${v.reachable && v.klippy_state === "ready" && !v.readonly && !reg.standalone ? `<details ontoggle='if (this.open) fluiddPreview(${js(v.key)}, this)'><summary>Fluidd layout (farm standard)</summary><div class="dim">loading…</div></details>` : ""}
     <details><summary>versions${(v.updates || []).length ? ` · <span class="warn">${v.updates.length} update(s) available</span>` : ""}</summary><div class="cluster">${vers}</div></details>`,
     waiting, urgent);
 }

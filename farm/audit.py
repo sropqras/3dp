@@ -27,7 +27,7 @@ def _code_lines(text: str) -> list[str]:
 
 
 def rules(s: dict, printer) -> list[tuple]:
-    """(status, rule, detail) for each check; status is PASS, FAIL or WARN."""
+    """(status, rule, detail) for each check; status is PASS, FAIL or WARN (INFO on a standalone printer)."""
     out = []
 
     def check(ok, rule, detail, warn=False):
@@ -101,7 +101,17 @@ def rules(s: dict, printer) -> list[tuple]:
 
     if printer.has_m600_prompt is False and m600:
         check(False, "pipeline registry matches", "printer has an M600 but has_m600_prompt=False", warn=True)
+    if getattr(printer, "standalone", False):
+        # a self-contained printer keeps its maker's setup: only what decides whether farm G-code runs on it is checked
+        out = [(st if st == "PASS" or r in STANDALONE_CHECKS else "INFO", r,
+                d if st == "PASS" or r in STANDALONE_CHECKS else f"{d} (farm standard, not applied to a standalone printer)")
+               for st, r, d in out]
     return out
+
+
+# what still matters on a standalone printer: farm G-code calls these, and Klipper must parse its macros
+STANDALONE_CHECKS = ("START_PRINT macro exists", "START_PRINT reads EXTRUDER_TEMP and BED_TEMP", "M600 macro exists",
+                     "no macro named letter+digits (Klipper parses them as classic commands)")
 
 
 def audit(printers) -> int:

@@ -168,7 +168,8 @@
         "uuid": "2309280720925654060248e1e9dd015b",
         "channel": 1,
         "model": "mss426"
-      }
+      },
+      "standalone": true
     }
   ]
 }

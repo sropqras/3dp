@@ -147,6 +147,12 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     first is **"Farm lights"**: channel 7, the strip's USB ports, for USB LED lights when the garage is dark (2026-10-24).
     A person switches them with the 💡 button in the dashboard header. There are no print checks (nothing to protect),
     but the strip is still identified first and channel 0 is never used. A printer can't be mapped to a named outlet.
+- **Standalone printers** (registry `standalone`, Farm settings/onboarding tick box; first: NebulaV3SE, 2026-10-24):
+  self-contained machines (Creality Nebula Pads, the CR-10 SE's own screen) that must keep working without the farm's
+  servers. The farm watches, powers, sends files to and snapshots them, but never reshapes them: farm-standard audit rules
+  are **INFO** (only START_PRINT/M600/macro-name compatibility stays a real check, `audit.STANDALONE_CHECKS`),
+  `baseline.stage_fix(es)` and the Fluidd layout push refuse, and no Stage fix is offered. A deliberate edit is still
+  a person's **+ Stage change** through the gate. Don't stage farm standards onto them.
 - **Switched-off printers** (`monitor.powered_off`): the farm switches idle printers off.
   - "Unable to connect" or "Lost communication" while nothing prints is a silent note, not an alarm.
   - **Reconnect** (FIRMWARE_RESTART) is offered only from that state, never on a watch-only printer.

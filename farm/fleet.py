@@ -35,7 +35,8 @@ def _audit(v: dict) -> list[dict] | None:
     p = printers.PRINTERS.get(v.get("registry") or "") or SimpleNamespace(has_m600_prompt=None)
     settings = audit.net.get_json(f"{v['url']}/printer/objects/query?configfile=settings", timeout=8)
     s = settings["result"]["status"]["configfile"]["settings"]
-    return [{"status": st, "rule": r, "detail": d, "fixable": baseline.fixable(r)} for st, r, d in audit.rules(s, p)]
+    return [{"status": st, "rule": r, "detail": d, "fixable": st in ("FAIL", "WARN") and baseline.fixable(r)}
+            for st, r, d in audit.rules(s, p)]
 
 
 def overview() -> dict:
@@ -377,7 +378,7 @@ def onboard(key: str, body: dict, actor: str) -> dict:
     entry = {"name": name, "note": str(body.get("note") or "")[:300], "moonraker": v["url"], "fluidd": v.get("fluidd", ""),
              "fluidd_note": str(body.get("fluidd_note") or "")[:200], "bed_min": bed_min, "bed_max": bed_max,
              "max_z": float(body["max_z"]), "has_m600_prompt": bool(body.get("has_m600_prompt")),
-             "readonly": bool(body.get("readonly")), "profiles": profs,
+             "readonly": bool(body.get("readonly")), "standalone": bool(body.get("standalone")), "profiles": profs,
              "legacy_presets": {"bundle": first.bundle.name, "printer": first.printer_preset, "print": first.print_preset,
                                 "filament": {first.material: first.filament_preset}} if first else {}}
     printers.save_registry(entries + [entry])
@@ -402,6 +403,9 @@ def update_registry(name: str, body: dict, actor: str) -> dict:
     if e is None:
         raise LookupError(f"{name} is not in the registry")
     changed = []
+    if "standalone" in body and bool(body["standalone"]) != bool(e.get("standalone")):
+        e["standalone"] = bool(body["standalone"])
+        changed.append("standalone (farm standards not applied)" if e["standalone"] else "no longer standalone")
     if "readonly" in body and bool(body["readonly"]) != bool(e.get("readonly")):
         e["readonly"] = bool(body["readonly"])
         changed.append("watch-only" if e["readonly"] else "no longer watch-only")
@@ -544,6 +548,8 @@ def fluidd_apply(key: str, actor: str) -> dict:
     _person(actor)
     v = _instance(key)
     _not_watch_only(key, v)
+    if getattr(printers.PRINTERS.get(v.get("registry") or ""), "standalone", False):
+        raise cfgchange.Refused(f"{key} is standalone: its own Fluidd layout stays as its maker set it")
     con = db.connect()
     try:
         return standard.fluidd_apply(con, v.get("registry") or key, v["url"], standard.live_macros(v["url"]), actor)

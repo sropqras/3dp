@@ -404,7 +404,15 @@ def _new_files_first(paths, live: dict) -> list:
     return sorted(paths, key=lambda p: p in live)
 
 
+def _not_standalone(printer: str):
+    from . import printers as _printers
+    if getattr(_printers.PRINTERS.get(printer), "standalone", False):
+        raise cfgchange.Refused(f"{printer} is standalone: farm standards aren't applied to it. A deliberate edit is still "
+                                "possible with + Stage change")
+
+
 def stage_fix(con, printer: str, url: str, rule: str, settings: dict, author: str) -> list[dict]:
+    _not_standalone(printer)
     live, crlf = _live(url)
     staged = []
     fixes = {f["path"]: f for f in fixes_for(rule, settings, live, printer)}
@@ -419,6 +427,7 @@ def stage_fix(con, printer: str, url: str, rule: str, settings: dict, author: st
 def stage_fixes(con, printer: str, url: str, rules: list[str], settings: dict, author: str) -> list[dict]:
     """Several rules' fixes as ONE change per file (staged separately they would share a base and the second
     would be refused as stale once the first is applied)."""
+    _not_standalone(printer)
     live, crlf = _live(url)
     files, why = dict(live), {}
     for rule in rules:
