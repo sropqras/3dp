@@ -25,9 +25,13 @@ class PowerTest(unittest.TestCase):
                                             "FARM_POWER_PORTS": json.dumps({"127.0.0.1": self.strip.port})})
         env.start()
         self.addCleanup(env.stop)
-        aux = mock.patch.object(power, "AUX_FILE", Path(tempfile.mkdtemp()) / "power.json")   # never the real strip's map
-        aux.start()
-        self.addCleanup(aux.stop)
+        tmp = Path(tempfile.mkdtemp())
+        self._real_busy = power.farm_busy
+        for patch in (mock.patch.object(power, "AUX_FILE", tmp / "power.json"),     # never the real strip's map
+                      mock.patch.object(db, "DB_PATH", tmp / "farm.db"),            # never the real farm DB
+                      mock.patch.object(power, "farm_busy", return_value=[])):      # never the real printers
+            patch.start()
+            self.addCleanup(patch.stop)
         self.mapping = {"type": "meross", "ip": "127.0.0.1", "uuid": self.strip.uuid, "channel": 2, "model": "mss426"}
         self.set_printer(power=self.mapping)
         power._cache.clear()
@@ -189,6 +193,106 @@ class PowerTest(unittest.TestCase):
         self.assertEqual(self.strip.onoff[5], 1)
         power.map_aux("Farm lights", None, None, "cli:Ironman")
         self.assertEqual(power.aux(), [])
+
+    def test_farm_lights_follow_the_prints_and_respect_a_person(self):
+        self._aux_files()
+        power.map_aux(power.LIGHTS, "127.0.0.1", 5, "cli:Ironman")
+        lights = lambda: self.strip.onoff[5]
+        self.strip.onoff[5] = 0
+        power.auto_lights({}, ["s1pro"], 0)
+        self.assertEqual(lights(), 0, "not automatic until a person's own switch of the outlet read back clean")
+        power.switch_aux(self.con, power.LIGHTS, True, "ui:Ironman")
+        self.assertTrue(power.aux()[0]["proven"])
+        def run(busy, t):
+            power._cache.clear()
+            power.auto_lights(st, busy, t)
+        self.strip.onoff[5] = 0
+        st = {}
+        run([], 0)
+        self.assertEqual(lights(), 0)                       # nothing printing, off: stays off
+        run(["s1pro"], 10)
+        self.assertEqual(lights(), 1)                       # a print: on
+        run([], 100)
+        run([], 100 + power.LIGHTS_OFF_AFTER_S - 1)
+        self.assertEqual(lights(), 1)                       # not yet: a pause between prints keeps them on
+        run([], 100 + power.LIGHTS_OFF_AFTER_S)
+        self.assertEqual(lights(), 0)                       # idle long enough: off
+        # a person switched them on: never switched off by the automation
+        self.strip.onoff[5] = 1
+        run([], 2000)
+        run([], 9000)
+        self.assertEqual(lights(), 1)
+        # a person switches them off during a print: respected until the print ends
+        self.strip.onoff[5], st = 0, {}
+        run(["s1pro"], 10000)
+        self.assertEqual(lights(), 1)
+        self.strip.onoff[5] = 0                             # person: off
+        run(["s1pro"], 10100)
+        self.assertEqual(lights(), 0)
+        run([], 10200)
+        run(["s1pro"], 10300)                               # the next print: on again
+        self.assertEqual(lights(), 1)
+        # only the lights: no printer outlet was ever touched
+        self.assertEqual({c: v for c, v in self.strip.onoff.items() if c != 5}, {0: 1, 1: 1, 2: 1, 3: 1, 4: 1})
+        ev = db.connect().execute("SELECT to_state FROM events WHERE actor='monitor:auto-lights' ORDER BY id").fetchall()
+        self.assertEqual([e[0] for e in ev], ["aux_on", "aux_off", "aux_on", "aux_on"])   # in the (test) farm DB
+
+    # -------------------------------------------------------------- what keeps a print from being cut
+    def test_no_off_anywhere_while_any_printer_prints(self):
+        with mock.patch.object(power, "farm_busy", return_value=["s1pro"]):
+            self.refused(False, "s1pro is printing: no power off anywhere")
+        self._aux_files()
+        power.map_aux(power.LIGHTS, "127.0.0.1", 5, "cli:Ironman")
+        power.switch_aux(self.con, power.LIGHTS, True, "ui:Ironman")                 # proven
+        st = {"auto_on": True, "idle_since": 0}
+        with mock.patch.object(power, "farm_busy", return_value=["printer-200:7125"]):
+            power._cache.clear()
+            power.auto_lights(st, [], power.LIGHTS_OFF_AFTER_S + 1)
+        self.assertEqual(self.strip.onoff[5], 1, "lights stay on while an unwatched printer prints")
+
+    def test_farm_busy_reads_every_known_moonraker(self):
+        from farm import hosts
+        other = FakeMoonraker(copy.deepcopy(GOOD))
+        other.state = "printing"
+        self.addCleanup(other.server.shutdown)
+        fake_hosts = [{"name": "printer-200", "address": "127.0.0.1", "ports": [other.server.server_address[1]]},
+                      {"name": "gone", "address": "127.0.0.1", "ports": [9]}]          # unreadable: not counted
+        with mock.patch.object(power, "farm_busy", self._real_busy), \
+                mock.patch.object(hosts, "load_hosts", return_value=fake_hosts), \
+                mock.patch.dict(printers.PRINTERS, {NAME: printers.PRINTERS[NAME]}, clear=True):
+            self.assertEqual(power.farm_busy(timeout=2), [f"printer-200:{other.server.server_address[1]}"])
+
+    def test_a_board_lost_mid_print_is_not_already_off(self):
+        self.moon.klipper, self.moon.klipper_msg = "shutdown", "Lost communication with MCU 'mcu'"
+        for job in ("printing", "paused", "error"):
+            self.moon.state = job
+            self.refused(False, f"print is {job}")
+
+    def test_a_switch_that_changes_another_outlet_stops_all_switching(self):
+        self.strip.crosstalk = 4
+        with self.assertRaises(RuntimeError) as cm:
+            self.switch(False)
+        self.assertIn("also changed outlet(s) 4", str(cm.exception))
+        self.strip.crosstalk = None
+        sets = len([c for c in self.strip.calls if c[0] == "SET"])
+        with self.assertRaises(power.Refused) as cm:                                   # latched: nothing more is sent
+            self.switch(True)
+        self.assertIn("power switching is stopped", str(cm.exception))
+        self.assertEqual(len([c for c in self.strip.calls if c[0] == "SET"]), sets)
+        state = {}
+        for t in (0.0, 1600.0):
+            with mock.patch.object(monitor.time, "time", return_value=t):
+                out = monitor.power_pass(state)
+        self.assertTrue(any(lv == "loud" and "stopped" in msg for lv, msg in out))
+        with self.assertRaises(power.Refused):
+            power.clear_trip("agent")
+        power.clear_trip("cli:Ironman")
+        self.assertIsNone(power.tripped())
+
+    def test_channel_zero_is_refused_at_the_switch_itself(self):
+        with self.assertRaises(power.Refused):
+            power._toggle({"ip": "127.0.0.1", "uuid": self.strip.uuid, "channel": 0}, False)
+        self.assertEqual([c for c in self.strip.calls if c[0] == "SET"], [])
 
     # -------------------------------------------------------------- the monitor and the card
     def test_unreadable_strip_is_a_quiet_debounced_note(self):

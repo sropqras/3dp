@@ -43,6 +43,7 @@ def check(p, prev: dict) -> tuple[dict, list[tuple[str, str]]]:
             now["problems"]["unreachable"] = f"Moonraker unreachable: {str(e)[:120]}"
     else:
         wh, ps = s["webhooks"], s["print_stats"]
+        now["job"] = ps["state"]              # printing / paused / standby ... (the farm lights follow it)
         if powered_off(wh["state"], wh.get("state_message"), ps["state"]):
             now["off"] = True                 # switched off at the wall: a note, not an alarm
         elif wh["state"] in ("error", "shutdown"):
@@ -233,6 +234,10 @@ def power_pass(state: dict) -> list[tuple[str, str]]:
         return []
     ps = state.setdefault("_power", {})
     probs = {}
+    trip = power.tripped()
+    if trip:                     # a switch changed an outlet it wasn't sent to: loud, and all switching is stopped
+        probs["tripped"] = ("loud", f"🔴 power strip: {trip.get('why')}. All power switching is stopped - check the "
+                                    "printers, then `python3 -m farm power reset`")
     for ip in ips:
         try:
             d = power.device(ip, fresh=True)
@@ -265,6 +270,13 @@ def run(state_file: Path, health: bool = True) -> list[tuple[str, str]]:
         alerts += printguard_pass(state)
     except Exception as e:   # like the health pass: PrintGuard must never stop the print-error watch
         alerts.append(("silent", f"farm monitor: PrintGuard pass failed: {type(e).__name__}: {str(e)[:120]}"))
+    try:
+        from . import power
+        busy = [n for n, v in state.items() if not n.startswith("_") and isinstance(v, dict)
+                and v.get("job") in ("printing", "paused")]
+        alerts += power.auto_lights(state.setdefault("_lights", {}), busy, time.time())
+    except Exception as e:   # lights are a convenience: never stop the print-error watch
+        alerts.append(("silent", f"farm monitor: farm lights failed: {type(e).__name__}: {str(e)[:120]}"))
     try:
         alerts += power_pass(state)
     except Exception as e:   # the power strip must never stop the print-error watch either

@@ -385,6 +385,17 @@ def cmd_power(args):
                 label = "the whole strip (never mapped)" if c["channel"] == 0 else (who or "not mapped")
                 print(f"  outlet {c['channel']}: {'on ' if c['onoff'] else 'off'}  {label}")
         return
+    if args.action == "reset":       # clear the trip latch, after a person has looked at the strip and the printers
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            sys.exit("farm power reset is for a person at a terminal (CLAUDE.md)")
+        t = power.tripped()
+        if not t:
+            return print("power switching is not stopped")
+        print(f"stopped because: {t['why']}")
+        if input("Checked the strip and the printers; allow power switching again? [y/N] ").strip().lower() != "y":
+            sys.exit("not done")
+        print(power.clear_trip("cli:" + input("Your name: ").strip()))
+        return
     if not args.target:
         sys.exit("farm power on|off <printer>")
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -458,7 +469,7 @@ def main():
     nv.add_argument("--minutes", type=float, default=30)
     nv.add_argument("--max-mb", type=float, default=80)
     pw = sub.add_parser("power", help="wall outlets on the Meross strip: scan [ip] (read-only) | on|off <printer>")
-    pw.add_argument("action", choices=["scan", "on", "off"])
+    pw.add_argument("action", choices=["scan", "on", "off", "reset"])
     pw.add_argument("target", nargs="?", default="")
     m = sub.add_parser("monitor")
     m.add_argument("--state", default=str(Path.home() / ".cache" / "farm-monitor.json"))

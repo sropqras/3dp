@@ -307,6 +307,7 @@ class FakeMeross:
         self.key, self.uuid, self.down = key, "2309280720925654060248e1e9dd015b", False
         self.onoff = {c: 1 for c in channels}
         self.calls = []             # (method, namespace, payload)
+        self.crosstalk = None       # a channel a SET also flips (a misbehaving strip: the trip latch must catch it)
         outer = self
 
         class H(BaseHTTPRequestHandler):
@@ -330,6 +331,8 @@ class FakeMeross:
                 elif h["namespace"] == "Appliance.Control.ToggleX":
                     t = pl["togglex"]
                     outer.onoff[int(t["channel"])] = int(t["onoff"])
+                    if outer.crosstalk is not None:
+                        outer.onoff[outer.crosstalk] = 1 - outer.onoff[outer.crosstalk]
                     reply["header"]["method"], reply["payload"] = "SETACK", {}
                 else:
                     reply["header"]["method"], reply["payload"] = "ERROR", {"error": {"code": 5000, "detail": "unknown"}}

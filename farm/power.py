@@ -184,6 +184,31 @@ def _person(actor: str):
         raise Refused("only a person switches printer power (put your name in the 'You' box first)")
 
 
+def farm_busy(timeout: float = 3) -> list[str]:
+    """Every printer the farm can see that is printing or paused: the registry printers AND every Moonraker in
+    printers/hosts.json (printers not onboarded yet, like the Nebula Pad's V3 SE, share the strip). One that can't be
+    read is not counted (a switched-off or retired host would otherwise block every Off for ever)."""
+    from . import hosts
+    urls = {p.moonraker.rstrip("/"): p.name for p in printers.PRINTERS.values()}
+    try:
+        for h in hosts.load_hosts():
+            for port in h.get("ports") or [7125]:
+                urls.setdefault(f"http://{h['address']}:{port}", f"{h['name']}:{port}")
+    except Exception:
+        pass
+    def one(item):
+        url, name = item
+        try:
+            q = net.get_json(f"{url}/printer/objects/query?print_stats=state&pause_resume=is_paused", timeout=timeout)["result"]["status"]
+        except Exception:
+            return None
+        printing = (q.get("print_stats") or {}).get("state") in ("printing", "paused") or (q.get("pause_resume") or {}).get("is_paused")
+        return name if printing else None
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:      # in parallel: retired hosts that don't answer cost one timeout, not one each
+        return sorted(n for n in ex.map(one, urls.items()) if n)
+
+
 def _off_check(p):
     """Refuses unless the printer is provably idle and cool, or its board is already gone."""
     from .monitor import powered_off
@@ -193,7 +218,14 @@ def _off_check(p):
         raise Refused(f"can't read {p.name}'s Moonraker, so it can't be shown to be idle - check it, or switch off at the strip by hand")
     st, msg = info.get("state"), info.get("state_message")
     if st != "ready":
-        if powered_off(st, msg, None):
+        try:          # Moonraker keeps print_stats while Klipper is down: a board lost MID-PRINT is not "already off"
+            job = (net.get_json(f"{p.moonraker}/printer/objects/query?print_stats=state", timeout=5)["result"]
+                   ["status"].get("print_stats") or {}).get("state")
+        except Exception:
+            job = None
+        if job in ("printing", "paused", "error"):
+            raise Refused(f"{p.name}'s print is {job}: switch it off by hand once you've looked at it")
+        if powered_off(st, msg, job):
             return "board already off"
         raise Refused(f"Klipper is {st}: the hotend temperature can't be read - fix Klipper first, or switch off by hand")
     q = net.get_json(f"{p.moonraker}/printer/objects/query?print_stats=state&pause_resume=is_paused"
@@ -210,13 +242,58 @@ def _off_check(p):
     return f"idle, hotend {t:.0f} C"
 
 
+def _file() -> dict:
+    try:
+        return json.loads(AUX_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _write(data: dict):
+    tmp = AUX_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(AUX_FILE)
+
+
+def tripped() -> dict | None:
+    """Set when a switch changed an outlet it wasn't sent to: ALL switching stops until a person clears it."""
+    return _file().get("tripped") or None
+
+
+def clear_trip(actor: str) -> dict:
+    _person(actor)
+    data = _file()
+    was = data.pop("tripped", None)
+    _write(data)
+    return {"cleared": was}
+
+
 def _toggle(m: dict, on: bool) -> bool:
+    """The ONE place an outlet is switched. Never channel 0; the device is identified first; every outlet is read
+    before and after, and if any outlet other than this one changed, the trip latch stops all further switching."""
+    ch_no = int(m.get("channel", 0))
+    if ch_no < 1:
+        raise Refused("channel 0 switches the whole strip: never")
+    t = tripped()
+    if t:
+        raise Refused(f"power switching is stopped: {t.get('why')} - check the strip, then `python3 -m farm power reset`")
+    before = device(m["ip"], fresh=True)
     # identify the device BEFORE switching: checking the reply's uuid afterwards would already have switched it
-    if str(device(m["ip"], fresh=True).get("uuid", "")).lower() != m["uuid"].lower():
+    if str(before.get("uuid", "")).lower() != m["uuid"].lower():
         raise RuntimeError(f"the device at {m['ip']} is not the mapped strip (uuid changed): check its DHCP reservation")
-    _call(m["ip"], "SET", "Appliance.Control.ToggleX", {"togglex": {"channel": m["channel"], "onoff": 1 if on else 0}},
+    _call(m["ip"], "SET", "Appliance.Control.ToggleX", {"togglex": {"channel": ch_no, "onoff": 1 if on else 0}},
           want_uuid=m["uuid"], port=_port(m["ip"]))
-    ch = next((c for c in device(m["ip"], fresh=True)["channels"] if c["channel"] == m["channel"]), None)
+    after = device(m["ip"], fresh=True)
+    was = {c["channel"]: c["onoff"] for c in before["channels"]}
+    others = [c["channel"] for c in after["channels"] if c["channel"] != ch_no and was.get(c["channel"]) != c["onoff"]]
+    if others:
+        why = (f"switching outlet {ch_no} {'on' if on else 'off'} also changed outlet(s) {', '.join(map(str, others))} "
+               f"at {time.strftime('%Y-%m-%d %H:%M')}")
+        data = _file()
+        data["tripped"] = {"why": why, "at": time.time()}
+        _write(data)
+        raise RuntimeError(f"STOPPED: {why}. All power switching is off until a person checks the strip.")
+    ch = next((c for c in after["channels"] if c["channel"] == ch_no), None)
     return bool(ch and ch["onoff"])
 
 
@@ -261,6 +338,12 @@ def set_power(con, name: str, on: bool, actor: str, boot_s: float = 8, wait_s: f
         result = {"printer": name, "outlet": m["channel"], "on": True, **_after_on(p, boot_s, wait_s)}
     else:
         why = _off_check(p)
+        # any printer printing anywhere on the farm blocks every Off: if this outlet were ever mapped to the wrong
+        # printer, switching "off" an idle one must not be able to cut a running print
+        busy = farm_busy()
+        if busy:
+            raise Refused(f"{', '.join(busy)} {'is' if len(busy) == 1 else 'are'} printing: no power off anywhere "
+                          "until nothing is printing")
         now = _toggle(m, False)
         if now:
             raise RuntimeError(f"the strip didn't switch outlet {m['channel']} off")
@@ -309,10 +392,9 @@ def map_aux(name: str, ip: str | None, channel: int | None, actor: str) -> dict:
         m = validate_mapping(name, {"ip": ip, "channel": channel})
         entry = {"name": name, "ip": m["ip"], "uuid": m["uuid"], "channel": m["channel"], "model": m["model"]}
         change = f"power outlet {m['channel']} on the {m['model']} at {m['ip']} is '{name}'"
-    data = {"aux": rest + ([entry] if entry else [])}
-    tmp = AUX_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(AUX_FILE)
+    data = _file()
+    data["aux"] = rest + ([entry] if entry else [])
+    _write(data)
     _farm_md_row("farm", f"{change} ({actor.split(':', 1)[-1]})")
     return {"name": name, "outlet": entry}
 
@@ -334,6 +416,59 @@ def aux_state() -> list[dict]:
     return out
 
 
+LIGHTS = "Farm lights"
+LIGHTS_OFF_AFTER_S = 600        # nothing printing for this long: lights off (covers a pause between prints)
+
+
+def auto_lights(st: dict, busy: list[str], now: float) -> list[tuple[str, str]]:
+    """The farm lights follow the prints (Ironman, 2026-10-24): on when a farm printer is printing or paused (for the
+    cameras and PrintGuard), off once nothing has printed for LIGHTS_OFF_AFTER_S. The ONLY outlet the monitor may switch.
+    It only switches off lights it switched on itself; lights a person switched on stay on. A person switching them
+    off during a print is respected until that print ends. st persists between passes. Returns no alerts (just logs)."""
+    a = next((x for x in aux() if x.get("name") == LIGHTS), None)
+    if a is None or not key() or not a.get("proven") or tripped():
+        return []        # never automatic until a person's own switch of this outlet read back clean
+    cur = next((x for x in aux_state() if x["name"] == LIGHTS), {})
+    if "error" in cur or "on" not in cur:
+        return []                       # power_pass reports an unreadable strip
+    on = cur["on"]
+    if busy:
+        st["idle_since"] = None
+        if not on and st.get("auto_on") and not st.get("held_off"):
+            st["held_off"] = True       # it was ours and is off now: a person switched it off, respect that
+        if not on and not st.get("held_off"):
+            _auto_switch(a, True, f"printing: {', '.join(busy)}")
+            st["auto_on"] = True
+        return []
+    st["held_off"] = False
+    if not on:
+        st["auto_on"], st["idle_since"] = False, None
+        return []
+    if not st.get("auto_on"):
+        return []                       # a person switched them on: theirs to switch off
+    st["idle_since"] = st.get("idle_since") or now
+    if now - st["idle_since"] >= LIGHTS_OFF_AFTER_S:
+        if farm_busy():                 # a printer the monitor doesn't watch (not onboarded) is printing: keep them on
+            return []
+        _auto_switch(a, False, f"nothing printing for {int((now - st['idle_since']) // 60)} min")
+        st["auto_on"], st["idle_since"] = False, None
+    return []
+
+
+def _auto_switch(a: dict, on: bool, why: str):
+    from . import db
+    if a.get("name") != LIGHTS or int(a.get("channel", 0)) < 1:
+        raise Refused("the monitor may only switch the farm lights")
+    lan_ip(a["ip"])
+    _toggle(a, on)
+    con = db.connect()
+    try:
+        jobs.event(con, "printer_op", 0, None, "aux_on" if on else "aux_off", "monitor:auto-lights",
+                   outlet=LIGHTS, channel=a["channel"], on=on, why=why)
+    finally:
+        con.close()
+
+
 def switch_aux(con, name: str, on: bool, actor: str) -> dict:
     """A person switches a named outlet (lights): no print checks, there is nothing to protect."""
     _person(actor)
@@ -346,6 +481,12 @@ def switch_aux(con, name: str, on: bool, actor: str) -> dict:
     now = _toggle(a, on)
     if now != on:
         raise RuntimeError(f"the strip didn't switch outlet {a['channel']} {'on' if on else 'off'}")
+    if not a.get("proven"):          # this person's switch read back clean: only this outlet changed
+        data = _file()
+        for x in data.get("aux", []):
+            if x.get("name") == name:
+                x["proven"] = time.strftime("%Y-%m-%d %H:%M") + f" by {actor.split(':', 1)[-1]}"
+        _write(data)
     result = {"outlet": name, "channel": a["channel"], "on": on}
     jobs.event(con, "printer_op", 0, None, "aux_on" if on else "aux_off", actor, **result)
     return result
