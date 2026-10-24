@@ -16,7 +16,7 @@
 .ph { display: flex; gap: 8px; align-items: flex-start; } .ph .name { font-weight: 700; font-size: 1.14rem; }
 .phl { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
 .ph .end { flex: none; display: flex; align-items: center; gap: 2px; margin-top: -3px; }
-.fcard table { font-size: .86rem; } .fcard td, .fcard th { padding: 4px 6px; }
+.fcard table { font-size: .86rem; overflow-wrap: break-word; }   /* wraps long text without shrinking columns to one letter */ .fcard td, .fcard th { padding: 4px 6px; }
 .fcard button { font-size: .86rem; padding: 3px 9px; min-height: 26px; } .fcard button.icon { font-size: 1rem; padding: 2px 6px; min-height: 30px; }
 .fcard form.row input { max-width: 100%; }
 /* files dialog: file list beside the diff */
