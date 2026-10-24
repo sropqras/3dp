@@ -47,6 +47,11 @@ async function stageAllFixes(key, n) {
   if (r) alert(`Staged ${r.length} change(s): ${r.map((c) => c.id + " " + c.path).join(", ")}. Review the diff on the card, then Apply when ${key} is idle.`);
   refresh();
 }
+// this instance's own bot service, matched like ops.bot_service: a host's other printers' bots don't count
+function botOf(v) {
+  const names = Object.keys(data.host_services[v.host] || {}).filter((n) => n.includes("telegram"));
+  return names.find((n) => n.toLowerCase().endsWith("-" + String(v.name).toLowerCase())) || names.find((n) => n === "moonraker-telegram-bot") || null;
+}
 async function telegramPack(key) {
   if (!operator()) { alert("Put your name in the 'You' box first."); return; }
   if (!confirm(`Apply the farm Telegram pack to ${key}'s bot? [bot] (token, chat) is kept; a copy of the old telegram.conf stays on the printer; only the bot restarts.`)) return;
@@ -117,7 +122,8 @@ function configBlock(v) {
   return `<div class="row">Config: <b>${s.files} files</b> · snapshot ${s.latest.id} ${ago(s.latest.taken_at)} · ${state}
       ${s.reference ? `<span class="dim">reviewed #${s.reference.id} by ${esc(s.reference.reviewed_by)} ${ago(s.reference.reviewed_at)}</span>` : ""}</div>
     <div class="row"><button class="ghost" onclick="openFiles('${esc(v.key)}')">Files &amp; diff</button>
-      ${v.registry && !v.readonly && Object.keys(data.host_services[v.host] || {}).some((n) => n.includes("telegram")) ? `<button class="ghost" onclick="telegramPack('${esc(v.key)}')">Telegram pack</button>` : ""}
+      ${v.registry && !v.readonly ? (botOf(v) ? `<button class="ghost" onclick="telegramPack('${esc(v.key)}')">Telegram pack</button>`
+        : `<span class="dim" title="no moonraker-telegram-bot service for this instance on ${esc(v.host)}">no Telegram bot</span>`) : ""}
       <button class="ghost" onclick="snap('${esc(v.key)}')">Snapshot now</button>
       ${s.reference && s.reference.id === s.latest.id ? "" : `<button class="ghost" onclick="review('${esc(v.key)}', ${s.latest.id})">Mark snapshot ${s.latest.id} reviewed</button>`}</div>`;
 }
