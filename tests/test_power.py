@@ -5,6 +5,7 @@ import dataclasses
 import json
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -31,7 +32,8 @@ class PowerTest(unittest.TestCase):
         unmapped = {n: dataclasses.replace(pr, power=None) for n, pr in printers.PRINTERS.items()}
         for patch in (mock.patch.dict(printers.PRINTERS, unmapped),mock.patch.object(power, "AUX_FILE", tmp / "power.json"),     # never the real strip's map
                       mock.patch.object(db, "DB_PATH", tmp / "farm.db"),            # never the real farm DB
-                      mock.patch.object(power, "farm_busy", return_value=[])):      # never the real printers
+                      mock.patch.object(power, "farm_busy", return_value=[]),       # never the real printers
+                      mock.patch.object(power, "MIN_DWELL_S", 0), mock.patch.object(power, "STRIP_GAP_S", 0)):
             patch.start()
             self.addCleanup(patch.stop)
         self.mapping = {"type": "meross", "ip": "127.0.0.1", "uuid": self.strip.uuid, "channel": 2, "model": "mss426"}
@@ -290,6 +292,32 @@ class PowerTest(unittest.TestCase):
             power.clear_trip("agent")
         power.clear_trip("cli:Ironman")
         self.assertIsNone(power.tripped())
+
+    def test_no_flicker(self):
+        """Quick off/on cycles can fry a board (Ironman, 2026-10-24): already-so sends nothing, a quick reversal is
+        refused, and the lights automation waits instead of failing."""
+        sets = lambda: len([c for c in self.strip.calls if c[0] == "SET"])
+        self.switch(False)
+        n = sets()
+        self.switch(False)                                  # already off: a double press or a retry sends nothing
+        self.assertEqual(sets(), n)
+        with mock.patch.object(power, "MIN_DWELL_S", 60):
+            with self.assertRaises(power.Refused) as cm:
+                self.switch(True)
+            self.assertIn("wait", str(cm.exception))
+            self.assertEqual(sets(), n)
+            self.assertGreater(power.wait_left(self.mapping), 50)
+            with mock.patch.object(power.time, "time", return_value=time.time() + 61):
+                self.assertEqual(power.wait_left(self.mapping), 0)
+        self.switch(True)                                   # the dwell is over (0 in tests): it switches
+        self.assertEqual(sets(), n + 1)
+
+    def test_switches_on_one_strip_are_spaced(self):
+        with mock.patch.object(power, "STRIP_GAP_S", 0.4):
+            t0 = time.time()
+            self.switch(False)
+            power._toggle({**self.mapping, "channel": 3}, False)
+            self.assertGreaterEqual(time.time() - t0, 0.39)
 
     def test_channel_zero_is_refused_at_the_switch_itself(self):
         with self.assertRaises(power.Refused):

@@ -24,3 +24,6 @@ data/templates.json
 data/nas/
 data/products/
 data/farm.db.bak*
+printers/power.switched.json
+printers/power.lock
+printers/power.switched.tmp

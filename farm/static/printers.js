@@ -339,6 +339,25 @@ async function fluiddUndo(key, id) {
   const r = await post(`/api/fleet/${encodeURIComponent(key)}/fluidd-undo`, { id });
   if (r) { alert(`Restored: ${r.restored.join(", ")}`); refresh(); }
 }
+// the wall outlet of a mapped printer, read from the strip (/api/power): same endpoint and gates as the dashboard's ⏻
+function powerButton(reg) {
+  if (!reg.power || reg.readonly) return "";
+  const dev = powerData.devices.find((d) => d.ip === reg.power.ip && !d.error);
+  const ch = dev && dev.channels.find((c) => c.channel === reg.power.channel);
+  if (!ch) return `<span class="chip" title="outlet ${esc(reg.power.channel)} on ${esc(reg.power.ip)} can't be read">⏻ ?</span>`;
+  return `<button class="ghost pw ${ch.onoff ? "on" : "off"}" title="outlet ${ch.channel}: ${ch.onoff ? "on - click to switch off" : "off - click to switch on"}"
+    onclick='powerPrinter(${js(reg.name)}, ${!ch.onoff})'>⏻ ${ch.onoff ? "on" : "off"}</button>`;
+}
+async function powerPrinter(name, on) {
+  if (!operator()) { alert("Put your name in the 'You' box first."); return; }
+  if (!confirm(on ? `Switch ${name} on at the wall and connect Klipper to it?`
+                  : `Switch ${name} off at the wall?\n\nRefused while any printer prints, with a heater on, or with the hotend at 50 °C or hotter.`)) return;
+  document.body.style.cursor = "wait";
+  const r = await post(`/api/fleet/${encodeURIComponent(name)}/power`, { on });
+  document.body.style.cursor = "";
+  if (r) alert(on ? `${name}: power on, Klipper ${r.state}${r.hint ? " - " + r.hint : ""}` : `${name}: power off (${r.checked}).`);
+  refresh();
+}
 async function reconnectPrinter(key) {
   if (!operator()) { alert("Put your name in the 'You' box first."); return; }
   if (!confirm(`Reconnect ${key}? Switch it on first; Klipper restarts to find the board.`)) return;
@@ -419,7 +438,7 @@ function card(v, i) {
   const cams = (v.cameras || []).map((c) => `<span class="chip ${c.ok ? "ok" : "bad"}">📷 ${esc(c.name)} ${c.ok ? "ok" : "no snapshot"}</span>`).join(" ") || `<span class="dim">no camera registered</span>`;
   if (fails) waiting.push(`<span class="chip warn">${fails} baseline gap${fails > 1 ? "s" : ""}</span>`);   // shown when collapsed, never forces a hidden card back
   const head = `<span class="name">${esc(v.registry || v.name)}</span><span class="dim">${esc(v.host)}:${v.port}</span>${badge}${st}
-      <a class="lnk" href="${esc(v.fluidd)}" target="_blank" rel="noopener">Fluidd ↗</a>`;
+      ${powerButton(reg)}<a class="lnk" href="${esc(v.fluidd)}" target="_blank" rel="noopener">Fluidd ↗</a>`;
   return frame(v, i, head, `
     ${v.klippy_state !== "ready" && v.state_message && !v.off ? `<div class="warn" style="font-size:12px">${esc(v.state_message)}</div>` : ""}
     <div class="row">Print hours <b>${v.print_hours ?? "–"}</b> Jobs <b>${v.total_jobs ?? "–"}</b> ${v.file ? `File <b>${esc(v.file.split("/").pop())}</b>` : ""}</div>
@@ -464,7 +483,7 @@ function render(force) {
   farmUI.panels();
 }
 
-// the power strips and what each outlet feeds (read-only here; switching is on the dashboard's printer cards)
+// the power strips and what each outlet feeds (read-only; each printer card has its own ⏻)
 function powerPanel() {
   if (!powerData.devices.length) return "";
   const dev = (d) => d.error ? `<div class="row"><b>${esc(d.ip)}</b> <span class="warn">${esc(d.error)}</span></div>`

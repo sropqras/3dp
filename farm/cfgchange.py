@@ -8,6 +8,9 @@ apply()    a person only (Farm Control button, or `farm config apply` at a termi
            against, and no other change is being applied there. Then: snapshot, upload over Moonraker, FIRMWARE_RESTART,
            wait for Klipper, verify (ready, no new audit FAIL, no "!!"/"Unknown command" in the console since the
            restart). Klipper not coming back -> automatic rollback to the snapshot.
+           Moonraker's own files (moonraker.conf and its moonraker-* includes) restart Moonraker instead, not Klipper,
+           and verify that Moonraker came back with no new warning or failed component and every [power X] device
+           loaded - so they apply with the printer switched on or off.
 rollback() a person only: put back the file as it was before an applied (or failed) change, same gate.
 """
 import json
@@ -23,6 +26,9 @@ from . import audit, configs, db, jobs, net, printers
 from .printers import REPO
 
 READY_TIMEOUT_S = 90
+OFF_READY_TIMEOUT_S = 150    # switched off: Klipper retries the missing board for its own 90 s before "Unable to connect"
+MOONRAKER_TIMEOUT_S = 60
+MOONRAKER_SETTLE_S = 10     # never saw it go down (a fast restart): it has surely restarted by then
 SETTLE_S, POLL_S, ERROR_GRACE_S = 2, 2, 20   # tests set these to ~0
 FARM_MD = REPO / "FARM.md"
 
@@ -89,6 +95,57 @@ def _restart_and_wait(url, timeout=READY_TIMEOUT_S) -> dict:
             last = {"klippy": "unreachable", "message": str(e)[:200]}
         time.sleep(POLL_S)
     return last
+
+
+def moonraker_file(path: str) -> bool:
+    """Read by Moonraker, not Klipper: a FIRMWARE_RESTART doesn't load it, a Moonraker restart does."""
+    return posixpath.basename(path).lower().startswith("moonraker")
+
+
+def _moonraker_info(url) -> dict:
+    r = net.get_json(f"{url}/server/info", timeout=5)["result"]
+    return {"warnings": list(r.get("warnings") or []), "failed_components": list(r.get("failed_components") or [])}
+
+
+def _moonraker_restart_and_wait(url, timeout=MOONRAKER_TIMEOUT_S) -> dict:
+    """POST /server/restart, see it go away (it answers first, then restarts), then wait until it answers again."""
+    t0 = time.time()
+    net.post_json(f"{url}/server/restart", timeout=10)
+    time.sleep(SETTLE_S)
+    went_down, last = False, None
+    while time.time() - t0 < timeout:
+        try:
+            info = _moonraker_info(url)
+            if went_down or time.time() - t0 > min(MOONRAKER_SETTLE_S, timeout / 2):
+                return {"up": True, **info}
+            last = info
+        except Exception as e:
+            went_down, last = True, {"error": str(e)[:200]}
+        time.sleep(POLL_S)
+    return {"up": False, **(last or {})}
+
+
+def _power_devices(url) -> set:
+    return {d["device"] for d in net.get_json(f"{url}/machine/device_power/devices", timeout=5)["result"]["devices"]}
+
+
+def _moonraker_check(url, group: list[dict], before: dict, after: dict) -> list[str]:
+    """What's wrong with Moonraker after the restart: down, a new warning or failed component, a [power X] the new
+    file declares that didn't load."""
+    if not after.get("up"):
+        return [f"Moonraker didn't come back: {after.get('error', '?')}"]
+    bad = [f"Moonraker warning: {w}" for w in after["warnings"] if w not in before.get("warnings", [])]
+    bad += [f"Moonraker component failed: {c}" for c in after["failed_components"]
+            if c not in before.get("failed_components", [])]
+    want = {n.strip() for m in group if moonraker_file(m["path"])
+            for n in re.findall(r"^\[power\s+([^\]]+?)\s*\]", m["new_content"] or "", re.M)}
+    if want:
+        try:
+            missing = sorted(want - _power_devices(url))
+        except Exception as e:
+            missing = [f"(device list unreadable: {str(e)[:100]})"]
+        bad += [f"power device {n} didn't load" for n in missing]
+    return bad
 
 
 # ---------------------------------------------------------------- staging
@@ -272,31 +329,43 @@ def _apply(con, group: list[dict], st: dict, lives: dict, actor: str):
     # switched off at the wall: the host is up, Klipper loads the config and only the board is missing - the
     # change is verified as far as it can be (config loads, audit) and the console is read when it's next on
     off = _board_off(st)
-    comparable = st["klippy"] == "ready" or off
+    # Moonraker's files need a Moonraker restart, Klipper's a FIRMWARE_RESTART; a set may hold both (a restore)
+    mr = any(moonraker_file(m["path"]) for m in group)
+    kl = any(not moonraker_file(m["path"]) for m in group)
+    comparable = kl and (st["klippy"] == "ready" or off)
     before_fails = _fails(c["url"], c["printer"]) if comparable else set()
+    mr_before = _moonraker_info(c["url"]) if mr else {}
+    timeout = OFF_READY_TIMEOUT_S if off else READY_TIMEOUT_S
     t0 = time.time() - 1
+    mr_after, mr_bad = {}, []
     try:
         for m in group:
             _upload(m["url"], m["path"], m["new_content"].encode())
-        after = _restart_and_wait(c["url"])
+        if mr:
+            mr_after = _moonraker_restart_and_wait(c["url"])
+            mr_bad = _moonraker_check(c["url"], group, mr_before, mr_after)
+        after = _restart_and_wait(c["url"], timeout) if kl else _state(c["url"])
     except Exception as e:
         after = {"klippy": "unreachable", "message": str(e)[:300]}
-    loaded = after.get("klippy") == "ready" or (off and _board_off(after))
+    loaded = (not kl or after.get("klippy") == "ready" or (off and _board_off(after))) and not mr_bad
     if not loaded:
-        # Klipper didn't come back with the new config: put the old files back straight away
-        result = {"klipper": after, "auto_rollback": True}
+        # the new config didn't load: put the old files back straight away
+        result = {"klipper": after, "auto_rollback": True, **({"moonraker": mr_after, "moonraker_errors": mr_bad} if mr else {})}
         try:
             for m in group:
                 if lives[m["id"]] is not None:
                     _upload(m["url"], m["path"], lives[m["id"]])
-            result["after_rollback"] = _restart_and_wait(c["url"])
+            if mr:
+                result["moonraker_after_rollback"] = _moonraker_restart_and_wait(c["url"])
+            result["after_rollback"] = _restart_and_wait(c["url"], timeout) if kl else _state(c["url"])
         except Exception as e:
             result["rollback_error"] = str(e)[:300]
+        error = "; ".join(mr_bad) if mr_bad else f"Klipper {after.get('klippy')}: {after.get('message', '')[:300]}"
         for m in group:
-            con.execute("UPDATE config_changes SET result=?, error=? WHERE id=?",
-                        (json.dumps(result), f"Klipper {after.get('klippy')}: {after.get('message', '')[:300]}", m["id"]))
+            con.execute("UPDATE config_changes SET result=?, error=? WHERE id=?", (json.dumps(result), error[:1000], m["id"]))
             jobs.transition(con, "config_change", m["id"], "applying", "failed", "cfggate", **result)
-            jobs.transition(con, "config_change", m["id"], "failed", "rolled_back", "cfggate", automatic=True)
+            if "rollback_error" not in result:     # the old file couldn't be put back: stays failed, a person looks
+                jobs.transition(con, "config_change", m["id"], "failed", "rolled_back", "cfggate", automatic=True)
         return
     for m in group:
         jobs.transition(con, "config_change", m["id"], "applying", "verifying", "cfggate")
@@ -306,10 +375,11 @@ def _apply(con, group: list[dict], st: dict, lives: dict, actor: str):
     # had come back with it and are reported, not counted against it
     restoring = all(m["kind"] == "restore" for m in group)
     new_fails = sorted(after_fails - before_fails) if comparable else []
-    console = _console_since(c["url"], t0)
+    console = _console_since(c["url"], t0) if kl else []    # Klipper wasn't restarted: nothing new to read
     result = {"klipper": after, "new_audit_fails": new_fails, "console_errors": console,
+              **({"moonraker": mr_after} if mr else {}),
               **({"board_off": True, "note": "applied with the printer switched off: the config loads and the audit "
-                  "ran; macros first run when it is on - read its console after Reconnect"} if off else {}),
+                  "ran; macros first run when it is on - read its console after Reconnect"} if off and kl else {}),
               **({"files": [m["path"] for m in group]} if len(group) > 1 else {}),
               "fixed_audit_fails": sorted(before_fails - after_fails), "audit_fails_now": sorted(after_fails)}
     bad = ([] if restoring else [f"new audit FAIL: {f}" for f in new_fails]) + console
@@ -344,7 +414,11 @@ def rollback(con, cid: int, actor: str) -> dict:
     for m, digest in put:
         if digest:        # a file the change created stays; nothing the old config loads refers to it
             _upload(m["url"], m["path"], configs.blob(m["printer"], digest))
-    after = _restart_and_wait(c["url"])
+    if any(moonraker_file(m["path"]) for m, _ in put):
+        _moonraker_restart_and_wait(c["url"])
+    kl = any(not moonraker_file(m["path"]) for m, _ in put)
+    after = _restart_and_wait(c["url"], OFF_READY_TIMEOUT_S if _board_off(_state(c["url"])) else READY_TIMEOUT_S) if kl \
+        else _state(c["url"])
     for m, _ in put:
         jobs.transition(con, "config_change", m["id"], m["state"], "rolled_back", "cfggate", by=actor, klipper=after)
     return get(con, cid)

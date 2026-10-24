@@ -186,7 +186,7 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
     results only from a LAN/Tailscale address (`FARM_PRINTGUARD_URL`, checked by the test). A detector may alert;
     pausing a print automatically is a per-printer decision Ironman makes after an alert-only trial (started
     2026-10-23, alerts through farm-monitor).
-- **Printer configs change only through Farm Control's Printers tab** (`/printers`, `farm/cfgchange.py`). An AI session may *stage* a change with a reason (`python3 -m farm config stage --printer <name> --path printer.cfg --section printer --option max_velocity --value 200 --reason "..." --author agent`), but never applies or rolls one back on its own, and never edits printer files over SSH or the Moonraker file API directly. A person presses Apply. The one exception: Ironman names the specific change ids in the session and says apply them (as on 2026-10-23 for changes 4 and 7). The session then runs them through the same gate as `cli:Ironman`, and that permission covers only those ids. The gate refuses while printing or paused, takes a snapshot, verifies (Klipper ready, no new audit FAIL, no `Unknown command`), rolls back automatically if Klipper doesn't come back, and writes FARM.md's change log.
+- **Printer configs change only through Farm Control's Printers tab** (`/printers`, `farm/cfgchange.py`). An AI session may *stage* a change with a reason (`python3 -m farm config stage --printer <name> --path printer.cfg --section printer --option max_velocity --value 200 --reason "..." --author agent`), but never applies or rolls one back on its own, and never edits printer files over SSH or the Moonraker file API directly. A person presses Apply. The one exception: Ironman names the specific change ids in the session and says apply them (as on 2026-10-23 for changes 4 and 7). The session then runs them through the same gate as `cli:Ironman`, and that permission covers only those ids. The gate refuses while printing or paused, takes a snapshot, verifies (Klipper ready, no new audit FAIL, no `Unknown command`), rolls back automatically if Klipper doesn't come back (a switched-off printer: it waits out Klipper's own 90 s board retry, `OFF_READY_TIMEOUT_S`). Moonraker's own files (`moonraker.conf`, `moonraker-*` includes: `cfgchange.moonraker_file`) restart **Moonraker**, not Klipper, and verify it came back with no new warning or failed component and every `[power X]` loaded, so they apply with the printer on or off, and writes FARM.md's change log.
 - **Printer power is a person's action.** Agents never switch an outlet (no POST to `/api/fleet/*/power` or
   `/api/power/aux`, no `farm power on|off|reset`). `farm power scan` is read-only and fine. What keeps a print from
   being cut (`farm/power.py`; tests in `tests/test_power.py`):
@@ -199,6 +199,11 @@ Host settings come from env vars in `farm/config.py`. The defaults suit the user
   - **One choke point (`_toggle`):** never channel 0. The strip is identified by uuid before sending. Every outlet is
     read before and after, and if any other outlet changed, a **trip latch** stops all switching (loud monitor alert)
     until a person runs `farm power reset`.
+  - **No flicker** (Ironman, 2026-10-24: quick off/on cycles can fry a board). In `_toggle`, under a file lock shared by
+    Farm Control, the monitor and the CLI: an outlet already in the asked state gets nothing sent (double press,
+    Moonraker's retries); an outlet switched less than `MIN_DWELL_S` (60 s) ago is refused with the wait; two switches
+    on one strip are at least `STRIP_GAP_S` (5 s) apart. Switch times live in `printers/power.switched.json` (gitignored).
+    The lights automation waits out the dwell instead of failing. Never lower these or add a path around `_toggle`.
   - **The monitor switches exactly one outlet: "Farm lights"** (Ironman, 2026-10-24). On while any farm printer prints,
     off 10 min after the last print ends and only if `farm_busy()` is empty. It only switches off lights it switched
     on itself, and respects a person switching them off mid-print. It does nothing until a person's own 💡 switch of

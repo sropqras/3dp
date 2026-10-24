@@ -208,3 +208,6 @@ dialog.wide { width: min(1100px, calc(100vw - 32px)); } dialog.narrow { width: m
 .vh .name { font-weight: 700; } .vh .x, .dh .x { margin-left: auto; }
 pre { margin: 0; padding: 12px 14px; font: .86rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .add { color: var(--green); } .del { color: var(--red); } .hunk { color: var(--violet); }
+
+/* wall-outlet power button (dashboard and Printers cards) */
+button.pw { font-weight: 600; } button.pw.on { color: var(--green); border-color: var(--green-edge); } button.pw.off { color: var(--dim); }

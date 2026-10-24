@@ -9,7 +9,10 @@ A printer gets power control only when a person maps it to one outlet in the Pri
   - only a person switches (ui:/cli: actors), never a watch-only printer, never channel 0 (the whole strip);
   - Off is refused while printing or paused, with any heater target set, with the hotend at 50 C or more (its fan needs
     power to cool it), or when Moonraker can't be read - unless the board is already gone (monitor.powered_off);
-  - every reply must come from the mapped device's uuid, so a DHCP change can't switch something else.
+  - every reply must come from the mapped device's uuid, so a DHCP change can't switch something else;
+  - no flicker (Ironman, 2026-10-24: quick off/on cycles can fry a board): an outlet already in the asked state gets
+    nothing sent, an outlet switched less than MIN_DWELL_S ago is refused, and two switches on one strip are at least
+    STRIP_GAP_S apart. A file lock makes that hold across Farm Control, the monitor and the CLI.
 
 device(ip)         the strip: type, firmware, uuid, channels [{channel, onoff}] (cached 5 s)
 state(printer)     {mapped, on, error} for one registry printer
@@ -18,6 +21,8 @@ devices()          every known strip (FARM_MEROSS_DEVICES + mapped ones) with it
 aux outlets        named outlets that are not printers (e.g. "Farm lights": USB LED lights for when the garage is dark),
                    kept in printers/power.json; switched by a person with no print checks (nothing to protect)
 """
+import contextlib
+import fcntl
 import hashlib
 import ipaddress
 import json
@@ -32,6 +37,8 @@ from pathlib import Path
 from . import jobs, net, printers
 
 HOT_C = 50.0                # hotend at or above this: its fan still has to run, so no power off
+MIN_DWELL_S = 60            # an outlet keeps its state at least this long: no quick off/on cycles on a board's PSU
+STRIP_GAP_S = 5             # between any two switches on one strip: two printers never power up at the same instant
 AUX_FILE = Path(os.environ.get("FARM_POWER_FILE", printers.REPO / "printers" / "power.json"))
 _cache, _lock = {}, threading.Lock()
 
@@ -277,12 +284,47 @@ def clear_trip(actor: str) -> dict:
     return {"cleared": was}
 
 
+def _switched_file() -> Path:
+    """When each outlet (and each strip) was last switched: runtime state beside power.json, not in git."""
+    return AUX_FILE.with_name(AUX_FILE.stem + ".switched.json")
+
+
+def _switched() -> dict:
+    try:
+        return json.loads(_switched_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+@contextlib.contextmanager
+def _switch_lock():
+    """One switch at a time across every process (web threads, the monitor, the CLI)."""
+    with open(AUX_FILE.with_name(AUX_FILE.stem + ".lock"), "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def wait_left(m: dict) -> float:
+    """Seconds until this outlet may change again (0 = now)."""
+    last = _switched().get(f"{m['ip']}#{int(m.get('channel', 0))}", 0)
+    return max(0.0, MIN_DWELL_S - (time.time() - last))
+
+
 def _toggle(m: dict, on: bool) -> bool:
-    """The ONE place an outlet is switched. Never channel 0; the device is identified first; every outlet is read
-    before and after, and if any outlet other than this one changed, the trip latch stops all further switching."""
+    """The ONE place an outlet is switched. Never channel 0; the device is identified first; never a flicker (an
+    outlet already so is left alone, one switched under MIN_DWELL_S ago is refused); every outlet is read before and
+    after, and if any outlet other than this one changed, the trip latch stops all further switching."""
     ch_no = int(m.get("channel", 0))
     if ch_no < 1:
         raise Refused("channel 0 switches the whole strip: never")
+    with _switch_lock():
+        return _toggle_locked(m, ch_no, on)
+
+
+def _toggle_locked(m: dict, ch_no: int, on: bool) -> bool:
     t = tripped()
     if t:
         raise Refused(f"power switching is stopped: {t.get('why')} - check the strip, then `python3 -m farm power reset`")
@@ -290,8 +332,23 @@ def _toggle(m: dict, on: bool) -> bool:
     # identify the device BEFORE switching: checking the reply's uuid afterwards would already have switched it
     if str(before.get("uuid", "")).lower() != m["uuid"].lower():
         raise RuntimeError(f"the device at {m['ip']} is not the mapped strip (uuid changed): check its DHCP reservation")
+    cur = next((c for c in before["channels"] if c["channel"] == ch_no), None)
+    if cur is not None and bool(cur["onoff"]) == on:
+        return on            # already so (a double press, Moonraker's retry): nothing is sent
+    left = wait_left(m)
+    if left > 0:
+        raise Refused(f"outlet {ch_no} was switched {int(MIN_DWELL_S - left)} s ago: wait {int(left) + 1} s "
+                      f"(quick off/on cycles stress the printer's power supply and board)")
+    log = _switched()
+    gap = time.time() - log.get(m["ip"], 0)
+    if gap < STRIP_GAP_S:
+        time.sleep(STRIP_GAP_S - gap)
     _call(m["ip"], "SET", "Appliance.Control.ToggleX", {"togglex": {"channel": ch_no, "onoff": 1 if on else 0}},
           want_uuid=m["uuid"], port=_port(m["ip"]))
+    log[f"{m['ip']}#{ch_no}"] = log[m["ip"]] = time.time()     # recorded at once: even a failed read-back counts
+    tmp = _switched_file().with_suffix(".tmp")
+    tmp.write_text(json.dumps(log, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(_switched_file())
     after = device(m["ip"], fresh=True)
     was = {c["channel"]: c["onoff"] for c in before["channels"]}
     others = [c["channel"] for c in after["channels"] if c["channel"] != ch_no and was.get(c["channel"]) != c["onoff"]]
@@ -440,6 +497,8 @@ def auto_lights(st: dict, busy: list[str], now: float) -> list[tuple[str, str]]:
     a = next((x for x in aux() if x.get("name") == LIGHTS), None)
     if a is None or not key() or not a.get("proven") or tripped():
         return []        # never automatic until a person's own switch of this outlet read back clean
+    if wait_left(a) > 0:
+        return []        # switched under a minute ago: the next pass decides (no flicker)
     cur = next((x for x in aux_state() if x["name"] == LIGHTS), {})
     if "error" in cur or "on" not in cur:
         return []                       # power_pass reports an unreadable strip

@@ -28,7 +28,7 @@ the code is `farm/power.py`, the tests `tests/test_power.py`, the rules in CLAUD
 ## Who can switch what
 
 - **A person** maps outlets (Printers tab → Farm settings, registry `power`; named outlets with `power.map_aux`), and
-  switches them: the card's ⏻ / **Power on**, the 💡 header button, `python3 -m farm power on|off`, and the printer's
+  switches them: the dashboard and Printers tab cards' ⏻ / **Power on**, the 💡 header button, `python3 -m farm power on|off`, and the printer's
   own button (below). Agents only run `farm power scan` (read-only).
 - **The monitor** switches exactly one outlet, Farm lights: on while any farm printer prints, off 10 min after the last
   print, only lights it switched on itself, and only after a person's own 💡 switch read back clean (`proven`).
@@ -43,6 +43,10 @@ the code is `farm/power.py`, the tests `tests/test_power.py`, the rules in CLAUD
 3. **One choke point:** channel ≥ 1, the strip identified by uuid **before** the SET, every outlet read before and
    after. If any other outlet changed, a **trip latch** stops all switching (loud monitor alert) until a person runs
    `farm power reset`.
+4. **No flicker** (quick off/on cycles stress a printer's PSU and board): an outlet already in the asked state gets
+   nothing sent; an outlet switched under 60 s ago (`MIN_DWELL_S`) is refused with the wait; two switches on one strip
+   are at least 5 s apart (`STRIP_GAP_S`), so two printers never power up at the same instant. A file lock serialises
+   Farm Control, the monitor and the CLI; switch times are in `printers/power.switched.json` (gitignored).
 
 ## The printer's own power button (Telegram ⏻, Fluidd's toggle)
 
@@ -52,15 +56,16 @@ http://192.168.1.107:10111/api/power/device/<printer>` → `set_power(..., recon
 - Two locks: Moonraker's `locked_while_printing` and every farm gate above. Moonraker's
   `restart_klipper_when_powered` (delay 8 s) does the FIRMWARE_RESTART after On.
 - The section comes from `power.moonraker_section(name)`, staged by `farm power stage-device <printer>` as an ordinary
-  config change on `moonraker.conf`. A person applies it **with the printer switched on and idle**: applying restarts
-  Moonraker and the gate waits for Klipper "ready" (change 30 rolled back because it was applied with the board off).
+  config change on `moonraker.conf`. A person applies it while the printer is idle, switched on or off. The gate restarts
+  Moonraker (not Klipper) and checks that the `printer` device loaded. Changes 30 and 36 rolled back before that fix:
+  the gate FIRMWARE_RESTARTed a switched-off printer and Klipper retried the board past the wait.
 - The endpoint needs `X-Farm: 1` (the template sends it), logs the actor as `ui:Ironman via <printer> (Telegram/Fluidd)`,
   and answers a refusal with 409, logged as event `power_refused`; farm-monitor relays each one once, silent, on the
   ops bot (Moonraker's error text may never reach the printer's chat).
 - The Telegram pack sets `[bot] power_device: printer` (only keys in `ops.BOT_KEYS`; token and chat untouched) and adds
   the `power` button only where the device exists; `power` is in `require_confirmation`.
 - **Not wired on standalone printers** (NebulaV3SE: its Moonraker runs on the pad its own outlet powers). Use the card's ⏻.
-- State 2026-10-24: staged as changes 35 (Ender3MaxNeo), 36 (s1pro), 38 (enders1plus), 39 (EnderV3SE, which also
+- State 2026-10-24: staged as changes 35 (Ender3MaxNeo), 40 (s1pro), 38 (enders1plus), 39 (EnderV3SE, which also
   drops the Obico updater include). Live test pending Ironman's Apply.
 
 ## What the garage costs to run (measured, 2026-10-23)

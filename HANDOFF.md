@@ -54,10 +54,12 @@ The registry is `printers/registry.json`, edited from the Printers tab only.
 
 ## To do (in order)
 
-0. **Telegram/Fluidd power button (2026-10-24): staged, waiting for Apply.** Changes 35 (MaxNeo), 36 (s1pro), 38 (enders1plus)
+0. **Telegram/Fluidd power button (2026-10-24): staged, waiting for Apply.** Changes 35 (MaxNeo), 40 (s1pro), 38 (enders1plus)
    and 39 (EnderV3SE: + drops the Obico updater include, superseding 30) add `[power printer]` to moonraker.conf. Apply each
-   with the printer **switched ON and idle**: change 30 rolled back because it was applied with the board off (Klipper
-   sat in "startup"). Then press **Telegram pack** again on each card to add the ⏻ power button.
+   while the printer is idle; switched on or off no longer matters. Changes 30 and 36 rolled back because the gate used to
+   FIRMWARE_RESTART for a moonraker.conf change (Klipper retried the switched-off board past the 90 s wait) and never
+   restarted Moonraker. It now restarts Moonraker only and checks the `[power printer]` device loaded. Then press
+   **Telegram pack** again on each card to add the ⏻ power button. The Printers tab cards now have their own ⏻.
 0. **Printer power (Meross MSS426, 2026-10-24): built, waiting for the key and the outlet map.**
    1. In your own terminal on aali-cli: `~/agent_workspace/infrastructure/meross/get_key.sh`. It asks for your Meross login,
       saves only the device key (chmod 600), then shows the strip's outlets.

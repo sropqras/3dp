@@ -135,6 +135,43 @@ class Changes(unittest.TestCase):
         self.assertEqual(out["state"], "rolled_back")
         self.assertIn(b"max_velocity: 180", self.m.config["printer.cfg"])
 
+    def test_moonraker_conf_restarts_moonraker_not_klipper_even_when_switched_off(self):
+        """2026-10-24: changes 30 and 36 were rolled back because the gate FIRMWARE_RESTARTed a switched-off printer
+        for a moonraker.conf change (Klipper retries the missing board past the wait) and never restarted Moonraker."""
+        off = "mcu 'mcu': Unable to connect\nOnce the underlying issue is corrected, use FIRMWARE_RESTART"
+        self.m.klipper, self.m.after_restart, self.m.klipper_msg = "error", "startup", off   # a restart would hang
+        old = b"[server]\nport: 7125\n"
+        self.m.config["moonraker.conf"] = old
+        new = "[server]\nport: 7125\n\n[power printer]\ntype: http\n"
+        saved = cfgchange.MOONRAKER_SETTLE_S
+        cfgchange.MOONRAKER_SETTLE_S = 0.1
+        self.addCleanup(setattr, cfgchange, "MOONRAKER_SETTLE_S", saved)
+        c = cfgchange.stage(self.con, "Ender3MaxNeo", self.m.url, "moonraker.conf", new_content=new, reason="power button",
+                            author="agent")
+        out = cfgchange.apply(self.con, c["id"], "ui:Ironman")
+        self.assertEqual(out["state"], "applied", out["error"])
+        self.assertEqual((self.m.server_restarts, self.m.restarts), (1, 0))
+        self.assertEqual(self.m.config["moonraker.conf"], new.encode())
+        # a [power X] that didn't load (or a new Moonraker warning): the old file goes back, Moonraker restarts again
+        c2 = cfgchange.stage(self.con, "Ender3MaxNeo", self.m.url, "moonraker.conf", new_content=new + "\n[power lights]\ntype: http\n",
+                             reason="lights", author="agent")
+        self.m.power_devices = ["printer"]
+        out = cfgchange.apply(self.con, c2["id"], "ui:Ironman")
+        self.assertEqual(out["state"], "rolled_back")
+        self.assertIn("power device lights didn't load", out["error"])
+        self.assertEqual(self.m.config["moonraker.conf"], new.encode())
+        self.assertEqual((self.m.server_restarts, self.m.restarts), (3, 0))
+        self.m.power_devices = None
+        c3 = cfgchange.stage(self.con, "Ender3MaxNeo", self.m.url, "moonraker.conf", new_content=new + "\n[bogus]\n",
+                             reason="x", author="agent")
+        self.m.on_server_restart = lambda m: setattr(m, "warnings", ["Unparsed config section [bogus] detected"])
+        out = cfgchange.apply(self.con, c3["id"], "ui:Ironman")
+        self.assertEqual(out["state"], "rolled_back")
+        self.assertIn("Moonraker warning", out["error"])
+
+    def test_switched_off_klipper_change_waits_out_klippers_own_connect_retry(self):
+        self.assertGreater(cfgchange.OFF_READY_TIMEOUT_S, 90 + 30)
+
     def test_manual_rollback(self):
         c = self.stage()
         cfgchange.apply(self.con, c["id"], "ui:Ironman")

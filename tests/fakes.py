@@ -104,6 +104,10 @@ class FakeMoonraker:
         self.after_restart = "ready"   # Klipper's state after FIRMWARE_RESTART (tests set "error")
         self.console = []           # gcode_store entries [{"message", "time", "type"}]
         self.on_restart = None      # callable(fake) run at FIRMWARE_RESTART (e.g. change settings)
+        self.server_restarts = 0    # POST /server/restart (Moonraker reloading moonraker.conf)
+        self.warnings, self.failed_components = [], []   # what /server/info reports
+        self.power_devices = None   # None: parsed from moonraker.conf's [power X] at each Moonraker restart
+        self.on_server_restart = None   # callable(fake) run at /server/restart
         self.config_file = "/home/aali/Ender3MaxNeo_data/config/printer.cfg"   # names the instance
         self.webcams = []           # what /server/webcams/item registered
         self.history = []           # /server/history/list entries (paged with start/limit like Moonraker)
@@ -168,8 +172,12 @@ class FakeMoonraker:
                                                        "software_version": "v0.13.0-fake",
                                                        "config_file": outer.config_file}})
                 if u.path == "/server/info":
-                    return self._json(200, {"result": {"klippy_state": outer.klipper, "failed_components": [],
-                                                       "warnings": [], "moonraker_version": "v0.9.3-fake"}})
+                    return self._json(200, {"result": {"klippy_state": outer.klipper,
+                                                       "failed_components": outer.failed_components,
+                                                       "warnings": outer.warnings, "moonraker_version": "v0.9.3-fake"}})
+                if u.path == "/machine/device_power/devices":
+                    return self._json(200, {"result": {"devices": [{"device": d, "status": "off"}
+                                                                   for d in outer.loaded_power()]}})
                 if u.path == "/machine/update/status":
                     return self._json(200, {"result": {"version_info": {"klipper": {"version": "v0.13.0-fake"}}}})
                 if u.path == "/machine/system_info":
@@ -219,6 +227,12 @@ class FakeMoonraker:
                     outer.service_restarts.append(svc)
                     outer.services[svc] = outer.service_after
                     return self._json(200, {"result": "ok"})
+                if u.path == "/server/restart":
+                    outer.server_restarts += 1
+                    outer.loaded = None                      # re-read moonraker.conf
+                    if outer.on_server_restart:
+                        outer.on_server_restart(outer)
+                    return self._json(200, {"result": "ok"})
                 if u.path == "/printer/firmware_restart":
                     outer.restarts += 1
                     if outer.on_restart:
@@ -240,6 +254,15 @@ class FakeMoonraker:
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def loaded_power(self):
+        """The [power X] devices Moonraker loaded at its last start (from moonraker.conf, like the real one)."""
+        if self.power_devices is not None:
+            return self.power_devices
+        if getattr(self, "loaded", None) is None:
+            import re as _re
+            self.loaded = _re.findall(r"^\[power\s+([^\]]+?)\s*\]", self.config.get("moonraker.conf", b"").decode(), _re.M)
+        return self.loaded
 
     def close(self):
         self.server.shutdown()
