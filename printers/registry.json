@@ -29,6 +29,13 @@
         "filament": {
           "petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"
         }
+      },
+      "power": {
+        "type": "meross",
+        "ip": "192.168.1.63",
+        "uuid": "2309280720925654060248e1e9dd015b",
+        "channel": 2,
+        "model": "mss426"
       }
     },
     {
@@ -59,6 +66,13 @@
         "filament": {
           "petg": "Creality PETG @240_80 - Sprite 0.6 13mm3"
         }
+      },
+      "power": {
+        "type": "meross",
+        "ip": "192.168.1.63",
+        "uuid": "2309280720925654060248e1e9dd015b",
+        "channel": 5,
+        "model": "mss426"
       }
     },
     {
@@ -88,6 +102,13 @@
         "filament": {
           "petg": "Farm PETG 0.4 (S1 Pro)"
         }
+      },
+      "power": {
+        "type": "meross",
+        "ip": "192.168.1.63",
+        "uuid": "2309280720925654060248e1e9dd015b",
+        "channel": 3,
+        "model": "mss426"
       }
     },
     {
@@ -113,6 +134,13 @@
         "printer": "Ender 3 V3 SE (Klipper)",
         "print": "",
         "filament": {}
+      },
+      "power": {
+        "type": "meross",
+        "ip": "192.168.1.63",
+        "uuid": "2309280720925654060248e1e9dd015b",
+        "channel": 6,
+        "model": "mss426"
       }
     }
   ]
